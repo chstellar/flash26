@@ -3,17 +3,20 @@ temp_dir: /scratch/users/dcotter1/metaSPLASH_workflows
 
 # set paths to python venvs
 envs:
-  python_venv: /home/users/dcotter1/my_env/bin/activate
+  default_python: /home/users/dcotter1/my_env/bin/activate
   esm_env: /oak/stanford/groups/horence/dcotter1/envs/esm_venv/bin/activate
 
 # define all scripts
 scripts:
   anchor_select_script: 
     filter1: src/anchor_selection/select_anchors.R
+    filter2: src/anchor_selection/select_anchors_filter2.R # TO DO
   cluster_script: 
     shiftDist-keep1: src/clustering/deduplication_clustering.py
+    levDist: src/clustering/lev_clustering.py # TO DO
   reorder_script: 
     shiftDist-keep1: src/clustering/keep_one_anchor_per_cluster.R
+    levDist: src/clustering/reorder_lev_clusters.py # TO DO
   prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py
   translate_script: src/process_seqs/translate_fasta.py

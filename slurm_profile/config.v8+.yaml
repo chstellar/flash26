@@ -10,7 +10,7 @@ cluster-generic-submit-cmd:
     --output=logs/`date +"%d-%m-%y"`/{rule}/{rule}-{wildcards}-%j.out
     {resources.slurm_extra}
 default-resources:
-  - time=2:00:00
+  - time="2:00:00"
   - partition="horence,normal"
   - mem_mb=4000
 restart-times: 3

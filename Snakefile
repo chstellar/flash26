@@ -22,11 +22,21 @@ TEMP_DIR = Path(config["temp_dir"])
 # read the metadata table with the short names as indices
 metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_name")
 
+## constrain the wildcards of the pipeline
+wildcard_constraints:
+    dataset=r"[A-Za-z\d-]+",
+    model=r"[A-Za-z\d-]+",
+    select_type=r"[A-Za-z\d-]+",
+    cluster_type=r"[A-Za-z\d-]+",
+    num_clusters=r"\d+",
+    kmer_width=r"\d+",
+    kmer_step=r"\d+"
+
 
 ## Define the rules for the pipeline
 rule all:
     input:
-        "" # add the final output files here
+        expand(Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"), dataset=["eFaecium-CollEtAl","canTrop-AzoleResistance-PRJNA946688"], select_type=["filter1","filter2"], cluster_type=["shiftDist-keep1", "levDist"], num_clusters=4000, kmer_width=54, kmer_step=54, model="esm")
 
 
 rule choose_anchors:
@@ -50,7 +60,7 @@ rule choose_anchors:
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} \
-        --lookup_table ${LOOKUP_TABLE} --temp_dir {params.tmp_dir}
+        --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir}
     """
 
 
@@ -62,13 +72,13 @@ rule cluster_anchors:
     input:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     params:
-        script = Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
+        script = lambda wildcards: Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
         python_env = Path(config["envs"]["default_python"])
     threads: 4
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
-        runtime = "3:00:00"
+        time = "3:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
     shell:"""
@@ -89,7 +99,7 @@ rule reorder_clusters:
         splash_results = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "SPLASH_results"],
                                                 "result.after_correction.scores.tsv")
     params:
-        script = Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
+        script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
@@ -107,9 +117,9 @@ rule select_N_clusters:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     output:
         clusters = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
-        anchors = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_top{num_clusters}-clusters.txt")
+        anchors = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt")
     shell:"""
-        awk '$1 <= {num_clusters}' {input} > {output.clusters}
+        awk '$1 <= {wildcards.num_clusters}' {input} > {output.clusters}
         cut -f2 {output.clusters} > {output.anchors}
     """
 
@@ -122,8 +132,8 @@ rule prepare_sequences:
     """
     input:
         cluster_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
-        anchor_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_top{num_clusters}-clusters.txt"),
-        id_mapping = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "SPLASH_results"], "sample_name_to_id_mapping.txt")
+        anchor_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
+        id_mapping = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "SPLASH_results"], "sample_name_to_id.mapping.txt")
     params:
         script = Path(config["scripts"]["prepare_sequences"]),
         satc_dir = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "SPLASH_results"], "result_satc"),
@@ -138,7 +148,7 @@ rule prepare_sequences:
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv")
     shell:"""
         ml R/4.3.2
-        Rscript --vanilla {prams.script} --anchor_file {input.anchor_file} \
+        Rscript --vanilla {params.script} --anchor_file {input.anchor_file} \
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         --satc_files {params.satc_dir} --output_prefix {params.output_prefix} \
         --temp_dir {params.tmp_dir} --num_cores {threads}
@@ -156,8 +166,8 @@ rule decompose_kmers:
     params:
         script = Path(config["scripts"]["decompose_kmers"]),
         output_prefix = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}"),
-        kmer_width = wildcards.kmer_width,
-        kmer_step = wildcards.kmer_step,
+        kmer_width = lambda wildcards: wildcards.kmer_width,
+        kmer_step = lambda wildcards: wildcards.kmer_step,
         python_env = Path(config["envs"]["default_python"])
     output:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv"),
@@ -165,11 +175,11 @@ rule decompose_kmers:
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 16000 + ((attempt - 1) * 16000),
-        runtime = "3:00:00"
+        time = "3:00:00"
     shell:"""
         ml python/3.9.0
         source {params.python_env}
-        python {params.script} -k {kmer_width} -s {kmer_step} \
+        python {params.script} -k {wildcards.kmer_width} -s {wildcards.kmer_step} \
         {input} {params.output_prefix}
     """
 
@@ -219,7 +229,7 @@ rule embed_kmers_ESM:
     threads: 8
     resources:
         # 64 GB of memory
-        runtime = "3:00:00",
+        time = "3:00:00",
         mem_mb = 32000,
         partition = "gpu,owners",
         slurm_extra = "-G 1 -C GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR"
@@ -229,8 +239,8 @@ rule embed_kmers_ESM:
         ml python/3.9.0
         source {params.python_env}
         export TORCH_HOME={params.torch_dir}
-        esm-extract esm2_t33_650M_UR50D {input} {tmp_dir} --include mean per_tok
-        python {params.extract_embeddings} --input {tmp_dir} --output {output}
+        esm-extract esm2_t33_650M_UR50D {input} {params.tmp_dir} --include mean per_tok
+        python {params.extract_embeddings} --input {params.tmp_dir} --output {output}
     """
 
 
@@ -264,18 +274,17 @@ rule run_glmnet:
     to predict on the metadata.
     """
     input:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather"),
-        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata"]
+        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_script"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
-                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings")
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings"),
         output_prefix = Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}")
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
-        runtime = "4:00:00"
+        time = "4:00:00"
     output:
         Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
