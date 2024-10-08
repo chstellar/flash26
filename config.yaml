@@ -1,0 +1,22 @@
+data_table: dataset_table.csv
+temp_dir: /scratch/users/dcotter1/metaSPLASH_workflows
+
+# set paths to python venvs
+envs:
+  python_venv: /home/users/dcotter1/my_env/bin/activate
+  esm_env: /oak/stanford/groups/horence/dcotter1/envs/esm_venv/bin/activate
+
+# define all scripts
+scripts:
+  anchor_select_script: 
+    filter1: src/anchor_selection/select_anchors.R
+  cluster_script: 
+    shiftDist-keep1: src/clustering/deduplication_clustering.py
+  reorder_script: 
+    shiftDist-keep1: src/clustering/keep_one_anchor_per_cluster.R
+  prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
+  decompose_kmers: src/process_seqs/kmer_decomposition.py
+  translate_script: src/process_seqs/translate_fasta.py
+  extract_embeddings: src/esm_utils/extract_embeddings_from_torch_objects.py
+  format_embeddings_variance: src/grab_top_embeddings_by_variance.R
+  glmnet_script: src/embeddings_glmnet.R
