@@ -36,6 +36,11 @@ if (!file.exists(opt$metadata) | !file.exists(opt$embeddings) | is.null(opt$outp
   stop("Must provide metadata, embeddings, and output prefix")
 }
 
+# make the output prefix directory if it doesn't exist
+if (!dir.exists(dirname(opt$output_prefix))) {
+  system(paste("mkdir -p", dirname(opt$output_prefix)))
+}
+
 ## specify the output files
 coefficients_out = paste0(opt$output_prefix, "_nonzero_coefficients.tsv")
 confusion_matrix_out = paste0(opt$output_prefix, "_confusion_matrices.pdf")

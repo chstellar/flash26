@@ -94,6 +94,13 @@ anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   arrange(new_cluster_id, desc(effect_size_bin * number_nonzero_samples)) %>%
   ungroup() %>% select(new_cluster_id, anchor)
 
+# keep only one anchor per cluster (the one with the highest effect size * number of nonzero samples)
+cat("Keeping only one anchor per cluster\n")
+anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
+  group_by(new_cluster_id) %>%
+  slice(1) %>%
+  ungroup()
+
 # write out the new anchor clusters file
 cat("Writing out the new anchor clusters file\n")
 write_tsv(anchor_clusters_with_stats, opt$output, col_names = F, quote="none")

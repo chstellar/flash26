@@ -164,6 +164,10 @@ rule decompose_kmers:
     """
 
 
+rule match_kmers_to_clusters:
+
+
+
 rule translate_kmers_ESM:
     """
     This rule translates the kmers using a provided genetic code so that they can be fed into the
@@ -242,7 +246,7 @@ rule prepare_data_for_glmnet_top_variance:
 
 rule run_glmnet:
     """
-    This rule preprocesses the embeddings to fit into a glmnet model and then runs the glmnet model
+    This rule preprocesses uses preprocessed embeddings before running the glmnet model
     to predict on the metadata.
     """
     input:
@@ -250,7 +254,10 @@ rule run_glmnet:
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata"]
     params:
         script = Path(config["scripts"]["glmnet_script"]),
-        tmp_dir =
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings")
+    output:
+        Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} \
