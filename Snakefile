@@ -41,6 +41,7 @@ rule choose_anchors:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
         lookup_table = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "lookup_table"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type)
+    threads: 2
     resources:
         # 64 GB of memory
         mem_mb = 64000
@@ -63,6 +64,11 @@ rule cluster_anchors:
     params:
         script = Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
         python_env = Path(config["envs"]["default_python"])
+    threads: 4
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        runtime = "3:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
     shell:"""
@@ -156,6 +162,10 @@ rule decompose_kmers:
     output:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv"),
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 16000 + ((attempt - 1) * 16000),
+        runtime = "3:00:00"
     shell:"""
         ml python/3.9.0
         source {params.python_env}
@@ -165,8 +175,12 @@ rule decompose_kmers:
 
 
 rule match_kmers_to_clusters:
-
-
+    """
+    Process the ordering file to produce a tsv file mapping clusters to
+    their component kmers
+    """
+    input:
+        order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
 
 rule translate_kmers_ESM:
     """
@@ -234,8 +248,8 @@ rule prepare_data_for_glmnet_top_variance:
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings")
     threads: 32
     resources:
-        # 128 GB of memory
-        mem_mb = 128000
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
     shell:"""
@@ -256,8 +270,15 @@ rule run_glmnet:
         script = Path(config["scripts"]["glmnet_script"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings")
+        output_prefix = Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}")
+    threads: 16
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        runtime = "4:00:00"
     output:
-        Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+        Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} \
