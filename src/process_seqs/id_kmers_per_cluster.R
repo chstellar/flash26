@@ -31,6 +31,12 @@ if (!file.exists(opt$ordering) | is.null(opt$output) | !file.exists(opt$kmers)) 
   stop("Must provide kmers, ordering, and output file")
 }
 
+# create the output directory if it doesn't exist
+output_dir <- dirname(opt$output)
+if (!dir.exists(output_dir)) {
+  system(paste("mkdir -p", output_dir))
+}
+
 ## print a summary of the arguments
 cat("\n####################\n")
 cat("Running id_kmers_per_cluster.R with the following arguments:\n")
