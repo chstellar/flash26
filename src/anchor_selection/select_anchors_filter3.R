@@ -1,4 +1,4 @@
-# select_anchors.R
+# select_anchors_filter3.R
 # Daniel Cotter
 # 2024-09-12
 
@@ -7,6 +7,12 @@
 # number of nonzero samples. It also filters out anchors that have lookup
 # table hits to artifcats. The output is a list of anchor sequences that can
 # be used in downstream analyses.
+
+# filter 3: effect size >= 0.9
+# filter 3: no lookup table hits to artifacts
+# filter 3: further filter out the bottom 60% of anchors by number nonzero samples
+# filter 3: further filter out the bottom 60% of anchors by effect size
+# filter 3: select top 100,000 anchors by effect size * number of nonzero samples
 
 ## import packages --------
 suppressPackageStartupMessages(library(data.table))
@@ -20,9 +26,9 @@ option_list <- list(
   make_option(c("-i", "--input"), "Input file", type="character"),
   make_option(c("-o", "--output"), "Output file", type="character"),
   make_option(c("-n", "--num_anchors"), "Number of anchors to select",
-              type="integer", default = 150000),
+              type="integer", default = 100000),
   make_option(c("-e", "--effect_size"), "Effect size threshold",
-              type="numeric", default=0.7),
+              type="numeric", default=0.9),
   make_option(c("-l", "--lookup_table"), "Lookup table file", type="character"),
   make_option(c("--splash_bin"), "Path to SPLASH binary folder",
               type="character", default="/oak/stanford/groups/horence/dcotter1/splash-2.6.1/"),
@@ -130,8 +136,15 @@ cat(paste0("Keeping the top ", opt$num_anchors, " by number_nonzero_samples for 
 
 ## select the most important anchors -----------
 anchors_to_keep <- anchors_to_keep %>% 
-  left_join(dt %>% select(anchor, number_nonzero_samples), by="anchor") %>%
-  arrange(desc(number_nonzero_samples)) %>%
+  left_join(dt %>% select(anchor, effect_size_bin, number_nonzero_samples), by="anchor") 
+
+samples_cutoff = quantile(anchors_to_keep$number_nonzero_samples, .6)
+anchors_to_keep <- anchors_to_keep %>% filter(number_nonzero_samples >=samples_cutoff)
+
+effect_size_cutoff = quantile(anchors_to_keep$effect_size_bin, .6)
+
+anchors_to_keep <- anchors_to_keep %>% filter(number_nonzero_samples >= samples_cutoff) %>%
+  arrange(desc(effect_size_bin*number_nonzero_samples)) %>%
   head(opt$num_anchors)
 
 ## write the output -----------

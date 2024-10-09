@@ -11,11 +11,27 @@ and attribution on SPLASH results.
 
 These filters are used to select the set of all anchors from the SPLASH results that will be sent for clustering and reordering. See `config.yaml` for the script used for the filtering.
 
- | **Filter** | **Description** |
- |:-----------|:---------------:|
- | filter1    | NA              |
- | filter2    | NA              |
- | filter3    | NA              |
+#### Filter 1
+
+1. effect size >= 0.6
+2. number of nonzero samples > 10th percentile
+3. no lookup table hits to artifacts
+4. select top 150,000 anchors by number of nonzero samples
+
+#### Filter 2
+
+1. effect size >= 0.6
+2. number of nonzero samples > 10th percentile
+3. no lookup table hits to artifacts
+4. select top 150,000 anchors by effect size
+
+#### Filter 3
+
+1. effect size >= 0.9
+2. no lookup table hits to artifacts
+3. further filter out the bottom 60% of anchors by number nonzero samples
+4. filter 3: further filter out the bottom 60% of anchors by effect size
+5. filter 3: select top 100,000 anchors by effect size * number of nonzero samples
 
 ### Different clustering methods
 

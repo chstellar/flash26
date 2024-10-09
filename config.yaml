@@ -9,14 +9,15 @@ envs:
 # define all scripts
 scripts:
   anchor_select_script: 
-    filter1: src/anchor_selection/select_anchors.R
-    filter2: src/anchor_selection/select_anchors_filter2.R # TO DO
+    filter1: src/anchor_selection/select_anchors_filter1.R # arrange by nonzero samples then head
+    filter2: src/anchor_selection/select_anchors_filter2.R # arrange by effect size then head
+    filter3: src/anchor_selection/select_anchors_filter3.R # arrange by effect size * nonzero samples then head (see README for details)
   cluster_script: 
-    shiftDist-keep1: src/clustering/deduplication_clustering.py
-    levDist: src/clustering/lev_clustering.py # TO DO
-  reorder_script: 
-    shiftDist-keep1: src/clustering/keep_one_anchor_per_cluster.R
-    levDist: src/clustering/reorder_lev_clusters.py # TO DO
+    shiftDist-keepTopES: src/clustering/deduplication_clustering.py
+    shiftDist-keepMostAbundant: src/clustering/deduplication_clustering.py
+  reorder_script:
+    shiftDist-keepTopES: src/clustering/keep_topES_anchor_per_cluster copy.R
+    shiftDist-keepMostAbundant: src/clustering/keep_mostAbundant_anchor_per_cluster.R
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
   prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py

@@ -67,7 +67,7 @@ headers <- fread(opt$splash_stats, nrows = 1, header=T)
 effect_size_bin_col <- grep("effect_size_bin", names(headers))
 
 # load the input file using awk to filter out rows with effect size < 0.7
-EFFECT_SIZE_CUTOFF = 0.7
+EFFECT_SIZE_CUTOFF = 0.6
 load_cmd <- paste0("cat ", opt$splash_stats, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF, ") print $0}'")
 if (grepl(".gz$", opt$input)) {
   load_cmd = paste0("z", load_cmd)
@@ -91,10 +91,10 @@ anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   ungroup() %>% 
   mutate(new_cluster_id = as.numeric(factor(cluster_id, levels = unique(cluster_id)))) %>% 
   ungroup() %>% group_by(new_cluster_id) %>%
-  arrange(new_cluster_id, desc(effect_size_bin * number_nonzero_samples)) %>%
+  arrange(new_cluster_id, desc(number_nonzero_samples)) %>% # changed from desc(effect_size_bin * number_nonzero_samples)
   ungroup() %>% select(new_cluster_id, anchor)
 
-# keep only one anchor per cluster (the one with the highest effect size * number of nonzero samples)
+# keep only one anchor per cluster (the one with the highest number of nonzero samples)
 cat("Keeping only one anchor per cluster\n")
 anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   group_by(new_cluster_id) %>%
