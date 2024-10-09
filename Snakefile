@@ -42,7 +42,7 @@ wildcard_constraints:
     cluster_type=r"[A-Za-z\d-]+",
     num_clusters=r"\d+",
     kmer_width=r"\d+",
-    kmer_step=r"\d+"
+    kmer_step=r"\d+",
     normalize=r"[A-Za-z]+"
 
 
