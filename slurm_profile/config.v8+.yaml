@@ -1,6 +1,6 @@
 executor: cluster-generic
 cluster-generic-submit-cmd:
-  mkdir -p logs/`date +"%d-%m-%y"`/{rule}
+  mkdir -p logs/`date +"%d-%m-%y"`/{rule};
   sbatch
     --time={resources.time}
     --partition={resources.partition}
@@ -13,6 +13,7 @@ default-resources:
   - time="2:00:00"
   - partition="horence,normal"
   - mem_mb=4000
+  - slurm_extra=""
 restart-times: 3
 max-jobs-per-second: 1
 max-status-checks-per-second: 1

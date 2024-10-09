@@ -26,8 +26,9 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Dynamically generate {dataset} based on the metadata table
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
-SELECT_TYPES = ["filter1", "filter2", "filter3"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant"]
+DATASETS = ["eFaecium-CollEtAl"]
+SELECT_TYPES = ["filter1"]
+CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [4000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]

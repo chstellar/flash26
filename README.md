@@ -37,8 +37,12 @@ These filters are used to select the set of all anchors from the SPLASH results 
 
 These are different methods for clustering the anchors from step 1 and then informed reordering/pruning of the clusters. See `config.yaml` for the scripts used for these steps.
 
- | **Cluster Method** | **Description** |
- |:-------------------|:---------------:|
- | shiftDist-keep1    | NA              |
- | filter2            | NA              |
- | filter3            | NA              |
+#### shiftDist-keepTopES
+
+1. Cluster using Tavor's shift distance code. shiftDist = 5
+2. Arrange each cluster by effect size bin and keep the **one** highest effect size anchor per cluster.
+
+#### shiftDist-keepMostAbundant
+
+1. Cluster using Tavor's shift distance code. shiftDist = 5
+2. Arrange each cluster by number nonzero samples and keep the **one** most abundant anchor per cluster. 
