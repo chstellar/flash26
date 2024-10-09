@@ -19,8 +19,20 @@ configfile: "config.yaml"
 metadata_table_path = Path(config["data_table"])
 TEMP_DIR = Path(config["temp_dir"])
 
-# read the metadata table with the short names as indices
+## read the metadata table with the short names as indices
 metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_name")
+
+## Define the wildcards on which the pipeline will be run
+# TODO: Dynamically generate {dataset} based on the metadata table
+# TODO: Define the other wildcards based on the config file
+DATASETS = list(metadata_table.index)
+SELECT_TYPES = ["filter1"]
+CLUSTER_TYPES = ["shiftDist-keep1"]
+NUM_CLUSTERS = [4000]
+KMER_WIDTH = [54]
+KMER_STEP = [54]
+MODELS = ["esm"]
+NORMALIZE = ["normalized", "unnormalized"]
 
 ## constrain the wildcards of the pipeline
 wildcard_constraints:
@@ -31,12 +43,32 @@ wildcard_constraints:
     num_clusters=r"\d+",
     kmer_width=r"\d+",
     kmer_step=r"\d+"
+    normalize=r"[A-Za-z]+"
 
 
 ## Define the rules for the pipeline
 rule all:
     input:
-        expand(Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"), dataset=["eFaecium-CollEtAl","canTrop-AzoleResistance-PRJNA946688"], select_type=["filter1","filter2"], cluster_type=["shiftDist-keep1", "levDist"], num_clusters=4000, kmer_width=54, kmer_step=54, model="esm")
+        # all nonzero coefficients files
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+                    "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE),
+        # all kmer mapping to clusters files
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
+                    "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP),
 
 
 rule choose_anchors:
@@ -191,6 +223,15 @@ rule match_kmers_to_clusters:
     """
     input:
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv")
+    params:
+        script = Path(config["scripts"]["match_kmers_to_clusters"])
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+    ml R/4.3.2
+
+    """
 
 rule translate_kmers_ESM:
     """
@@ -255,39 +296,39 @@ rule prepare_data_for_glmnet_top_variance:
     params:
         script = Path(config["scripts"]["format_embeddings_variance"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
-                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings")
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings"),
+        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
-        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 40
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 100 {params.normalized_flag}
     """
 
 rule run_glmnet:
     """
-    This rule preprocesses uses preprocessed embeddings before running the glmnet model
-    to predict on the metadata.
+    This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
     """
     input:
-        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather"),
+        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_script"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings"),
-        output_prefix = Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}")
+        output_prefix = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}")
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
         time = "4:00:00"
     output:
-        Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{dataset}_{model}_glmnet_results_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} \

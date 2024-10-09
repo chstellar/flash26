@@ -26,7 +26,9 @@ option_list <- list(
   make_option(c("--temp_dir"), help="Temporary directory to store intermediate files", 
               type="character"),
   make_option(c("--num_threads"), help="Number of threads to use for parallel operations",
-              type="integer", default=1)
+              type="integer", default=1),
+  make_option(c("--normalized_embeddings"), help="Whether to normalize the embeddings before calculating variance",
+              action="store_true", default=FALSE)
 )
 
 # parse command line arguments
@@ -118,13 +120,16 @@ if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
 
 cat("Formatting the embeddings for downstream use...\n")
 
-# define a function to grab
-grab_top_variance_columns <- function(in_file, num_cols=10) {
+# define a function to grab top variance embeddings
+grab_top_variance_columns <- function(in_file, num_cols, normalized) {
   cluster_num = str_extract(in_file, "cluster_(\\d+).csv", group=1) %>% as.integer()
   temp_dt <- fread(in_file, header=T, nThread = 1) %>% select(sample_name, starts_with("embedding")) # first filter for only one cluster
   colnames(temp_dt) <- ifelse(grepl("embedding", colnames(temp_dt)),
                       yes=paste0("cluster_", cluster_num, "_", colnames(temp_dt)),
                       no = colnames(temp_dt))
+  if (normalized) {
+    temp_dt <- temp_dt %>% mutate(across(starts_with("cluster"), scale))
+  }
   top_var_cols <- resample::colVars(temp_dt %>% select(starts_with("cluster"))) %>%
     enframe() %>%
     slice_max(n=num_cols, value, with_ties = FALSE) %>%
@@ -138,7 +143,7 @@ grab_top_variance_columns <- function(in_file, num_cols=10) {
 
 cat("Calculating top variance components per cluster...\n")
 top_var_dt <- future_map_dfc(cluster_files,
-                             \(x) grab_top_variance_columns(x, num_cols=opt$num_to_keep),
+                             \(x) grab_top_variance_columns(x, num_cols=opt$num_to_keep, normalized=opt$normalized_embeddings),
                              .progress = T)
 top_var_dt <- top_var_dt %>% relocate(sample_name)
 
