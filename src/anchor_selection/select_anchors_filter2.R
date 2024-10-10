@@ -139,7 +139,7 @@ cat(paste0("Keeping the top ", opt$num_anchors, " by number_nonzero_samples for 
 
 ## select the most important anchors -----------
 anchors_to_keep <- anchors_to_keep %>% 
-  left_join(dt %>% select(anchor, number_nonzero_samples), by="anchor") %>%
+  left_join(dt %>% select(anchor, number_nonzero_samples, effect_size_bin), by="anchor") %>%
   arrange(desc(effect_size_bin)) %>%
   head(opt$num_anchors)
 
