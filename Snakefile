@@ -6,7 +6,7 @@ Daniel Cotter
 10/2024
 
 This pipeline is designed to take SPLASH results and use them to predict on phenotypic metadata.
-The pipeline is designed to be run on a cluster, and is written in snakemake.
+The pipeline is designed to be run on Sherlock, and is written in snakemake.
 """
 
 ## Importing necessary modules
@@ -26,8 +26,11 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Dynamically generate {dataset} based on the metadata table
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
+#DATASETS = ["eFaecium-CollEtAl"]
 SELECT_TYPES = ["filter1", "filter2", "filter3"]
+#SELECT_TYPES = ["filter1"]
 CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant"]
+#CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [4000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
@@ -169,7 +172,7 @@ rule prepare_sequences:
     params:
         script = Path(config["scripts"]["prepare_sequences"]),
         satc_dir = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "SPLASH_results"], "result_satc"),
-        output_prefix = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}"),
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters"),
     threads: 16
     resources:
@@ -197,12 +200,12 @@ rule decompose_kmers:
         Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["decompose_kmers"]),
-        output_prefix = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}"),
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
         kmer_width = lambda wildcards: wildcards.kmer_width,
         kmer_step = lambda wildcards: wildcards.kmer_step,
         python_env = Path(config["envs"]["default_python"])
     output:
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv"),
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
     resources:
         # dynamically allocate memory based on the attempt
@@ -223,14 +226,14 @@ rule match_kmers_to_clusters:
     """
     input:
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv")
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
     params:
         script = Path(config["scripts"]["match_kmers_to_clusters"])
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
     ml R/4.3.2
-
+    Rscript --vanilla {params.script} --ordering {input.order} --kmers {input.unique_kmers} --output {output}
     """
 
 rule translate_kmers_ESM:
@@ -239,13 +242,13 @@ rule translate_kmers_ESM:
     ESM2 model (or any other protein-based language model).
     """
     input:
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv")
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
     params:
         script = Path(config["scripts"]["translate_script"]),
         translation_table = lambda wildcards: metadata_table.loc[wildcards.dataset, "translation_table"],
         python_env = Path(config["envs"]["default_python"])
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
     shell:"""
         ml python/3.9.0
         source {params.python_env}
@@ -260,7 +263,7 @@ rule embed_kmers_ESM:
     to predict on the metadata.
     """
     input:
-        translated_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.tsv"),
+        translated_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
     params:
         torch_dir = Path(TEMP_DIR, "torch_cache"),
         extract_embeddings = Path(config["scripts"]["extract_embeddings"]),
@@ -273,7 +276,7 @@ rule embed_kmers_ESM:
         time = "3:00:00",
         mem_mb = 32000,
         partition = "gpu,owners",
-        slurm_extra = "-G 1 -C GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR"
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_esm-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -281,7 +284,7 @@ rule embed_kmers_ESM:
         source {params.python_env}
         export TORCH_HOME={params.torch_dir}
         esm-extract esm2_t33_650M_UR50D {input} {params.tmp_dir} --include mean per_tok
-        python {params.extract_embeddings} --input {params.tmp_dir} --output {output}
+        python {params.extract_embeddings} {params.tmp_dir} {output}
     """
 
 
@@ -296,7 +299,7 @@ rule prepare_data_for_glmnet_top_variance:
     params:
         script = Path(config["scripts"]["format_embeddings_variance"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
-                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings"),
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     threads: 32
     resources:
@@ -320,7 +323,7 @@ rule run_glmnet:
     params:
         script = Path(config["scripts"]["glmnet_script"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings"),
-        output_prefix = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}")
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_glmnet_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt

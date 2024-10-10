@@ -14,12 +14,11 @@ default-resources:
   - partition="horence,normal"
   - mem_mb=4000
   - slurm_extra=""
-restart-times: 3
-max-jobs-per-second: 1
+jobs: 100
+max-jobs-per-second: 2
 max-status-checks-per-second: 1
-local-cores: 1
+restart-times: 2
 latency-wait: 60
-jobs: 500
 keep-going: True
 rerun-incomplete: True
 printshellcmds: True
