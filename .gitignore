@@ -3,3 +3,4 @@
 .snakemake
 logs/*
 slurm-*
+results/*
