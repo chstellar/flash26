@@ -2,7 +2,7 @@
 
 Daniel Cotter -- 10/07/2024
 
-## Description 
+## Description
 
 The following pipeline uses `Snakemake` to run metadata-driven prediction
 and attribution on SPLASH results.
@@ -45,4 +45,16 @@ These are different methods for clustering the anchors from step 1 and then info
 #### shiftDist-keepMostAbundant
 
 1. Cluster using Tavor's shift distance code. shiftDist = 5
-2. Arrange each cluster by number nonzero samples and keep the **one** most abundant anchor per cluster. 
+2. Arrange each cluster by number nonzero samples and keep the **one** most abundant anchor per cluster.
+
+## Running the workflow
+
+### Install `mamba` and `snakemake`
+
+You must have conda installed with the `mamba` package manager. See [here](https://github.com/conda-forge/miniforge)for info on how to install mamba. After that, create a snakemake environment using the following command:
+
+```{python}
+mamba create -c conda-forge -c bioconda -n snakemake snakemake
+```
+
+
