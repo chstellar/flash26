@@ -322,7 +322,6 @@ rule run_glmnet:
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_script"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings"),
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_glmnet_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
     threads: 16
     resources:
@@ -336,5 +335,5 @@ rule run_glmnet:
         ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
-        --even_classes --temp_dir {params.tmp_dir}
+        --even_classes
     """
