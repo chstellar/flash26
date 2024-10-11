@@ -54,7 +54,7 @@ rule all:
     input:
         # all nonzero coefficients files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+                    "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
@@ -62,7 +62,8 @@ rule all:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               normalize=NORMALIZE),
+               normalize=NORMALIZE,
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) + \,
         # all kmer mapping to clusters files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
                     "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
