@@ -326,7 +326,7 @@ rule run_glmnet:
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        mem_mb = lambda _, attempt: 6400 + ((attempt - 1) * 64000),
         time = "4:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),

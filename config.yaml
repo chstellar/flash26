@@ -3,7 +3,7 @@ temp_dir: /scratch/users/dcotter1/metaSPLASH_workflows
 
 # set paths to python venvs
 envs:
-  default_python: /home/users/dcotter1/my_env/bin/activate
+  default_python: /oak/stanford/groups/horence/dcotter1/envs/biopython/bin/activate
   esm_env: /oak/stanford/groups/horence/dcotter1/envs/esm_venv/bin/activate
 
 # define all scripts
