@@ -4,8 +4,7 @@ Daniel Cotter -- 10/07/2024
 
 ## Description
 
-The following pipeline uses `Snakemake` to run metadata-driven prediction
-and attribution on SPLASH results.
+The following pipeline uses `Snakemake` to run metadata-driven prediction and attribution on SPLASH results.
 
 ### Different filters used for anchor selection3
 
@@ -104,7 +103,7 @@ This file contains all of the datasets on which we want to run Snakemake. Replac
 2. `sample_name_to_id.mapping.txt`
 3. `result_satc/` containing all of the satc files for the run
 
-#### The metadata file needs to be formated as follows
+#### The metadata file needs to be formatted as follows
 
 1. Column 1 contains the same sample ids as were used to run `SPLASH` and is named `sample_name` (the script will attempt to assign the first column as `sample_name` otherwise)
 2. The other columns contain a simple column name describing the metadata and the metadata.
