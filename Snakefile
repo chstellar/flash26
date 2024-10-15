@@ -63,7 +63,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) + \,
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) ,
         # all kmer mapping to clusters files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
                     "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
@@ -305,7 +305,7 @@ rule prepare_data_for_glmnet_top_variance:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 64000),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
@@ -327,7 +327,7 @@ rule run_glmnet:
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 6400 + ((attempt - 1) * 64000),
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
         time = "4:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
