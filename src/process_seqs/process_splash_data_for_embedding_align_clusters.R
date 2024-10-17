@@ -132,23 +132,27 @@ wide_satc <- as.data.frame(wide_satc)
 
 # write a function that operates on every cluster column of the wide satc
 # and aligns the nonrepresentative anchors to the representative anchor
-align_to_representative <- function(x, representative_anchor) {
+align_to_representative <- function(x, colname, representative_anchor) {
   # x is a one column data frame
+  x <- data.frame(sequence=x)
   # grab the unique sequences in the column
-  unique_seqs <- x %>% group_by(1) %>% summarise(n=n()) %>% ungroup()
+  unique_seqs <- x %>% group_by(sequence) %>% summarise(n=n()) %>% ungroup()
   
   # if there is only one anchor return the original column
-  n_anchors <- unique_seqs %>% mutate(1=substr(1, 1, 27)) %>% pull(1) %>% unique() %>% length()
+  n_anchors <- unique_seqs %>% mutate(sequence=substr(sequence, 1, 27)) %>% 
+    filter(!is.na(sequence)) %>% 
+    pull(sequence) %>% unique() %>% length()
   if (n_anchors == 1) {
+    colnames(x) <- c(colname)
     return(x)
   }
   
   # grab the sequence to align to (the most abundant one containing the anchor)
-  representative_seq <- unique_seqs %>% filter(str_detect(1, representative_anchor)) %>% 
-    filter(n == max(n)) %>% head(1) %>% pull(1)
+  representative_seq <- unique_seqs %>% filter(str_detect(sequence, representative_anchor)) %>% 
+    filter(n == max(n)) %>% head(1) %>% pull(sequence)
   
   # format the unique sequences as a character vector
-  unique_seqs <- unique_seqs %>% pull(1)
+  unique_seqs <- unique_seqs %>% pull(sequence)
   
   # function to perform alignment on a unique set of sequences
   perform_alignment <- function(seq, ref_seq) {
@@ -201,16 +205,18 @@ align_to_representative <- function(x, representative_anchor) {
   aligned_seqs <- align_sequences(unique_seqs, representative_seq)
   
   # mutate the column in x mapping each unique sequence to its aligned sequence
-  x <- x %>% mutate(1=map_chr(1, \(x) ifelse(is.na(x), NA, aligned_seqs[x])))
+  x <- x %>% mutate(sequence=map_chr(sequence, \(x) ifelse(is.na(x), NA, aligned_seqs[x])))
+  colnames(x) <- c(colname)
   
   return(x)
 }
 
 # apply the alignment function to each cluster column
 wide_satc <- cbind(wide_satc[1], 
-                   map2_df(wide_satc[,2:ncol(wide_satc)], 
-                           representative_anchors, 
-                           \(x,y) align_to_representative(x, y)))
+                   future_pmap_dfc(list(wide_satc[,2:3],
+                                        colnames(wide_satc[,2:3]),
+                                        representative_anchors[1:2]),
+                                   \(x,y,z) align_to_representative(x, y, z)))
 
 # add the representative anchors with Ns to the wide satc where there are NAs
 wide_satc <- cbind(wide_satc[1],
