@@ -97,7 +97,7 @@ TODO: Create an environment or Docker images with all of these packages and just
 
 This file contains all of the datasets on which we want to run Snakemake. Replace the current datasets with ones you would like to run. To run on a new dataset, add a new row with a **short name**, a path to the **SPLASH run folder**, a path to the **metadata file**, a path to a **lookup table for artifact filtering** (you don't need to change this from the other rows), and a **translation table** (this is an integer corresponding to the correct genetic code to use for translation).
 
-#### Inside the SPLASH run folder, the script is looking for the following:
+#### Inside the SPLASH run folder, the script is looking for the following files
 
 1. `result.after_correction.scores.tsv`
 2. `sample_name_to_id.mapping.txt`
@@ -126,7 +126,7 @@ MODELS = ["esm"]
 NORMALIZE = ["normalized", "unnormalized"]
 ```
 
-You can change these by specifying new paramaters.In order to change the `SELECT_TYPES` or the `CLUSTER_TYPES`, you must also provide new scripts performing the desired steps. 
+You can change these by specifying new paramaters.In order to change the `SELECT_TYPES` or the `CLUSTER_TYPES`, you must also provide new scripts performing the desired steps.
 
 ### 4. Change out any necessary file paths in the `config.yaml` file
 
