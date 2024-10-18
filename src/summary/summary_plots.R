@@ -6,7 +6,7 @@
 ## Load libraries
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tidyverse))
-suppressPacakageStartupMessages(library(optparse))
+suppressPackageStartupMessages(library(optparse))
 
 ## Parse arguments
 option_list = list(
@@ -41,7 +41,7 @@ data <- data %>%
   select(path, metadata, accuracy, sensitivity, specificity)
 
 # extract the dataset name from the path
-data <- data %>% mutate(path=dirname(gsub("^results/[A-Za-z0-9-]+/", "", .))) %>%
+data <- data %>% mutate(path=dirname(gsub("^results/[A-Za-z0-9-]+/", "", path))) %>%
   mutate(path=gsub("/","_",path)) %>%
   rename(paramater_set=path)
 
@@ -65,4 +65,4 @@ p <- data %>% ggplot(aes(x=paramater_set, y=accuracy)) +
 
 # save the plot (with height scaled to the number of metadata categories)
 num_metadata <- data %>% distinct(metadata) %>% nrow()
-ggsave(opt$output, height=2*num_metadata, width=10, plot=p)
+ggsave(opt$output, height=ifelse(num_metadata<10, 10, 2*num_metadata), width=10, plot=p)
