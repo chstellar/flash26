@@ -249,7 +249,16 @@ for (i in metadata_labels) {
 dev.off()
 
 # write out the coefficients
-# first filter for non-zero coefficients
-# then join on the headers for the significant kmers
-nonzero_coef <- all_coef %>% filter(!grepl("0,", coefficients))
-nonzero_coef %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
+# filter for non-zero coefficients
+# if the script fails here, it's likely because there are no non-zero coefficients
+# or the script failed in all cases to fit a model
+# add a try catch to write out an empty file with the right headers if this is the case
+tryCatch({
+  nonzero_coef <- all_coef %>% filter(!grepl("0,", coefficients))
+  nonzero_coef %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
+}, error=function(e) {
+  cat("No non-zero coefficients found. Writing out empty file...\n")
+  empty_df <- data.frame(metadata_category=character(), feature=character(), accuracy=numeric(),
+                         sensitivity=numeric(), specificity=numeric(), classes=character(), coefficients=character())
+  empty_df %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
+})
