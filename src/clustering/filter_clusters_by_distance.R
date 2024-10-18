@@ -1,16 +1,17 @@
-# reorder_anchor_clusters.R
+# filter_clusters_by_distance.R
 # Daniel Cotter
 # 2024-09-12
 
-# This script takes in an anchor cluster file and a splash stats file and smartly 
-# reorders the anchor clusters (both the clusters and the anchors within the clusters)
-# based on the effect size and the number of nonzero samples. The output is a new 
-# anchor cluster file that can be used in downstream analyses.
+# This script takes in the anchor clusters file and a SPLASH stats file and processes
+# the clusters by picking one anchor per cluster based on the mean effect size and number of nonzero samples
+# and then using a distance metric to filter out anchors that are too far away from the seed anchor.
 
 ## import packages --------
+suppressPackageStartupMessages(library(stringdist))
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(optparse))
+suppressPackageStartupMessages(library(furrr))
 
 ## parse arguments --------
 # define command line arguments
@@ -21,7 +22,7 @@ option_list <- list(
   make_option(c("--temp_dir"), "Temporary directory to store intermediate files", 
               type="character"),
   make_option(c("--distance_metric"), "Distance metric to use for filtering", 
-              type="character", default=NULL),
+              type="character", default="lev"),
   make_option(c("--num_cores"), "Number of cores to use for parallel processing"
               , type="integer", default=1)
 )
@@ -33,6 +34,9 @@ opt <- parse_args(OptionParser(option_list = option_list))
 if (!file.exists(opt$input_anchor_clusters) | !file.exists(opt$splash_stats) | is.null(opt$output)) {
   stop("Must provide input and output files")
 }
+
+# set up parallel processing
+plan(multicore, workers = opt$num_cores)
 
 # create a temporary directory to store intermediate files
 if (!is.null(opt$temp_dir)) {
@@ -55,6 +59,8 @@ cat("\n")
 cat(paste("Output file:", opt$output))
 cat("\n")
 cat(paste("Temporary directory:", temp_dir))
+cat("\n")
+cat(paste("Distance metric:", opt$distance_metric))
 cat("\n")
 cat("###################################################################\n\n")
 
@@ -95,19 +101,55 @@ anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   ungroup() %>% 
   mutate(new_cluster_id = as.numeric(factor(cluster_id, levels = unique(cluster_id)))) %>% 
   ungroup() %>% group_by(new_cluster_id) %>%
-  arrange(new_cluster_id, desc(effect_size_bin)) %>% # changed from desc(effect_size_bin * number_nonzero_samples)
+  arrange(new_cluster_id, desc(effect_size_bin)) %>% 
   ungroup() %>% select(new_cluster_id, anchor)
 
 # keep only one anchor per cluster (the one with the highest effect size)
-cat("Keeping only one anchor per cluster\n")
-anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
+one_anchor_per_cluster <- anchor_clusters_with_stats %>%
   group_by(new_cluster_id) %>%
-  slice(1) %>%
+  dplyr::slice(1) %>%
   ungroup()
+
+# now that we have the new clusters and their representative (seed) anchors, 
+# we can filter out the anchors in each cluster that are too far away from the seed anchor
+representative_anchors <- one_anchor_per_cluster$anchor
+
+# separate the anchor cluster df into a list of dfs, one per cluster
+all_anchor_sets <- anchor_clusters_with_stats %>%
+  group_split(new_cluster_id, .keep = T)
+
+# define a function to return only the anchors that are within a certain distance of the representative anchor
+distance_filter <- function(anchor_set, representative_anchor, distance_metric, distance_threshold=5) {
+  if (distance_metric == "lev") {
+    lev_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "lv")
+    dist_filter <- as.logical(lev_dist <= distance_threshold)
+    anchor_set <- anchor_set[dist_filter,]
+    return(anchor_set)
+  } else if (distance_metric == "ham") {
+    ham_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "hamming")
+    dist_filter <- as.logical(ham_dist <= distance_threshold)
+    anchor_set <- anchor_set[dist_filter,]
+    return(anchor_set)
+  } else {
+    stop("Distance metric not recognized")
+  }
+}
+
+
+# apply the distance filter to each cluster
+cat("Applying the distance filter to each cluster\n")
+cat("Using the ", opt$distance_metric, " distance metric\n")
+filtered_anchor_sets <- future_map2(all_anchor_sets, representative_anchors, 
+                                    \(x, y) distance_filter(x, y, opt$distance_metric, 
+                                                            distance_threshold=5))
+
+# combine the filtered anchor sets into a single df
+filtered_anchor_clusters <- bind_rows(filtered_anchor_sets) %>% 
+  arrange(new_cluster_id)
 
 # write out the new anchor clusters file
 cat("Writing out the new anchor clusters file\n")
-write_tsv(anchor_clusters_with_stats, opt$output, col_names = F, quote="none")
+write_tsv(filtered_anchor_clusters, opt$output, col_names = F, quote="none")
 
 cat("Done!\n")
 

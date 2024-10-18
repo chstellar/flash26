@@ -29,7 +29,7 @@ DATASETS = list(metadata_table.index)
 #DATASETS = ["eFaecium-CollEtAl"]
 SELECT_TYPES = ["filter1", "filter2", "filter3"]
 #SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant"]
+CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [4000]
 KMER_WIDTH = [54]
@@ -104,12 +104,15 @@ rule cluster_anchors:
     """
     This rule clusters the selected anchors based on the selected clustering method (cluster_type)
     New scripts that cluster the anchors can be added to the config file under the "cluster_script" key
+    This rule has a mix of R and Python code, so it is necessary to load all appropriate modules
+    The call to the python or Rscript is stored in the config file under the "cluster_script" key
     """
     input:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     params:
         script = lambda wildcards: Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
-        python_env = Path(config["envs"]["default_python"])
+        python_env = Path(config["envs"]["default_python"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
     threads: 4
     resources:
         # dynamically allocate memory based on the attempt
@@ -118,9 +121,10 @@ rule cluster_anchors:
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
     shell:"""
+        ml R/4.3.2
         ml python/3.9.0
         source {params.python_env}
-        python {params.script} --input {input} --output {output}
+        {params.script} --input {input} --output {output} --temp_dir {params.tmp_dir}
     """
 
 
@@ -137,12 +141,14 @@ rule reorder_clusters:
     params:
         script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
+    threads: 4
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --input_anchor_clusters {input.clusters} \
-        --splash_stats {input.splash_results} --output {output} --temp_dir {params.tmp_dir}
+        --splash_stats {input.splash_results} --output {output} --temp_dir {params.tmp_dir} \
+        --num_cores {threads}
     """
 
 rule select_N_clusters:

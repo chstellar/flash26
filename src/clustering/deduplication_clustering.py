@@ -27,6 +27,12 @@ def parse_args():
         default=5,
         help="Maximum number of bases that sequences can be shifted and considered in the same cluster",
     )
+    parser.add_argument(
+        "--temp_dir",
+        type=str,
+        default="",
+        help="Directory to store temporary files. Unnecessary for this script",
+    )
     return parser.parse_args()
 
 
