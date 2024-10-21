@@ -81,6 +81,7 @@ install.packages("optparse")
 install.packages("furrr")
 install.packages("caret")
 install.packages("resample")
+install.packages("mltools")
 
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")

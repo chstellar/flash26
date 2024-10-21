@@ -73,6 +73,16 @@ rule all:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP),
+        # all ohe glmnet results
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
 
 
 rule choose_anchors:
@@ -341,6 +351,44 @@ rule run_glmnet:
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} \
+        --metadata {input.metadata} --output_prefix {params.output_prefix} \
+        --even_classes
+    """
+
+
+rule prepare_data_for_glmnet_ohe:
+    input:
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv")
+    params:
+        script = Path(config["scripts"]["format_sequences_ohe"]),
+        kmer_width = lambda wildcards: wildcards.kmer_width,
+        kmer_step = lambda wildcards: wildcards.kmer_step
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+    threads: 4
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --input {input} --output {output} --kmer_width {params.kmer_width}
+    """
+
+rule run_glmnet_ohe:
+    input:
+        features = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
+    params:
+        script = Path(config["scripts"]["glmnet_script"]),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_glmnet_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+    threads: 16
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
+        time = "4:00:00"
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --embeddings {input.features} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
         --even_classes
     """
