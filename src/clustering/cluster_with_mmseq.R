@@ -57,7 +57,7 @@ mmseqs_cmd <- paste(opt$mmseqs, "easy-cluster",
                     paste(mmseqs_temp, "cluster", sep="_"),
                     mmseqs_temp)
 
-system(mmsegs_cmd)
+system(mmseqs_cmd)
 
 # read in the mmseqs output and write it out as a temporary tsv file
 mmseqs_out <- file.path(temp_dir, "mmseqs_temp_cluster_cluster.tsv")
@@ -65,7 +65,9 @@ clusters <- fread(mmseqs_out, header=F, col.names = c("rep", "seq"))
 
 # group by the representatives and add a unique group id column for each cluster
 clusters <- clusters %>% group_by(rep) %>% 
-  mutate(cluster_id=cur_group_id())
+  mutate(cluster_id=cur_group_id()) %>% 
+  mutate(cluster_id = cluster_id - 1) %>%
+  arrange(cluster_id) %>% ungroup()
 
 # write out the clusters as a tsv file
 clusters %>% select(cluster_id, seq) %>% write_tsv(opt$output, col_names=FALSE, quote="none")

@@ -23,7 +23,7 @@ scripts:
     shiftDist-levFilter: src/clustering/filter_clusters_by_distance.R
     mmseqs-levFilter: src/clustering/filter_clusters_by_distance.R
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
-  prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
+  prepare_sequences: src/process_seqs/process_splash_data_for_embedding_align_clusters.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py
   translate_script: src/process_seqs/translate_fasta.py
   extract_embeddings: src/esm_utils/extract_embeddings_from_torch_objects.py
