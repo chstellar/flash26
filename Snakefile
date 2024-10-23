@@ -358,7 +358,7 @@ rule run_glmnet:
 
 rule prepare_data_for_glmnet_ohe:
     input:
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv")
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["format_sequences_ohe"]),
         kmer_width = lambda wildcards: wildcards.kmer_width,

@@ -28,4 +28,5 @@ scripts:
   translate_script: src/process_seqs/translate_fasta.py
   extract_embeddings: src/esm_utils/extract_embeddings_from_torch_objects.py
   format_embeddings_variance: src/glmnet/grab_top_embeddings_by_variance.R
+  format_sequences_ohe: src/process_seqs/one_hot_encode_anchor_clusters.R
   glmnet_script: src/glmnet/embeddings_glmnet.R

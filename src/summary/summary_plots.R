@@ -66,3 +66,32 @@ p <- data %>% ggplot(aes(x=paramater_set, y=accuracy)) +
 # save the plot (with height scaled to the number of metadata categories)
 num_metadata <- data %>% distinct(metadata) %>% nrow()
 ggsave(opt$output, height=ifelse(num_metadata<10, 10, 2*num_metadata), width=10, plot=p)
+
+
+
+## plot all data in one plot
+load_cmd <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*_nonzero_coefficients.tsv")
+data <- fread(cmd=load_cmd, header=FALSE, sep="\t", 
+              col.names = c("path_metadata", "feature", "accuracy",
+                            "sensitivity", "specificity", "classes", "coefficients"))
+
+load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
+data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
+              col.names = c("path_metadata", "feature", "accuracy",
+                            "sensitivity", "specificity", "classes", "coefficients"))
+data <- rbind(data,data2)
+data <- data %>% 
+  distinct(path_metadata, .keep_all = T) %>%
+  separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
+  select(path, metadata, accuracy, sensitivity, specificity)
+
+
+# extract the dataset name from the path
+data <- data %>% mutate(path=dirname(gsub("^results/", "", path))) %>%
+  mutate(path=gsub("/","_",path)) %>%
+  rename(paramater_set=path)
+data <- data %>% mutate(paramater_set=str_replace(paramater_set, "_", "/")) %>% 
+  separate(paramater_set, into=c("dataset", "paramater_set"), sep="/")
+
+data %>% ggplot(aes(x=dataset, y=accuracy)) + geom_point(position="jitter") + geom_boxplot(aes(fill=dataset)) + 
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + coord_cartesian(ylim=c(0,1))
