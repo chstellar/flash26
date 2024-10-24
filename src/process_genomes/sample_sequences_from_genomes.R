@@ -70,32 +70,67 @@ if (!file.exists(anchor_filter)) {
 genome_files <- list.files(opt$genome_files, pattern = ".fna|.fasta|.fa", full.names = T)
 genome_files <- genome_files[basename(tools::file_path_sans_ext(genome_files)) %in% fread(opt$genome_list, header=F, col.names=c("genome"))$genome]
 genome_files <- data.frame(genome=genome_files) %>% 
-  mutate(genome_dump = gsub(".[fastan]+", ".satc.dump", 
-                          file.path(opt$temp_dir, 'dumped', basename(genome_file))))
-system(paste("mkdir -p", file.path(opt$temp_dir, "dumped")))
+  mutate(genome_name=tools::file_path_sans_ext(basename(genome)),
+         genome_capitalized=file.path(temp_dir, "capitalized", basename(genome)),
+         genome_oneline=file.path(temp_dir, "oneline", basename(genome)),
+         genome_satc = gsub("\\.[fastan]+", ".satc", 
+                            file.path(temp_dir, 'satc', basename(genome))),
+         genome_dump = gsub("\\.[fastan]+", ".satc.dump", 
+                          file.path(temp_dir, 'dumped', basename(genome))))
+
+system(paste("mkdir -p", file.path(temp_dir, "capitalized")))
+system(paste("mkdir -p", file.path(temp_dir, "oneline")))
+system(paste("mkdir -p", file.path(temp_dir, "satc")))
+system(paste("mkdir -p", file.path(temp_dir, "dumped")))
 
 # declare a satc file for the output of all the dump files
 all_genome_file <- file.path(opt$temp_dir, "all_satc_merged.txt")
 
 if (!file.exists(all_genome_file)) {
-  # dump the satc files
-  future_walk2(genome_files$genome, satc_files$genome_dump, \(x,y) system(
+  # first process all of the genomes through Biostrings and rewrite them out to file
+  future_walk2(genome_files$genome, genome_files$genome_capitalized, \(x,y) {
+    Biostrings::readDNAStringSet(x) %>% Biostrings::writeXStringSet(y)
+  })
+  
+  # next make each of the fasta entries occur on only one line 
+  future_walk2(genome_files$genome_capitalized, genome_files$genome_oneline, \(x,y) {
+    system(paste0("awk '/^[>;]/ { if (seq) { print seq }; ", 'seq=""; ' ,"print } /^[^>;]/ { seq = seq $0 } END { print seq }' ", 
+                  x, " > ", y))
+  })
+
+
+
+  # fafq filter the fasta files
+  future_walk2(genome_files$genome_oneline, genome_files$genome_satc, \(x,y) system(
     paste0(file.path(opt$satc_util_bin, "fafq_filter"), " -i ", x, " -o ", y, 
            " -d ", anchor_filter,
            " -n 2 --anchor_len 27 --target_len 27")))
   
+  # dump the satc files
+  future_walk2(genome_files$genome_satc, genome_files$genome_dump, \(x,y) system(
+    paste0(file.path(opt$satc_util_bin, "satc_dump "), x, " ", y)
+  ))
+  
   # merge them into one file
-  walk(genome_files$genome_dump, \(x) system(paste("cat", x, ">>", all_genome_file)))
+  walk2(genome_files$genome_dump, genome_files$genome_name, \(x,y) system(
+    paste0("cut -f2,3,4 ", x, " | sed 's/^/", y, "\t/g' >> ", all_genome_file)
+  ))
   
   # remove any lines that start or end in [ACTG]
   system(paste("grep -v '^[ACTG]' ", all_genome_file, " | grep -v '[ACTG]$' > ", 
                file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt")))
   system(paste("mv", file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt"), all_genome_file))
+  
+  system(paste("rm -r", file.path(temp_dir, "capitalized")))
+  system(paste("rm -r", file.path(temp_dir, "oneline")))
+  system(paste("rm -r", file.path(temp_dir, "satc")))
+  system(paste("rm -r", file.path(temp_dir, "dumped")))
 }
 
 # read in the dumped satc file
 satc_dt <- fread(all_genome_file, header=F,
-                 col.names=c("sample", "anchor", "target", "count"))
+                 col.names=c("sample", "anchor", "target", "count"),
+                 colClasses=c("character", "character", "character", "integer"))
 
 # grab the top anchor per cluster as a representative anchor
 representative_anchors <- anchor_clusters %>% group_by(cluster_id) %>% 

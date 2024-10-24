@@ -151,11 +151,11 @@ rule reorder_clusters:
     params:
         script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
-    threads: 8
+    threads: 16
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
-        time = "3:00:00"
+        time = "5:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     shell:"""
@@ -370,6 +370,10 @@ rule prepare_data_for_glmnet_ohe:
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
     threads: 4
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        time = "3:00:00"
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} --kmer_width {params.kmer_width}
