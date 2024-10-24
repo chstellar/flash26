@@ -1,6 +1,7 @@
 # main files
 data_table: dataset_table.csv
 temp_dir: /scratch/users/dcotter1/metaSPLASH_workflows
+splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.6.1/
 
 # path to directory with genomes
 genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes

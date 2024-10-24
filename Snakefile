@@ -66,7 +66,7 @@ rule all:
                FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) ,
         # all kmer mapping to clusters files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
-                    "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+                    "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
@@ -560,4 +560,28 @@ rule run_glmnet_genomes:
         Rscript --vanilla {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
         --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
         --even_classes
+    """
+
+
+rule annotate_clusters:
+    """
+    Annotate the clusters with the lookup table
+    NEED to add in code to clean up the output
+    """
+    input:
+        cluster_seqs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        lookup_table = config["lookup_table_for_annotation"]
+    params:
+        script = config["scripts"]["annotate_clusters"],
+        python_env = config["envs"]["default_python"],
+        temp_dir = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}"),
+        splash_bin = config["splash_bin"]
+    threads: 4
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
+    shell:"""
+        ml python/3.9.0
+        source {params.python_env}
+        python {params.script} --cluster_seqs {input.cluster_seqs} --lookup_table {input.lookup_table} \
+        --output {output} --temp_dir {params.temp_dir} --splash_bin {params.splash_bin} 
     """
