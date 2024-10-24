@@ -3,7 +3,7 @@ data_table: dataset_table.csv
 temp_dir: /scratch/users/dcotter1/metaSPLASH_workflows
 
 # path to directory with genomes
-genome_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
+genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
 
 # set paths to python venvs
 envs:
