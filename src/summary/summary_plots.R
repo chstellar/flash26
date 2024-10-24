@@ -92,6 +92,11 @@ data <- data %>% mutate(path=dirname(gsub("^results/", "", path))) %>%
   rename(paramater_set=path)
 data <- data %>% mutate(paramater_set=str_replace(paramater_set, "_", "/")) %>% 
   separate(paramater_set, into=c("dataset", "paramater_set"), sep="/")
+data <- data %>% mutate(model=ifelse(grepl("esm_normalized", paramater_set), yes="esm_normalized", no=
+                               ifelse(grepl("esm_unnormalized", paramater_set), yes="esm_unnormalized", no="ohe"))) %>% arrange(desc(model))
 
-data %>% ggplot(aes(x=dataset, y=accuracy)) + geom_point(position="jitter") + geom_boxplot(aes(fill=dataset)) + 
-  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + coord_cartesian(ylim=c(0,1))
+data <- data %>% mutate(filter = str_extract(paramater_set, "(filter\\d)_",group=1)) %>% 
+  mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-]+)_", group=1))
+
+data %>% ggplot(aes(x=dataset, y=accuracy)) + geom_boxplot(aes(fill=cluster_approach)) + 
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + scale_color_brewer(type="qual") + scale_fill_brewer(type="qual")
