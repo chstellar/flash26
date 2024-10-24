@@ -16,26 +16,28 @@ def parse_args():
     parser.add_argument(
         "-t",
         "--translation_table",
+        default=11,
         type=int,
         help="Translation table to use for translating nucleotide sequences to amino acid sequences.",
     )
     parser.add_argument(
-        "input_file",
+        "--input",
         type=str,
         help="Input FASTA file containing nucleotide sequences to be translated and clustered.",
     )
     parser.add_argument(
-        "output_file",
+        "--output",
         type=str,
         help="Output file reporting input, output, AA sequences and their cluster IDs.",
     )
     parser.add_argument(
-        "strand",
+        "--strand",
+        default="sense",
         type=str,
         help="Strandedness of input sequences; options: [ sense , antisense , both ].",
     )
     parser.add_argument(
-        "work_directory",
+        "--temp_dir",
         type=str,
         help="This folder will be created and moved-to.",
     )
@@ -43,14 +45,14 @@ def parse_args():
 
 args = parse_args()
 
-os.system('rm -r '+ args.work_directory)
-os.mkdir(args.work_directory)
-os.chdir(args.work_directory)
+os.system('rm -r '+ args.temp_dir)
+os.mkdir(args.temp_dir)
+os.chdir(args.temp_dir)
 
 """
 Load FASTA.
 """
-input_file = pd.read_csv(args.input_file,header=None)
+input_file = pd.read_csv(args.input,header=None)
 input_file = input_file[input_file[0].str[0]!='>']\
     .reset_index(drop=True)\
     .rename(columns={0:'from_nt'})
@@ -205,4 +207,4 @@ record = record.reset_index(drop=True)
 record = record[['cluster_id','from_nt']]
 
 # write to file Drop headers
-record.to_csv(args.output_file,header=False,index=False,sep='\t')
+record.to_csv(args.output,header=False,index=False,sep='\t')

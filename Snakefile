@@ -29,7 +29,7 @@ DATASETS = list(metadata_table.index)
 #DATASETS = ["eFaecium-CollEtAl"]
 SELECT_TYPES = ["filter1", "filter2", "filter3"]
 #SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter"]
+CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter", "translated-clusters-levFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [4000]
 KMER_WIDTH = [54]
@@ -151,7 +151,11 @@ rule reorder_clusters:
     params:
         script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
-    threads: 4
+    threads: 8
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        time = "3:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     shell:"""
