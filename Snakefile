@@ -400,3 +400,164 @@ rule run_glmnet_ohe:
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
         --even_classes
     """
+
+
+rule process_genome_to_sample_sequences:
+    """
+    This rule processes the genome sequences to produce a test set of sample sequences
+    Takes in a clustered set of anchors and produces a fasta file with the sample sequences
+    """
+    input:
+        cluster_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
+        genome_list = lambda wildcards: metadata_table.loc[wildcards.dataset, "genome_list"],
+        genome_files = config["genomes_dir"]
+    params:
+        script = Path(config["scripts"]["genome_to_sample_sequences"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "genomes"),
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_genomes"),
+    threads:
+        16
+    resources:
+        # 128 GB of memory
+        mem_mb = 128000
+    output:
+        fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.fasta"),
+        tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.tsv")
+    shell:"""
+        Rscript --vanilla {params.script} --cluster_file {input.cluster_file} \
+        --genome_list {input.genome_list} --genome_files {input.genome_files} \
+        --output_prefix {params.output_prefix} --temp_dir {params.tmp_dir} \
+        --num_cores {threads}
+    """
+
+rule decompose_kmers_genomes:
+    """
+    Process the genome sample sequences to decompose them into kmers of width kmer_width and step kmer_step.
+    The outputs are 1) a fasta file with the unique kmers and 2) a tsv file with the ordering of the kmers
+    for each sample.
+    """
+    input:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.fasta")
+    params:
+        script = Path(config["scripts"]["decompose_kmers"]),
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_genomes_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
+        kmer_width = lambda wildcards: wildcards.kmer_width,
+        kmer_step = lambda wildcards: wildcards.kmer_step,
+        python_env = Path(config["envs"]["default_python"])
+    output:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 16000 + ((attempt - 1) * 16000),
+        time = "3:00:00"
+    shell:"""
+        ml python/3.9.0
+        source {params.python_env}
+        python {params.script} -k {wildcards.kmer_width} -s {wildcards.kmer_step} \
+        {input} {params.output_prefix}
+    """
+
+rule translate_kmers_ESM_genomes:
+    """
+    This rule translates the kmers from genome sequences using a provided genetic code so that they can be fed into the
+    ESM2 model (or any other protein-based language model).
+    """
+    input:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
+    params:
+        script = Path(config["scripts"]["translate_script"]),
+        translation_table = lambda wildcards: metadata_table.loc[wildcards.dataset, "translation_table"],
+        python_env = Path(config["envs"]["default_python"])
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
+    shell:"""
+        ml python/3.9.0
+        source {params.python_env}
+        python {params.script} -t {params.translation_table} {input} {output}
+    """
+
+rule embed_kmers_ESM_genomes:
+    """
+    This rule embeds the TRANSLATED kmers from genome sequences into a pre-trained language model to get averaged embeddings 
+    for each kmer. Downstream, these kmers are recombined into their order and used as features
+    to predict on the metadata.
+    """
+    input:
+        translated_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+    params:
+        torch_dir = Path(TEMP_DIR, "torch_cache"),
+        extract_embeddings = Path(config["scripts"]["extract_embeddings"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, "esm_embeddings", "raw_embeddings"),
+        python_env = Path(config["envs"]["esm_env"])
+    threads: 8
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 32000,
+        partition = "gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_esm-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+        ml python/3.9.0
+        source {params.python_env}
+        export TORCH_HOME={params.torch_dir}
+        esm-extract esm2_t33_650M_UR50D {input} {params.tmp_dir} --include mean per_tok
+        python {params.extract_embeddings} {params.tmp_dir} {output}
+    """
+
+rule prepare_data_for_glmnet_genomes:
+    """
+    Use a specific script to take in the feather object for the original embeddings and process the 
+    genome embeddings to produce a matching feather object for the glmnet model
+    """
+    input:
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv"),
+        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
+        original_embeddings_feather = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    params:
+        script = Path(config["scripts"]["format_embeddings_genomes"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
+        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
+    threads: 32
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 64000),
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} --original_embeddings {input.original_embeddings_feather} \
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} {params.normalized_flag} 
+    """
+
+rule run_glmnet_genomes:
+    """
+    Take in main embeddings as train and genome embeddings as test plus both of their metadata files
+    and run the glmnet script
+    """
+    input:
+        train_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        train_metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
+        test_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        test_metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "genome_metadata_file"]
+    params:
+        script = Path(config["scripts"]["glmnet_genomes_script"]),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_glmnet_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+    threads: 16
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
+        time = "4:00:00"
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
+        --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
+        --even_classes
+    """

@@ -1,5 +1,9 @@
+# main files
 data_table: dataset_table.csv
 temp_dir: /scratch/users/dcotter1/metaSPLASH_workflows
+
+# path to directory with genomes
+genome_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
 
 # set paths to python venvs
 envs:
@@ -32,3 +36,6 @@ scripts:
   format_embeddings_variance: src/glmnet/grab_top_embeddings_by_variance.R
   format_sequences_ohe: src/process_seqs/one_hot_encode_anchor_clusters.R
   glmnet_script: src/glmnet/embeddings_glmnet.R
+  genome_to_sample_sequences: src/process_genomes/sample_sequences_from_genomes.R
+  format_embeddings_genomes: src/process_genomes/grab_overlapping_features.R
+  glmnet_genomes_script: src/glmnet/train_and_test_glmnet.R
