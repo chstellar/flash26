@@ -17,10 +17,10 @@ suppressPackageStartupMessages(library(optparse))
 ## parse arguments --------
 # define command line arguments
 option_list <- list(
-  make_option(c("-m", "--train_metadata"), help="train Metadata file", type="character"),
-  make_option(c("-m", "--test_metadata"), help="test Metadata file", type="character"),
-  make_option(c("--train_embeddings"), help="Train sequences embeddings file", type="character"),
-  make_option(c("--test_embeddings"), help="Test sequences embeddings file", type="character"),
+  make_option(c("--train_metadata"), help="train Metadata file", type="character"),
+  make_option(c("--test_metadata"), help="test Metadata file", type="character"),
+  make_option(c("--train_features"), help="Train sequences embeddings file", type="character"),
+  make_option(c("--test_features"), help="Test sequences embeddings file", type="character"),
   make_option(c("-p", "--output_prefix"), help="Output prefix.", type="character"),
   make_option(c("-s", "--min_samples_per_category"), help="Minimum number of samples per metadata category", 
               type="integer", default = 30),
@@ -34,7 +34,7 @@ setDTthreads(threads=0L)
 opt <- parse_args(OptionParser(option_list = option_list))
 
 # check that user specified all files
-if (!file.exists(opt$metadata) | !file.exists(opt$train_embeddings) | !file.exists(opt$test_embeddings) | is.null(opt$output_prefix)) {
+if (!file.exists(opt$train_metadata) | !file.exists(opt$train_features) | !file.exists(opt$test_metadata) | !file.exists(opt$test_features) | is.null(opt$output_prefix)) {
   stop("Must provide metadata, train embeddings, test_embeddings, and output prefix")
 }
 
@@ -48,15 +48,15 @@ coefficients_out = paste0(opt$output_prefix, "_nonzero_coefficients.tsv")
 confusion_matrix_out = paste0(opt$output_prefix, "_confusion_matrices.pdf")
 min_num_per_category = opt$min_samples_per_category
 
-## print a summary of the arguments
-cat("\n####################\n")
-cat("Running glmnet_on_embeddings_PCs.R with the following arguments:\n")
-cat("Metadata file: ", opt$metadata, "\n")
-cat("Embeddings file: ", opt$embeddings, "\n")
-cat("Output coefficients: ", coefficients_out, "\n")
-cat("Output confusion matrices: ", confusion_matrix_out, "\n")
-cat("Min number of samples per metadata label: ", min_num_per_category, "\n")
-cat("####################\n\n")
+# ## print a summary of the arguments
+# cat("\n####################\n")
+# cat("Running glmnet_on_embeddings_PCs.R with the following arguments:\n")
+# cat("Metadata file: ", opt$metadata, "\n")
+# cat("Embeddings file: ", opt$train_features, "\n")
+# cat("Output coefficients: ", coefficients_out, "\n")
+# cat("Output confusion matrices: ", confusion_matrix_out, "\n")
+# cat("Min number of samples per metadata label: ", min_num_per_category, "\n")
+# cat("####################\n\n")
 
 ## load data --------
 # load metadata
@@ -99,26 +99,28 @@ cat("Using the following metadata labels:\n\t", paste(metadata_labels, collapse 
 
 # load embeddings
 cat("\nLoading embeddings...\n")
-if (grepl(".feather", opt$embeddings)) {
+if (grepl(".feather", opt$train_features)) {
   cat("Using feather to read data frame...\n")
-  main_dt <- feather::read_feather(opt$embeddings)
-  # system(paste("rm", opt$embeddings))
+  main_dt <- feather::read_feather(opt$train_features)
+  # system(paste("rm", opt$train_features))
 } else {
   cat("Using fread to read in embeddings...\n")
-  main_dt <- fread(opt$embeddings, header=T)
+  main_dt <- fread(opt$train_features, header=T)
 }
 
 # load test embeddings
 cat("Loading test embeddings...\n")
-if (grepl(".feather", opt$test_embeddings)) {
+if (grepl(".feather", opt$test_features)) {
   cat("Using feather to read data frame...\n")
-  test_dt <- feather::read_feather(opt$test_embeddings)
-  # system(paste("rm", opt$test_embeddings))
+  test_dt <- feather::read_feather(opt$test_features)
+  # system(paste("rm", opt$test_features))
 } else {
   cat("Using fread to read in embeddings...\n")
-  test_dt <- fread(opt$test_embeddings, header=T)
+  test_dt <- fread(opt$test_features, header=T)
 }
 
+test_metadata <- fread(opt$test_metadata, header=T)
+test_dt <- test_dt %>% left_join(test_metadata, by="sample_name")
 
 ## Fit all glmnet models --------
 all_coef <- NULL
