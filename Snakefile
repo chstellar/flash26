@@ -538,6 +538,24 @@ rule embed_kmers_ESM_genomes:
         python {params.extract_embeddings} {params.tmp_dir} {output}
     """
 
+rule embed_kmers_hyena_genomes:
+    input:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+    params:
+        script = config["scripts"]["embed_kmers_hyena"]
+    threads: 8
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 32000,
+        partition = "gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+        bash {params.script} {input.unique_kmers} {output}
+    """
+
 rule prepare_data_for_glmnet_genomes:
     """
     Use a specific script to take in the feather object for the original embeddings and process the 
