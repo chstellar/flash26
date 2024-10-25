@@ -203,7 +203,7 @@ for (i in metadata_labels) {
     filter(!is.na(class))
   
   cat("Testing on " , nrow(test), " genomes.\n")
-  X_test <- as.matrix(test[, -c("sample_name", "class")])
+  X_test <- as.matrix(test %>% select(-c("sample_name", "class")))
   y_test <- test$class
   y_pred <- predict(fit, X_test, s="lambda.min", type="class")
   
