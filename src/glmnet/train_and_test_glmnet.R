@@ -119,7 +119,7 @@ if (grepl(".feather", opt$test_features)) {
   test_dt <- fread(opt$test_features, header=T)
 }
 
-test_metadata <- fread(opt$test_metadata, header=T)
+test_metadata <- fread(opt$test_metadata, header=T, colClasses = c("sample_name"="character"))
 test_dt <- test_dt %>% left_join(test_metadata, by="sample_name")
 
 ## Fit all glmnet models --------
