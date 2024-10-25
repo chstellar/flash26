@@ -20,6 +20,7 @@ scripts:
     filter1: src/anchor_selection/select_anchors_filter1.R # arrange by nonzero samples then head
     filter2: src/anchor_selection/select_anchors_filter2.R # arrange by effect size then head
     filter3: src/anchor_selection/select_anchors_filter3.R # arrange by effect size * nonzero samples then head (see README for details)
+    filter4: src/anchor_selection/select_anchors_filter4.R # only care about effect size (DO NOT lookup filter)
   cluster_script: 
     shiftDist-keepTopES: 'python src/clustering/deduplication_clustering.py'
     shiftDist-keepMostAbundant: 'python src/clustering/deduplication_clustering.py'

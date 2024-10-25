@@ -27,14 +27,14 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
 #DATASETS = ["eFaecium-CollEtAl"]
-SELECT_TYPES = ["filter1", "filter2", "filter3"]
+SELECT_TYPES = ["filter1", "filter2", "filter3", "filter4"]
 #SELECT_TYPES = ["filter1"]
 CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter", "translated-clusters-levFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [4000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
-MODELS = ["esm"]
+MODELS = ["esm", "hyena"]
 NORMALIZE = ["normalized", "unnormalized"]
 
 ## constrain the wildcards of the pipeline
