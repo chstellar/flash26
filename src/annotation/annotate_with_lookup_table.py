@@ -73,7 +73,7 @@ def main():
     final_output_file = args.output
     temp_fasta_file = os.path.join(args.temp_dir, 'temp.fasta')
     lookup_table_output = os.path.join(args.temp_dir, 'lookup_table_output.txt')
-    lookup_table_tool = args.lookup_table_tool
+    splash_bin = args.splash_bin
     
     # create the temp dir if it doesn't exist
     if not os.path.exists(args.temp_dir):
@@ -83,7 +83,7 @@ def main():
     create_temp_fasta(cluster_file, temp_fasta_file)
 
     # run lookup table on the temp fasta file
-    run_lookup(temp_fasta_file, lookup_table, lookup_table_output, lookup_table_tool)
+    run_lookup(temp_fasta_file, lookup_table, lookup_table_output, splash_bin)
 
     # merge the original cluster file with the output of the lookup table
     merge_results(cluster_file, lookup_table_output, final_output_file)

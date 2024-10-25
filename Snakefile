@@ -82,6 +82,17 @@ rule all:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
+                    "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eColi-arcadia-amr"],
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
                FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
 
 
@@ -530,7 +541,7 @@ rule prepare_data_for_glmnet_genomes:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
         ml R/4.3.2
-        Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} --original_embeddings {input.original_embeddings_feather} \
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} --original_feather {input.original_embeddings_feather} \
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} {params.normalized_flag} 
     """
 
@@ -574,7 +585,7 @@ rule annotate_clusters:
     params:
         script = config["scripts"]["annotate_clusters"],
         python_env = config["envs"]["default_python"],
-        temp_dir = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}"),
+        temp_dir = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}"),
         splash_bin = config["splash_bin"]
     threads: 4
     output:

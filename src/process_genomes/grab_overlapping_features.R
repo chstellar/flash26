@@ -119,7 +119,7 @@ original_dt <- feather::read_feather(opt$original_feather)
 original_cols <- colnames(original_dt)
 
 # loop through the cluster files and grab columns that match the original column names
-grab_matching_columns <- function(in_file, num_cols, normalized, original_cols) {
+grab_matching_columns <- function(in_file, normalized, original_cols) {
   cluster_num = str_extract(in_file, "cluster_(\\d+).csv", group=1) %>% as.integer()
   temp_dt <- fread(in_file, header=T, nThread = 1) %>% select(sample_name, starts_with("embedding")) # first filter for only one cluster
   colnames(temp_dt) <- ifelse(grepl("embedding", colnames(temp_dt)),
@@ -138,7 +138,7 @@ grab_matching_columns <- function(in_file, num_cols, normalized, original_cols) 
 
 cat("Grabbing matching columns per cluster\n")
 top_col_dt <- future_map_dfc(cluster_files,
-                             \(x) grab_top_variance_columns(x, num_cols=opt$num_to_keep, normalized=opt$normalized_embeddings))
+                             \(x) grab_matching_columns(x, normalized=opt$normalized_embeddings, original_cols))
 
 # ensure the column names are in the same order as the original embeddings
 top_col_dt <- top_col_dt %>% select(all_of(original_cols))
