@@ -80,7 +80,7 @@ for (i in colnames(my_metadata %>% select(-sample_name))) {
 }
 
 # gather metadata labels from test metadata file
-test_metadata <- fread(opt$test_metadata, header =T)
+test_metadata <- fread(opt$test_metadata, header =T, colClasses = c("sample_name"="character"))
 test_metadata_labels <- NULL
 for (i in colnames(test_metadata %>% select(-sample_name))) {
   num_cats <- test_metadata %>% group_by(get(i)) %>% filter(n() > min_num_per_category) %>% 
@@ -92,6 +92,8 @@ for (i in colnames(test_metadata %>% select(-sample_name))) {
 
 # only use metadata labels that are present in both train and test metadata
 metadata_labels <- intersect(metadata_labels, test_metadata_labels)
+
+my_metadata <- my_metadata %>% mutate(across(-sample_name, \(x) tolower(x)))
 
 
 # print the metadata labels that are being used
@@ -118,9 +120,6 @@ if (grepl(".feather", opt$test_features)) {
   cat("Using fread to read in embeddings...\n")
   test_dt <- fread(opt$test_features, header=T)
 }
-
-test_metadata <- fread(opt$test_metadata, header=T, colClasses = c("sample_name"="character"))
-test_dt <- test_dt %>% left_join(test_metadata, by="sample_name")
 
 ## Fit all glmnet models --------
 all_coef <- NULL
@@ -173,11 +172,6 @@ for (i in metadata_labels) {
   cat("Data Breakdown...\n")
   print(dt[, .N, by=class])
   cat("\n\n")
-  # decide on the number of samples to keep in the training set
-  # such that the number of samples is approximately equal for each class
-  n_samples <- min(dt[, .N, by=class]$N)
-  n_train <- floor(n_samples * 0.5)
-  cat(paste("Training on", n_train, "samples per category.\n"))
   
   # use all samples for training
   train <- dt
@@ -201,7 +195,8 @@ for (i in metadata_labels) {
   cat("Using the model for lambda.min\n")
   
   # predict on test set
-  test <- test_dt %>% select(sample_name, all_of(metadata_label)) %>%
+  test <- test_dt %>% 
+    left_join(test_metadata %>% select(sample_name, all_of(metadata_label)), by="sample_name") %>%
     rename(class=all_of(metadata_label)) %>%
     mutate(class=ifelse(class=="", NA, class)) %>% 
     filter(!is.na(class))

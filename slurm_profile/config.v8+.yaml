@@ -15,8 +15,8 @@ default-resources:
   - partition="horence,normal"
   - mem_mb=4000
   - slurm_extra=""
-jobs: 200
-max-jobs-per-second: 50
+jobs: 500
+max-jobs-per-second: 60
 max-status-checks-per-second: 5
 restart-times: 2
 latency-wait: 60

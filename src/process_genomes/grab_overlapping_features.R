@@ -68,7 +68,7 @@ cat("####################\n\n")
 # load embeddings
 cat("\nLoading embeddings...\n")
 # copy the embeddings file to the temp directory to speed up I/O
-embeddings_temp <- file.path(temp_dir, "raw_embeddings_temp.tsv")
+embeddings_temp <- file.path(temp_dir, "genomes_raw_embeddings_temp.tsv")
 if (!file.exists(embeddings_temp)) {
   system(paste("cp", opt$embeddings, embeddings_temp))
 }
@@ -78,7 +78,7 @@ colnames(embeddings) <- c("kmer", paste0("embedding_", 1:(ncol(embeddings)-1)))
 # load the ordering file
 cat("Loading the ordering file...\n")
 # copy the ordering file to the temp directory to speed up I/O
-ordering_temp <- file.path(temp_dir, "ordering_temp.tsv")
+ordering_temp <- file.path(temp_dir, "genomes_ordering_temp.tsv")
 if (!file.exists(ordering_temp)) {
   system(paste("cp", opt$ordering, ordering_temp))
 }
@@ -96,7 +96,7 @@ join_and_write_clusters <- function(cluster_df, filename, all_embeddings) {
     select(-kmer) %>% fwrite(file=filename,nThread = 1,col.names = T)
 }
 
-temp_embeddings_dir <- file.path(temp_dir, "embeddings_per_cluster/")
+temp_embeddings_dir <- file.path(temp_dir, "genome_embeddings_per_cluster/")
 system(paste("mkdir -p", temp_embeddings_dir))
 cluster_files <- paste0(temp_embeddings_dir, "embeddings_cluster_", 0:(length(clusters)-1), ".csv")
 
