@@ -115,6 +115,7 @@ cat("Loading test embeddings...\n")
 if (grepl(".feather", opt$test_features)) {
   cat("Using feather to read data frame...\n")
   test_dt <- feather::read_feather(opt$test_features)
+  test_dt <- test_dt %>% mutate(sample_name=as.character(sample_name))
   # system(paste("rm", opt$test_features))
 } else {
   cat("Using fread to read in embeddings...\n")
