@@ -52,43 +52,44 @@ wildcard_constraints:
 ## Define the rules for the pipeline
 rule all:
     input:
-        # all nonzero coefficients files
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               model=MODELS,
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) ,
-        # all kmer mapping to clusters files
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
-                    "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP),
-        # all ohe glmnet results
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
+        # # all nonzero coefficients files
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+        #             "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+        #        dataset=DATASETS,
+        #        select_type=SELECT_TYPES,
+        #        cluster_type=CLUSTER_TYPES,
+        #        model=MODELS,
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP,
+        #        normalize=NORMALIZE,
+        #        FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) ,
+        # # all kmer mapping to clusters files
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
+        #             "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        #        dataset=DATASETS,
+        #        select_type=SELECT_TYPES,
+        #        cluster_type=CLUSTER_TYPES,
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP),
+        # # all ohe glmnet results
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+        #             "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+        #        dataset=DATASETS,
+        #        select_type=SELECT_TYPES,
+        #        cluster_type=CLUSTER_TYPES,
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP,
+        #        FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
+        # all genome coefficients files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
                     "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=["eColi-arcadia-amr"],
-               select_type=SELECT_TYPES,
+               select_type=["filter2"],
                cluster_type=CLUSTER_TYPES,
-               model=MODELS,
+               model=["esm"],
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
@@ -519,7 +520,7 @@ rule embed_kmers_ESM_genomes:
         torch_dir = Path(TEMP_DIR, "torch_cache"),
         extract_embeddings = Path(config["scripts"]["extract_embeddings"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
-                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, "esm_embeddings", "raw_embeddings"),
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, "esm_embeddings", "raw_genome_embeddings"),
         python_env = Path(config["envs"]["esm_env"])
     threads: 8
     resources:
@@ -573,7 +574,7 @@ rule prepare_data_for_glmnet_genomes:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 64000),
+        mem_mb = lambda _, attempt: 128000 + ((attempt - 1) * 64000),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
