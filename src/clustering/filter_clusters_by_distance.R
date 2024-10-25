@@ -139,6 +139,15 @@ distance_filter <- function(anchor_set, representative_anchor, distance_metric, 
 # apply the distance filter to each cluster
 cat("Applying the distance filter to each cluster\n")
 cat("Using the ", opt$distance_metric, " distance metric\n")
+
+# only apply the distance filter to the first 10000 clusters
+# this is to speed up the process
+max_anchor_clusters <- 10000
+max_anchor_clusters <- min(max_anchor_clusters, length(all_anchor_sets)) # make sure we don't go over the number of clusters
+all_anchor_sets <- all_anchor_sets[1:max_anchor_clusters]
+representative_anchors <- representative_anchors[1:max_anchor_clusters]
+
+
 filtered_anchor_sets <- future_map2(all_anchor_sets, representative_anchors, 
                                     \(x, y) distance_filter(x, y, opt$distance_metric, 
                                                             distance_threshold=5))
