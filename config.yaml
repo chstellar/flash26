@@ -46,3 +46,4 @@ scripts:
   format_embeddings_genomes: src/process_genomes/grab_overlapping_features.R
   glmnet_genomes_script: src/glmnet/train_and_test_glmnet.R
   annotate_clusters: src/annotation/annotate_with_lookup_table.py
+  merge_annotations: src/annotation/merge_coefs_with_annotations.R

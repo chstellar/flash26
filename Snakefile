@@ -52,37 +52,37 @@ wildcard_constraints:
 ## Define the rules for the pipeline
 rule all:
     input:
-        # # all nonzero coefficients files
-        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-        #             "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-        #        dataset=DATASETS,
-        #        select_type=SELECT_TYPES,
-        #        cluster_type=CLUSTER_TYPES,
-        #        model=MODELS,
-        #        num_clusters=NUM_CLUSTERS,
-        #        kmer_width=KMER_WIDTH,
-        #        kmer_step=KMER_STEP,
-        #        normalize=NORMALIZE,
-        #        FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]) ,
-        # # all kmer mapping to clusters files
-        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
-        #             "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        #        dataset=DATASETS,
-        #        select_type=SELECT_TYPES,
-        #        cluster_type=CLUSTER_TYPES,
-        #        num_clusters=NUM_CLUSTERS,
-        #        kmer_width=KMER_WIDTH,
-        #        kmer_step=KMER_STEP),
-        # # all ohe glmnet results
-        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-        #             "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-        #        dataset=DATASETS,
-        #        select_type=SELECT_TYPES,
-        #        cluster_type=CLUSTER_TYPES,
-        #        num_clusters=NUM_CLUSTERS,
-        #        kmer_width=KMER_WIDTH,
-        #        kmer_step=KMER_STEP,
-        #        FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
+        # all nonzero coefficients files
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+                    "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]) ,
+        # all kmer mapping to clusters files
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
+                    "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP),
+        # all ohe glmnet results
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
         # all genome coefficients files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
                     "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
@@ -633,4 +633,24 @@ rule annotate_clusters:
         source {params.python_env}
         python {params.script} --cluster_seqs {input.cluster_seqs} --lookup_table {input.lookup_table} \
         --output {output} --temp_dir {params.temp_dir} --splash_bin {params.splash_bin} 
+    """
+
+
+rule merge_annotations:
+    """
+    Merge the annotations for each cluster onto the non-zero coefficients file
+    """
+    input:
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_annotations"]
+    resources:
+        # 32 GB of memory
+        mem_mb = 32000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+    shell:"""
+    ml R/4.3.2
+    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
     """
