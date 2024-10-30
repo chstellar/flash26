@@ -13,6 +13,8 @@ suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(optparse))
 
+## set up parallel for cv.glmnet
+
 
 ## parse arguments --------
 # define command line arguments
@@ -23,11 +25,15 @@ option_list <- list(
   make_option(c("--test_features"), help="Test sequences embeddings file", type="character"),
   make_option(c("-p", "--output_prefix"), help="Output prefix.", type="character"),
   make_option(c("-s", "--min_samples_per_category"), help="Minimum number of samples per metadata category", 
-              type="integer", default = 30),
+              type="integer", default = 150),
   make_option(c("--even_classes"), help="Sample equal numbers of each class", action="store_true", default=FALSE)
 )
 
 setDTthreads(threads=0L)
+
+## set up parallel for cv.glmnet
+library(doMC)
+registerDoMC(cores = 6)
 
 
 # parse command line arguments
@@ -93,7 +99,10 @@ for (i in colnames(test_metadata %>% select(-sample_name))) {
 # only use metadata labels that are present in both train and test metadata
 metadata_labels <- intersect(metadata_labels, test_metadata_labels)
 
-my_metadata <- my_metadata %>% mutate(across(-sample_name, \(x) tolower(x)))
+my_metadata <- my_metadata %>% mutate(across(-sample_name, \(x) tolower(x))) %>%
+  mutate(across(-sample_name, \(x) gsub("\\*", "", x)))
+test_metadata <- test_metadata %>% mutate(across(-sample_name, \(x) tolower(x))) %>%
+  mutate(across(-sample_name, \(x) gsub("\\*", "", x)))
 
 
 # print the metadata labels that are being used
@@ -184,7 +193,7 @@ for (i in metadata_labels) {
   # fit glmnet
   cat("Fitting cv glmnet model...\n")
   time_fit <- Sys.time()
-  fit <- tryCatch(cv.glmnet(X, y, family="multinomial", type.measure="class"), error=function(e) NULL)
+  fit <- tryCatch(cv.glmnet(X, y, family="multinomial", type.measure="class",trace.it = TRUE), error=function(e) NULL)
   if (is.null(fit)) {
     fit <- tryCatch(cv.glmnet(X, y, family="multinomial", type.measure="class"), error=function(e) NULL)
   }
