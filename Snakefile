@@ -94,7 +94,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
 
 
 rule choose_anchors:
@@ -379,7 +379,7 @@ rule run_glmnet:
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
-        time = "4:00:00"
+        time = "24:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
@@ -421,7 +421,7 @@ rule run_glmnet_ohe:
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
-        time = "4:00:00"
+        time = "18:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
@@ -600,7 +600,7 @@ rule run_glmnet_genomes:
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
-        time = "4:00:00"
+        time = "24:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
@@ -626,6 +626,9 @@ rule annotate_clusters:
         temp_dir = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}"),
         splash_bin = config["splash_bin"]
     threads: 4
+    resources:
+        # 32 GB of memory
+        mem_mb = 32000
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
     shell:"""
@@ -650,6 +653,25 @@ rule merge_annotations:
         mem_mb = 32000
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+    shell:"""
+    ml R/4.3.2
+    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
+    """
+    
+rule merge_annotations_genomes:
+    """
+    Merge the annotations for each cluster onto the non-zero coefficients file
+    """
+    input:
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        coefficients = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_annotations"]
+    resources:
+        # 32 GB of memory
+        mem_mb = 32000
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
     shell:"""
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
