@@ -60,7 +60,7 @@ def run_lookup(anchor_fasta, lookup_file, output_file, splash_bin):
 
 def merge_results(cluster_file, lookup_table_file, output_file):
     df_cluster = pd.read_csv(cluster_file, sep='\t')
-    df_lookup = pd.read_csv(lookup_table_file, sep='\t')
+    df_lookup = pd.read_csv(lookup_table_file, sep='\t', names=["query", "stats"])
     # there is no common key but the order is the same
     df_merged = pd.merge(df_cluster, df_lookup, left_index=True, right_index=True)
     df_merged.to_csv(output_file, sep='\t', index=False)

@@ -1,6 +1,7 @@
 # Load necessary libraries
 library(optparse)
 library(data.table)
+library(tidyverse)
 
 # Define command line options
 option_list <- list(
@@ -24,16 +25,20 @@ if (is.null(opt$annotations) || is.null(opt$coefficients) || is.null(opt$output)
 
 # Read in the data
 annotations <- fread(opt$annotations, header = TRUE)
+
+flat_annotations <- annotations %>% 
+  mutate(summary = paste0("[[", kmer, ": ", seq, " : ", str_trunc(query,width=200,side="right",), " : ", stats, " ]]")) %>% 
+  group_by(cluster) %>% summarise(anno = str_c(summary, sep=";", collapse=";"))
 coefficients <- fread(opt$coefficients, header = TRUE)
 coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(cluster_\\d+)_", group = 1))
 
 # Merge the data on the 'cluster' column 
 # there may be multiple entries in annotations that match
 # in this case, the coefficients will be repeated for each match
-merged_data <- merge(annotations, coefficients, by = "cluster")
+merged_data <- left_join(coefficients, flat_annotations, by = "cluster")
 
 # Write the merged data to a new CSV file
-fwrite(merged_data, opt$output, row.names = FALSE)
+write_tsv(merged_data, opt$output, col_names = T, quote="needed")
 
 # Print a message indicating the script has finished
 cat("Merging complete. Output saved to", opt$output, "\n")
