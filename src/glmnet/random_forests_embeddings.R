@@ -1,9 +1,9 @@
-# embeddings_glmnet.R
+# random_forests_embeddings.R
 # Daniel Cotter
 # 2024-09-15
 
-# Take in a fully prepared embeddings file and metadata file and run glmnet
-# output a pdf of confusion matrices and a tsv of the non-zero coefficients
+# Take in a fully prepared embedding file and metadata file and run random forests
+# output a pdf of confusion matrices and a tsv of the feature importances
 
 
 ## import packages --------
@@ -13,6 +13,7 @@ suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(optparse))
 suppressPackageStartupMessages(library(feather))
+suppressPackageStartupMessages(library(randomForest))
 
 
 ## parse arguments --------
@@ -173,23 +174,27 @@ for (i in metadata_labels) {
   y <- train$class
   
   # fit glmnet
-  cat("Fitting cv glmnet model...\n")
-  time_fit <- Sys.time()
-  fit <- tryCatch(cv.glmnet(X, y, family="multinomial", type.measure="class"), error=function(e) NULL)
+  cat("Fitting random forests model...\n")
+  
+  fit <- tryCatch(randomForest(x = X, y = y, ntree=200,
+                               keep.forest = T, proximity = T), 
+                  error=function(e) NULL)
   if (is.null(fit)) {
-    fit <- tryCatch(cv.glmnet(X, y, family="multinomial", type.measure="class"), error=function(e) NULL)
+    fit <- tryCatch(randomForest(x = X, y = y, ntree=200,
+                                 keep.forest = T, proximity = T), 
+                    error=function(e) NULL)
   }
   if (is.null(fit)) {
-    cat("Error in glmnet after trying twice. Skipping...\n\n")
+    cat("Error in random forests after trying twice. Skipping...\n\n")
     next
   }
-  cat("Model fit in ", round(Sys.time() - time_fit, 2), " seconds.\n")
+
   cat("Using the model for lambda.min\n")
   
   # predict on test set
   X_test <- as.matrix(test[, -c("sample_name", "class")])
   y_test <- test$class
-  y_pred <- predict(fit, X_test, s="lambda.min", type="class")
+  y_pred <- predict(fit, X_test)
   
   # confusion matrix
   confusion_matrix <- table(y_test, y_pred)
@@ -208,19 +213,19 @@ for (i in metadata_labels) {
   # get the specificity (use a trycatch and return NA if there's an error)
   spec <- tryCatch(caret::specificity(confusion_matrix), error=function(e) NA)
   
-  # extract non-zero coefficients
-  coef <- coef(fit, s="lambda.min")
-  
-  # transform multinomial coefficients into data frame
-  coef_df <- map2_dfc(coef,names(coef), \(x,y) as.matrix(x) %>% as.data.frame() %>% setnames(y)) %>% 
-    rownames_to_column("feature") %>% 
-    unite("coefficients", -feature, sep=",") %>%
-    mutate(coefficients=paste0("[", coefficients, "]")) %>%
-    mutate(classes=paste0("[", paste(names(coef), collapse=","), "]")) %>%
-    mutate(metadata_category=metadata_label, accuracy = acc,
-           sensitivity=sens, specificity=spec) %>%
-    select(metadata_category, feature, accuracy,
-           sensitivity, specificity, classes, coefficients)
+  # # extract non-zero coefficients
+  # coef <- coef(fit, s="lambda.min")
+  # 
+  # # transform multinomial coefficients into data frame
+  # coef_df <- map2_dfc(coef,names(coef), \(x,y) as.matrix(x) %>% as.data.frame() %>% setnames(y)) %>% 
+  #   rownames_to_column("feature") %>% 
+  #   unite("coefficients", -feature, sep=",") %>%
+  #   mutate(coefficients=paste0("[", coefficients, "]")) %>%
+  #   mutate(classes=paste0("[", paste(names(coef), collapse=","), "]")) %>%
+  #   mutate(metadata_category=metadata_label, accuracy = acc,
+  #          sensitivity=sens, specificity=spec) %>%
+  #   select(metadata_category, feature, accuracy,
+  #          sensitivity, specificity, classes, coefficients)
   
   # plot confusion matrix
   confusion_matrix <- table(y_test, y_pred)
@@ -243,7 +248,7 @@ for (i in metadata_labels) {
                    "\nSensitivity: ", round(sens, 2),
                    " | Specificity: ", round(spec, 2)))
   print(p)
-  all_coef = rbind(all_coef, coef_df)
+  all_imp = rbind(all_imp, coef_imp)
   cat("\n\n")
 }
 
@@ -263,3 +268,4 @@ tryCatch({
                          sensitivity=numeric(), specificity=numeric(), classes=character(), coefficients=character())
   empty_df %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
 })
+

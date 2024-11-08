@@ -391,6 +391,32 @@ rule run_glmnet:
     """
 
 
+rule run_regression_trees:
+    """
+    This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
+    """
+    input:
+        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
+    params:
+        script = Path(config["scripts"]["rand_forests_script"]),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_glmnet_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+    threads: 16
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
+        time = "24:00:00"
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} \
+        --metadata {input.metadata} --output_prefix {params.output_prefix} \
+        --even_classes
+    """
+
+
 rule prepare_data_for_glmnet_ohe:
     input:
         sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta")
