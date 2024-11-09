@@ -100,7 +100,7 @@ data <- data %>% mutate(model=ifelse(grepl("esm_normalized", paramater_set), yes
 data <- data %>% mutate(filter = str_extract(paramater_set, "(filter\\d)_",group=1)) %>% 
   mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-]+)_", group=1))
 
-data %>% ggplot(aes(x=dataset, y=accuracy)) + geom_boxplot(aes(fill=filter)) + 
+data %>% ggplot(aes(x=dataset, y=specificity)) + geom_boxplot(aes(fill=filter)) + 
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + scale_color_brewer(type="qual") + scale_fill_brewer(type="qual")
 
 
@@ -131,7 +131,7 @@ for (i in 1:nrow(unique_sets)) {
   print(p6)
 }
 dev.off()
-write_tsv()
+#write_tsv()
 
 # plot genome data 
 load_cmd="grep cluster /oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline/results/*/filter*/*/esm/genomes/normalized/*_glmnet_genomes_results_*_nonzero_coefficients.tsv"

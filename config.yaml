@@ -42,7 +42,7 @@ scripts:
   format_embeddings_variance: src/glmnet/grab_top_embeddings_by_variance.R
   format_sequences_ohe: src/process_seqs/one_hot_encode_anchor_clusters.R
   glmnet_script: src/glmnet/embeddings_glmnet.R
-  regression_trees: src/glmnet/random_forests_embeddings.R
+  rand_forests_script: src/glmnet/random_forests_embeddings.R
   genome_to_sample_sequences: src/process_genomes/sample_sequences_from_genomes.R
   format_embeddings_genomes: src/process_genomes/grab_overlapping_features.R
   glmnet_genomes_script: src/glmnet/train_and_test_glmnet.R

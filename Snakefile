@@ -52,49 +52,60 @@ wildcard_constraints:
 ## Define the rules for the pipeline
 rule all:
     input:
-        # all nonzero coefficients files
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=DATASETS,
+                    "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eFaecium-CollEtAl"],
                select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
+               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter"],
                model=MODELS,
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]) ,
-        # all kmer mapping to clusters files
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
-                    "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP),
-        # all ohe glmnet results
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
-        # all genome coefficients files
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
-                    "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eColi-arcadia-amr"],
-               select_type=["filter2"],
-               cluster_type=CLUSTER_TYPES,
-               model=["esm"],
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               FILE = ["important_features.tsv", "confusion_matrices.pdf"])
+        # # all nonzero coefficients
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+        #             "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+        #        dataset=DATASETS,
+        #        select_type=SELECT_TYPES,
+        #        cluster_type=CLUSTER_TYPES,
+        #        model=MODELS,
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP,
+        #        normalize=NORMALIZE,
+        #        FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]) ,
+        # # all kmer mapping to clusters files
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", 
+        #             "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        #        dataset=DATASETS,
+        #        select_type=SELECT_TYPES,
+        #        cluster_type=CLUSTER_TYPES,
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP),
+        # # all ohe glmnet results
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+        #             "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+        #        dataset=DATASETS,
+        #        select_type=SELECT_TYPES,
+        #        cluster_type=CLUSTER_TYPES,
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP,
+        #        FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
+        # # all genome coefficients files
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
+        #             "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+        #        dataset=["eColi-arcadia-amr"],
+        #        select_type=["filter2"],
+        #        cluster_type=CLUSTER_TYPES,
+        #        model=["esm"],
+        #        num_clusters=NUM_CLUSTERS,
+        #        kmer_width=KMER_WIDTH,
+        #        kmer_step=KMER_STEP,
+        #        normalize=NORMALIZE,
+        #        FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
 
 
 rule choose_anchors:
@@ -400,14 +411,14 @@ rule run_regression_trees:
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["rand_forests_script"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_glmnet_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_randomForests_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
-        time = "24:00:00"
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 64000),
+        time = "16:00:00"
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_important_features.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf")
     shell:"""
         ml R/4.3.2

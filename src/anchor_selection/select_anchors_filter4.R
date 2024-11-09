@@ -101,7 +101,7 @@ dt <- fread(cmd=load_cmd, header=TRUE, select = 1:18)
 # dt <- dt %>% filter(number_nonzero_samples > sample_cutoff)
 
 ## select the most important anchors -----------
-anchors_to_keep <- dt %>% select(anchor, number_nonzero_samples) %>%
+anchors_to_keep <- dt %>% select(anchor, effect_size_bin, number_nonzero_samples) %>%
   arrange(desc(effect_size_bin), desc(number_nonzero_samples)) %>%
   head(opt$num_anchors)
 

@@ -143,6 +143,20 @@ snakemake --profile slurm_profile/
 
 This will then submit and watch all the jobs along the way until the pipeline is complete. You can also use the provied `run_snakemake.sbatch` command.
 
+## Input Files 
+
+Input files and paths are details in `dataset_table.csv` and the columns are descriptive. Metadata paths as well as SPLASH results paths are stored there.
+
+## Output Files
+
+Output files are available in the `results/` folder with the dataset name as a subfolder.
+The files that the script generates are as follows: 
+
+- Annotated nonzero coefficients files: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_glmnet_results_top4000_k54_s54_nonzero_coefficients_annotated.tsv
+- Pdfs: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_glmnet_results_top4000_k54_s54_confusion_matrices.pdf
+- Random Forests PDFS: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_confusion_matrics.pdf
+- Random forests important features: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_important_features.tsv
+
 ## Additional details
 
 ### Adding new filters and new clustering scripts

@@ -44,7 +44,7 @@ if (!dir.exists(dirname(opt$output_prefix))) {
 }
 
 ## specify the output files
-coefficients_out = paste0(opt$output_prefix, "_nonzero_coefficients.tsv")
+coefficients_out = paste0(opt$output_prefix, "_important_features.tsv")
 confusion_matrix_out = paste0(opt$output_prefix, "_confusion_matrices.pdf")
 min_num_per_category = opt$min_samples_per_category
 
@@ -94,7 +94,7 @@ if (grepl(".feather", opt$embeddings)) {
 
 
 ## Fit all glmnet models --------
-all_coef <- NULL
+all_imp <- NULL
 
 pdf(confusion_matrix_out)
 
@@ -140,6 +140,7 @@ for (i in metadata_labels) {
   }
   
   dt <- as.data.table(dt)
+  dt$class <- factor(dt$class)
   print(metadata_label)
   cat("Data Breakdown...\n")
   print(dt[, .N, by=class])
@@ -177,19 +178,12 @@ for (i in metadata_labels) {
   cat("Fitting random forests model...\n")
   
   fit <- tryCatch(randomForest(x = X, y = y, ntree=200,
-                               keep.forest = T, proximity = T), 
+                               keep.forest = T, proximity = T, importance=T), 
                   error=function(e) NULL)
   if (is.null(fit)) {
-    fit <- tryCatch(randomForest(x = X, y = y, ntree=200,
-                                 keep.forest = T, proximity = T), 
-                    error=function(e) NULL)
-  }
-  if (is.null(fit)) {
-    cat("Error in random forests after trying twice. Skipping...\n\n")
+    cat("Error in random forests. Skipping...\n\n")
     next
   }
-
-  cat("Using the model for lambda.min\n")
   
   # predict on test set
   X_test <- as.matrix(test[, -c("sample_name", "class")])
@@ -248,6 +242,21 @@ for (i in metadata_labels) {
                    "\nSensitivity: ", round(sens, 2),
                    " | Specificity: ", round(spec, 2)))
   print(p)
+  varImpPlot(fit,
+             sort = T,
+             n.var = 10,
+             main = paste(metadata_label, "| Top 10 Important Features"))
+  plot(fit, main=paste(metadata_label, "| Random Forests Error"))
+  MDSplot(fit, train$class, main=paste(metadata_label, "| MDS"))
+  
+  coef_imp <- as.data.frame(fit$importance) %>% rownames_to_column("feature") %>% 
+    filter(abs(MeanDecreaseGini)>0) %>% mutate(metadata_category=metadata_label, 
+                                               accuracy=acc, sensitivity=sens, 
+                                               specificity=spec) %>% 
+    select(metadata_category, feature, accuracy, sensitivity, specificity, MeanDecreaseGini) %>% 
+    arrange(desc(abs(MeanDecreaseGini)))
+    
+  
   all_imp = rbind(all_imp, coef_imp)
   cat("\n\n")
 }
@@ -260,12 +269,11 @@ dev.off()
 # or the script failed in all cases to fit a model
 # add a try catch to write out an empty file with the right headers if this is the case
 tryCatch({
-  nonzero_coef <- all_coef %>% filter(!grepl("0,", coefficients))
-  nonzero_coef %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
+  all_imp %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
 }, error=function(e) {
-  cat("No non-zero coefficients found. Writing out empty file...\n")
+  cat("Workflow finished without finding important features... Writing out empty file...\n")
   empty_df <- data.frame(metadata_category=character(), feature=character(), accuracy=numeric(),
-                         sensitivity=numeric(), specificity=numeric(), classes=character(), coefficients=character())
+                         sensitivity=numeric(), specificity=numeric(), classes=character(), MeanDecreaseGini=character())
   empty_df %>% write_tsv(file=coefficients_out, col_names = T, quote = "needed", na = "")
 })
 
