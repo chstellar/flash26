@@ -1,2 +1,3 @@
 dataset_short_name,SPLASH_results,metadata_file,lookup_table,translation_table
 tuberculosis-PZAres,/scratch/groups/horence/dcotter1/runs/Kim_et_al_PZA/0,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/tb_kim_et_al_cleaned_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11
+GBS,/scratch/groups/horence/dcotter1/runs/GBS_rerun_20240809,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/GBS_cleaned_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11,NA,NA
