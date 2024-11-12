@@ -80,17 +80,30 @@ load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficien
 data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
               col.names = c("path_metadata", "feature", "accuracy",
                             "sensitivity", "specificity", "classes", "coefficients"))
+
+load_cmd3 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*_important_features.tsv")
+data3 <- fread(cmd=load_cmd3, header=FALSE, sep="\t", 
+               col.names = c("path_metadata", "feature", "accuracy",
+                             "sensitivity", "specificity", "Gini"))
 data <- rbind(data,data2)
 data <- data %>% 
   distinct(path_metadata, .keep_all = T) %>%
   separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
   select(path, metadata, accuracy, sensitivity, specificity)
 
+data_rf <- data3 %>% distinct(path_metadata, .keep_all = T) %>%
+  separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
+  select(path, metadata, accuracy, sensitivity, specificity)
+
+data$measure <- "glmnet"
+data_rf$measure <- "randomForests"
+
+data <- rbind(data, data_rf)
 
 # extract the dataset name from the path
 data <- data %>% mutate(path=dirname(gsub("^results/", "", path))) %>%
   mutate(path=gsub("/","_",path)) %>%
-  rename(paramater_set=path)
+  dplyr::rename(paramater_set=path)
 data <- data %>% mutate(paramater_set=str_replace(paramater_set, "_", "/")) %>% 
   separate(paramater_set, into=c("dataset", "paramater_set"), sep="/")
 data <- data %>% mutate(model=ifelse(grepl("esm_normalized", paramater_set), yes="esm_normalized", no=
@@ -106,32 +119,36 @@ data %>% ggplot(aes(x=dataset, y=specificity)) + geom_boxplot(aes(fill=filter)) 
 
 data %>% distinct(dataset, metadata) -> unique_sets
 
-pdf("all_summary_plots.pdf")
+pdf("all_summary_plots_with_random_forests.pdf")
 for (i in 1:nrow(unique_sets)) {
   temp_data <- data %>% filter(dataset==unique_sets[i,]$dataset, metadata==unique_sets[i,]$metadata)
   plot(0:10, type = "n", xaxt="n", yaxt="n", bty="n", xlab = "", ylab = "")
   text(5, 10, paste(unique_sets[i,]$dataset), cex=1.5, font=2)
+  text(5,5, paste(unique_sets[i,]$metadata), cex=1.2, font=2)
   p1 <- temp_data %>% ggplot(aes(x=paramater_set, y=accuracy, shape=filter, color=model)) +
     geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
   p2 <- temp_data %>% ggplot(aes(x=paramater_set, y=accuracy, shape=filter, color=cluster_approach)) + 
     geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_blank()) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
-  p3 <- temp_data %>% ggplot(aes(x=paramater_set, y=specificity, shape=filter, color=model)) + 
-    geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
-  p4 <- temp_data %>% ggplot(aes(x=paramater_set, y=specificity, shape=filter, color=cluster_approach)) + 
-    geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_blank()) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
-  p5 <- temp_data %>% ggplot(aes(x=paramater_set, y=sensitivity, shape=filter, color=model)) + 
-    geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
-  p6 <- temp_data %>% ggplot(aes(x=paramater_set, y=sensitivity, shape=filter, color=cluster_approach)) + 
-    geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_blank()) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
+  # p3 <- temp_data %>% ggplot(aes(x=paramater_set, y=specificity, shape=filter, color=model)) + 
+  #   geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
+  # p4 <- temp_data %>% ggplot(aes(x=paramater_set, y=specificity, shape=filter, color=cluster_approach)) + 
+  #   geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_blank()) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
+  # p5 <- temp_data %>% ggplot(aes(x=paramater_set, y=sensitivity, shape=filter, color=model)) + 
+  #   geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
+  # p6 <- temp_data %>% ggplot(aes(x=paramater_set, y=sensitivity, shape=filter, color=cluster_approach)) + 
+  #   geom_point(size=3) + theme_minimal() + theme(axis.text.x = element_blank()) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
+  p7 <- temp_data %>% ggplot(aes(x=filter, y=accuracy, fill=measure)) +
+    geom_boxplot(position="dodge", color="black") + theme_minimal() + theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) + coord_cartesian(ylim=c(0,1)) + ggtitle(unique_sets[i,]$metadata)
   print(p1)
   print(p2)
-  print(p3)
-  print(p4)
-  print(p5)
-  print(p6)
+  # print(p3)
+  # print(p4)
+  # print(p5)
+  # print(p6)
+  print(p7)
 }
 dev.off()
-#write_tsv()
+write_tsv(data, "all_summary_data_with_randForests.tsv", col_names = T, quote="needed")
 
 # plot genome data 
 load_cmd="grep cluster /oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline/results/*/filter*/*/esm/genomes/normalized/*_glmnet_genomes_results_*_nonzero_coefficients.tsv"
