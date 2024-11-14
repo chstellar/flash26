@@ -106,7 +106,7 @@ if (!file.exists(all_satc_filtered)) {
 all_satc_filtered_dump <- file.path(opt$temp_dir, "all_satc.filtered.dump")
 if (!file.exists(all_satc_filtered_dump)) {
   system(paste(file.path(opt$satc_util_bin, "satc_dump"),
-               "--sample_names", opt$id_mapping,
+               "--sample_names", all_satc_temp_mapping,
                all_satc_filtered, all_satc_filtered_dump))
 }
 

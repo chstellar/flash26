@@ -80,7 +80,7 @@ if (!file.exists(all_satc_file)) {
   walk(satc_files$satc_dump, \(x) system(paste("cat", x, ">>", all_satc_file)))
 
   # remove any lines that start or end in [ACTG]
-  system(paste("grep -v '^[ACTG]' ", all_satc_file, " | grep -v '[ACTG]$' > ", 
+  system(paste("grep -v '^[ACTG]{3}' ", all_satc_file, " | grep -v '[ACTG]$' > ", 
                file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt")))
   system(paste("mv", file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt"), all_satc_file))
 }
@@ -105,7 +105,7 @@ if (!file.exists(all_satc_filtered)) {
 all_satc_filtered_dump <- file.path(opt$temp_dir, "all_satc.filtered.dump")
 if (!file.exists(all_satc_filtered_dump)) {
   system(paste(file.path(opt$satc_util_bin, "satc_dump"),
-               "--sample_names", opt$id_mapping,
+               "--sample_names", all_satc_temp_mapping,
                all_satc_filtered, all_satc_filtered_dump))
 }
 
