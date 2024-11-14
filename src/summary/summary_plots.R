@@ -174,3 +174,25 @@ genome_data <- genome_data %>%
   separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
   select(path, metadata, accuracy, sensitivity, specificity, annotations)
 
+# grab annotation data
+setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
+load_cmd <- paste0("grep cluster_ ", "results/*/filter*/*/*/*malized/*_nonzero_coefficients_annotated.tsv")
+data <- fread(cmd=load_cmd, header=FALSE, sep="\t", 
+              col.names = c("path_metadata", "feature", "accuracy",
+                            "sensitivity", "specificity", "classes", "coefficients", "cluster", "anno"))
+
+data <- data %>%  separate(path_metadata, into=c("path", "metadata"), sep=":") %>% mutate(path=dirname(gsub("^results/", "", path))) %>%
+  mutate(path=gsub("/","_",path)) %>%
+  dplyr::rename(paramater_set=path)
+data <- data %>% mutate(paramater_set=str_replace(paramater_set, "_", "/")) %>% 
+  separate(paramater_set, into=c("dataset", "paramater_set"), sep="/")
+data <- data %>% mutate(model=ifelse(grepl("esm_normalized", paramater_set), yes="esm_normalized", no=
+                                       ifelse(grepl("esm_unnormalized", paramater_set), yes="esm_unnormalized",
+                                              ifelse(grepl("hyena", paramater_set), yes="hyena", no="ohe"))))
+
+data %>% filter(accuracy>0.75) %>% filter(dataset=="eFaecium-CollEtAl") %>% 
+  filter(grepl("anti|IS|mge|ice", anno, ignore.case=T)) %>% 
+  distinct(cluster, .keep_all = T) %>% 
+  mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{54}"), toString)) %>% 
+  mutate(anno = sapply(str_extract_all(anno, "antibiotic|IS|ICE|ice|mge|MGE|Antibiotic"), \(x) toString(unique(x)))) %>% 
+  select(seqs, anno) %>% separate_longer_delim(seqs, delim=", ") %>% write_tsv("logs/summary_annos.tsv", quote="needed", col_names=T)

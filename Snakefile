@@ -66,8 +66,8 @@ rule all:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
                     "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=["eFaecium-CollEtAl-ampRes"],
-               select_type=["filter5"],
-               cluster_type=CLUSTER_TYPES,
+               select_type=SELECT_TYPES,
+               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "oldClusters"],
                model=MODELS,
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
@@ -264,7 +264,7 @@ rule decompose_kmers:
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 16000 + ((attempt - 1) * 16000),
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 16000),
         time = "3:00:00"
     shell:"""
         ml python/3.9.0
@@ -700,10 +700,11 @@ rule merge_annotations:
         # 32 GB of memory
         mem_mb = 32000
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv"),
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
     shell:"""
     ml R/4.3.2
-    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
+    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
     """
     
 rule merge_annotations_genomes:

@@ -2,6 +2,7 @@
 library(optparse)
 library(data.table)
 library(tidyverse)
+#library(Biostrings)
 
 # Define command line options
 option_list <- list(
@@ -42,3 +43,16 @@ write_tsv(merged_data, opt$output, col_names = T, quote="needed")
 
 # Print a message indicating the script has finished
 cat("Merging complete. Output saved to", opt$output, "\n")
+
+# get fasta of all nonzero_seqeunces 
+sig_seqs <- merged_data %>% select(cluster, anno) %>% 
+  distinct(cluster, .keep_all = T) %>% 
+  mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{54}"), \(x) toString(unique(x)))) %>% 
+  select(-anno) %>% 
+  separate_longer_delim(seqs, ", ") %>% filter(!is.na(cluster))
+
+library(Biostrings)
+
+dna <- DNAStringSet(sig_seqs$seqs)
+names(dna) <- sig_seqs$cluster
+writeXStringSet(dna, gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output))
