@@ -706,7 +706,27 @@ rule merge_annotations:
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
     """
-    
+
+rule run_blast_nonzero_features:
+    """
+    Run a blast search on the significant sequences to find the closest matches in the NCBI database
+    """
+    input:
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+    params:
+        script = lambda wildcards: config["scripts"]["run_blast"],
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.normalize, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.normalize, "split_fasta")
+    resources:
+        # 64 GB of memory
+        mem_mb = 64000
+    threads: 16
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
+    shell:"""
+        python {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+    """
+
 rule merge_annotations_genomes:
     """
     Merge the annotations for each cluster onto the non-zero coefficients file
