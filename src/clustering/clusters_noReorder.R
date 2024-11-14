@@ -18,7 +18,8 @@ option_list <- list(
   make_option(c("-s", "--splash_stats"), "SPLASH stats file", type="character"),
   make_option(c("-o", "--output"), "Output file", type="character"),
   make_option(c("--temp_dir"), "Temporary directory to store intermediate files", 
-              type="character")
+              type="character"),
+  make_option(c("--num_cores"), "redundant flag used for the system", type="character")
 )
 
 # parse command line arguments
