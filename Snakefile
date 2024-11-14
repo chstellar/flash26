@@ -73,7 +73,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]),
         # # all nonzero coefficients
         # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
         #             "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
@@ -96,15 +96,15 @@ rule all:
         #        kmer_width=KMER_WIDTH,
         #        kmer_step=KMER_STEP),
         # # all ohe glmnet results
-        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-        #             "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-        #        dataset=DATASETS,
-        #        select_type=SELECT_TYPES,
-        #        cluster_type=CLUSTER_TYPES,
-        #        num_clusters=NUM_CLUSTERS,
-        #        kmer_width=KMER_WIDTH,
-        #        kmer_step=KMER_STEP,
-        #        FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"]),
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr"],
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=["20000"],
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "significant_features_blast.tsv"])
         # # all genome coefficients files
         # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
         #             "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
@@ -480,6 +480,7 @@ rule run_glmnet_ohe:
         --even_classes
     """
 
+# the following rules are for the genome sequences
 
 rule process_genome_to_sample_sequences:
     """
@@ -659,6 +660,7 @@ rule run_glmnet_genomes:
         --even_classes
     """
 
+# the following rules pertain to annotations and blast searches
 
 rule annotate_clusters:
     """
@@ -726,6 +728,47 @@ rule run_blast_nonzero_features:
     shell:"""
         python {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
     """
+
+rule merge_annotations_OHE:
+    """
+    Merge the annotations for each cluster onto the non-zero coefficients file for OHE features
+    """
+    input:
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_annotations"]
+    resources:
+        # 32 GB of memory
+        mem_mb = 32000
+    output:
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv"),
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+    shell:"""
+    ml R/4.3.2
+    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
+    """
+
+rule run_blast_nonzero_features_OHE:
+    """
+    Run a blast search on the significant sequences to find the closest matches in the NCBI database for OHE features
+    """
+    input:
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+    params:
+        script = lambda wildcards: config["scripts"]["run_blast"],
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", "split_fasta")
+    resources:
+        # 64 GB of memory
+        mem_mb = 64000
+    threads: 16
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
+    shell:"""
+        python {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+    """
+
 
 rule merge_annotations_genomes:
     """
