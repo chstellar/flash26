@@ -52,28 +52,28 @@ wildcard_constraints:
 ## Define the rules for the pipeline
 rule all:
     input:
-        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-        #             "{dataset}_{model}_randomForests_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-        #        dataset=DATASETS,
-        #        select_type=SELECT_TYPES,
-        #        cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter"],
-        #        model=MODELS,
-        #        num_clusters=NUM_CLUSTERS,
-        #        kmer_width=KMER_WIDTH,
-        #        kmer_step=KMER_STEP,
-        #        normalize=NORMALIZE,
-        #        FILE = ["important_features.tsv", "confusion_matrices.pdf"]),
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
                     "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eFaecium-CollEtAl-ampRes"],
+               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr", "vibrio-cholerae-PRJNA723557"],
                select_type=SELECT_TYPES,
-               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "oldClusters"],
+               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter"],
                model=MODELS,
-               num_clusters=NUM_CLUSTERS,
+               num_clusters=["10000"],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]),
+        # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+#                     "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+#                dataset=["eFaecium-CollEtAl-ampRes"],
+#                select_type=SELECT_TYPES,
+#                cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "oldClusters"],
+#                model=MODELS,
+#                num_clusters=NUM_CLUSTERS,
+#                kmer_width=KMER_WIDTH,
+#                kmer_step=KMER_STEP,
+#                normalize=NORMALIZE,
+#                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]),
         # # all nonzero coefficients
         # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
         #             "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
@@ -98,13 +98,13 @@ rule all:
         # # all ohe glmnet results
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
                     "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr"],
+               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr", "vibrio-cholerae-PRJNA723557", "bartlau-phage-infection", "canTrop-AzoleResistance-PRJNA946688"],
                select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               num_clusters=["20000"],
+               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter"],
+               num_clusters=["50000"],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "significant_features_blast.tsv"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
         # # all genome coefficients files
         # expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
         #             "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
@@ -185,10 +185,10 @@ rule reorder_clusters:
     params:
         script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
-    threads: 16
+    threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 64000),
         time = "5:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
@@ -264,7 +264,7 @@ rule decompose_kmers:
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 16000),
+        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
         time = "3:00:00"
     shell:"""
         ml python/3.9.0
@@ -284,6 +284,8 @@ rule match_kmers_to_clusters:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
     params:
         script = Path(config["scripts"]["match_kmers_to_clusters"])
+    resources:
+        mem_mb = lambda _, attempt: 16000 + ((attempt - 1) * 16000),
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -726,7 +728,7 @@ rule run_blast_nonzero_features:
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
-        python {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
     """
 
 rule merge_annotations_OHE:
@@ -766,7 +768,7 @@ rule run_blast_nonzero_features_OHE:
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
-        python {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
     """
 
 

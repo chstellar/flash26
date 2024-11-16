@@ -13,6 +13,6 @@ THREADS=$5
 mkdir -p $SPLIT_TEMP_FOLDER
 mkdir -p $BLAST_OUTPUT_FOLDER
 
-$ENV python src/annotation/blast_code/run_blast.py --input $INPUT_FASTA --split_folder $SPLIT_TEMP_FOLDER --blast_folder $BLAST_OUTPUT_FOLDER --output_file $OUTPUT_FILE --max_workers $THREADS
+$ENV python src/annotation/blast_code/run_blast.py --input $INPUT_FASTA --split_folder $SPLIT_TEMP_FOLDER --blast_folder $BLAST_OUTPUT_FOLDER --max_workers $THREADS
 
 $ENV python src/annotation/blast_code/blast_features.py --blast_folder $BLAST_OUTPUT_FOLDER --output_file $OUTPUT_FILE --max_workers $THREADS

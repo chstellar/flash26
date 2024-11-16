@@ -45,11 +45,18 @@ write_tsv(merged_data, opt$output, col_names = T, quote="needed")
 cat("Merging complete. Output saved to", opt$output, "\n")
 
 # get fasta of all nonzero_seqeunces 
-sig_seqs <- merged_data %>% select(cluster, anno) %>% 
+sig_seqs <- merged_data %>% filter(!grepl("rcept", feature)) %>% 
+  rowwise() %>% 
+  mutate(max_coef=max(abs(as.numeric(
+    strsplit(gsub("\\[|\\]", "", coefficients), split=",", fixed=TRUE)[[1]])))) %>% 
+  group_by(metadata_category) %>% 
+  slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
   distinct(cluster, .keep_all = T) %>% 
   mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{54}"), \(x) toString(unique(x)))) %>% 
   select(-anno) %>% 
-  separate_longer_delim(seqs, ", ") %>% filter(!is.na(cluster))
+  separate_longer_delim(seqs, ", ") %>% 
+  filter(!grepl("NNNNNNNNN", seqs)) %>%
+  filter(!is.na(cluster))
 
 library(Biostrings)
 
