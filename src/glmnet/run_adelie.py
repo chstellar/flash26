@@ -165,8 +165,8 @@ def main():
 
             # add the accuracy, specificity, and sensitivity to the model features
             model_features["accuracy"] = accuracy
-            model_features["specificity"] = specificity
-            model_features["sensitivity"] = sensitivity
+            model_features["specificity"] = specificity if specificity is not None else "NA"
+            model_features["sensitivity"] = sensitivity if sensitivity is not None else "NA"
             model_features = model_features[["metadata_category", "feature", "accuracy", "sensitivity", "specificity", "classes", "coefficients"]]
 
             # join with the larger set of model features
