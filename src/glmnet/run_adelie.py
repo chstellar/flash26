@@ -142,8 +142,8 @@ def main():
             
             # gather the coefficients and categorie names into two columns grouping by feature
             model_features = model_features.groupby("feature").agg({"coefficient": list, "category": list}).reset_index()
-            model_features["classes"] = model_features["category"].apply(lambda x: "[" + ",".join(str(x)) + "]")
-            model_features["coefficients"] = model_features["coefficient"].apply(lambda x: "[" + ",".join(str(x)) + "]")
+            model_features["classes"] = model_features["category"].apply(lambda x: "[" + ",".join(map(str, x)) + "]")
+            model_features["coefficients"] = model_features["coefficient"].apply(lambda x: "[" + ",".join(map(str, x)) + "]")
 
             # add column for metadata category
             model_features["metadata_category"] = metadata_col
