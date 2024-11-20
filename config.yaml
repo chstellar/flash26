@@ -13,6 +13,7 @@ genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
 envs:
   default_python: /oak/stanford/groups/horence/dcotter1/envs/biopython/bin/activate
   esm_env: /oak/stanford/groups/horence/dcotter1/envs/esm_venv/bin/activate
+  adelie: /oak/stanford/groups/horence/dcotter1/envs/adelie_venv/bin/activate
 
 # define all scripts
 scripts:
@@ -45,6 +46,7 @@ scripts:
   format_embeddings_variance: src/glmnet/grab_top_embeddings_by_variance.R
   format_sequences_ohe: src/process_seqs/one_hot_encode_anchor_clusters.R
   glmnet_script: src/glmnet/embeddings_glmnet.R
+  adelie: src/glmnet/run_adelie.py
   rand_forests_script: src/glmnet/random_forests_embeddings.R
   genome_to_sample_sequences: src/process_genomes/sample_sequences_from_genomes.R
   format_embeddings_genomes: src/process_genomes/grab_overlapping_features.R
