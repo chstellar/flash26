@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument("--data", type=str, help="Path to the data file", required=True)
     parser.add_argument("--metadata", type=str, help="Path to the metadata file", required=True)
     parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
+    parser.add_argument("--min_samples", type=int, default=50, help="Minimum number of samples per category to keep")
     parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
     return parser.parse_args()
 
@@ -110,7 +111,7 @@ def main():
         for metadata_col in metadata_columns:
             print(f"Processing metadata column: {metadata_col}")
             
-            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col)
+            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col, min_samples=args.min_samples)
             print(f"Metadata breakdown for training set: {metadata_col}")
             print(y_train.value_counts())
             print(f"Metadata breakdown for test set: {metadata_col}")
