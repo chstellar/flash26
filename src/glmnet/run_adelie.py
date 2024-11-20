@@ -108,9 +108,15 @@ def main():
             print(f"Processing metadata column: {metadata_col}")
             
             X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col)
-            
+            print(f"Metadata breakdown for training set: {metadata_col}")
+            print(y_train.value_counts())
+            print(f"Metadata breakdown for test set: {metadata_col}")
+            print(y_test.value_counts())
+
+
             if X_train is None:
                 print(f"Skipping {metadata_col} as there are not enough samples")
+                print()
                 continue
 
             model, oh = train_adelie_model(X_train, y_train, n_threads=args.n_threads)
