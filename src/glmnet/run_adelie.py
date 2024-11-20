@@ -121,7 +121,11 @@ def main():
                 print()
                 continue
 
-            model, oh = train_adelie_model(X_train, y_train, n_threads=args.n_threads)
+            try:
+                model, oh = train_adelie_model(X_train, y_train, n_threads=args.n_threads)
+            except Exception as e:
+                print(f"Failed to train model for {metadata_col}: {e}")
+                continue
             
             yhat = model.predict(X_test.astype(np.float64))
             yhat_2d = np.zeros((yhat.size, yhat.max() + 1))
