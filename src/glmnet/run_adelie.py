@@ -84,8 +84,8 @@ def train_adelie_model(X_train, y_train,n_threads=1):
     oh = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     y_train2 = oh.fit_transform(y_train[:, np.newaxis])
     
-    model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial", n_threads=n_threads)
-    model.fit(X_train.astype(np.float64), y_train2.astype(np.float64))
+    model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial")
+    model.fit(X_train.astype(np.float64), y_train2.astype(np.float64), n_threads=n_threads)
     
     return model, oh
 
