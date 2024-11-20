@@ -115,6 +115,8 @@ def main():
             
             y_pred = oh.inverse_transform(yhat).flatten()
             cm = confusion_matrix(y_test, y_pred)
+            print(f"Confusion matrix for {metadata_col}")
+            print(cm)
 
             # extract the nonzero coefficients
             coef = model.coef_
@@ -150,6 +152,8 @@ def main():
                 specificity = cm[0][0] / (cm[0][0] + cm[0][1])
                 sensitivity = cm[1][1] / (cm[1][0] + cm[1][1])
             
+            print(f"Accuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+
             # add the accuracy, specificity, and sensitivity to the model features
             model_features["accuracy"] = accuracy
             model_features["specificity"] = specificity
@@ -180,6 +184,9 @@ def main():
             plt.tight_layout()
             pdf.savefig()
             plt.close()
+            
+            # add a blank line 
+            print()
 
     # output the nonzero coefficients to a tsv file
     all_model_features.to_csv(output_coef, sep="\t", index=False, float_format="%.4f")
