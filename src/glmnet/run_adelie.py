@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument("--data", type=str, help="Path to the data file", required=True)
     parser.add_argument("--metadata", type=str, help="Path to the metadata file", required=True)
     parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
+    parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
     return parser.parse_args()
 
 def read_feather_data(file_path):
@@ -79,11 +80,11 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     
     return np.asfortranarray(X_train), np.asfortranarray(X_test), y_train, y_test, model_features
 
-def train_adelie_model(X_train, y_train):
+def train_adelie_model(X_train, y_train,n_threads=1):
     oh = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     y_train2 = oh.fit_transform(y_train[:, np.newaxis])
     
-    model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial")
+    model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial", n_threads=n_threads)
     model.fit(X_train.astype(np.float64), y_train2.astype(np.float64))
     
     return model, oh
@@ -112,7 +113,7 @@ def main():
                 print(f"Skipping {metadata_col} as there are not enough samples")
                 continue
 
-            model, oh = train_adelie_model(X_train, y_train)
+            model, oh = train_adelie_model(X_train, y_train, n_threads=args.n_threads)
             
             yhat = model.predict(X_test.astype(np.float64))
             yhat_2d = np.zeros((yhat.size, yhat.max() + 1))
