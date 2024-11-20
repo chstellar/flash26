@@ -43,23 +43,29 @@ write_tsv(merged_data, opt$output, col_names = T, quote="needed")
 
 # Print a message indicating the script has finished
 cat("Merging complete. Output saved to", opt$output, "\n")
-
-# get fasta of all nonzero_seqeunces 
-sig_seqs <- merged_data %>% filter(!grepl("rcept", feature)) %>% 
-  rowwise() %>% 
-  mutate(max_coef=max(abs(as.numeric(
-    strsplit(gsub("\\[|\\]", "", coefficients), split=",", fixed=TRUE)[[1]])))) %>% 
-  group_by(metadata_category) %>% 
-  slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
-  distinct(cluster, .keep_all = T) %>% 
-  mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{54}"), \(x) toString(unique(x)))) %>% 
-  select(-anno) %>% 
-  separate_longer_delim(seqs, ", ") %>% 
-  filter(!grepl("NNNNNNNNN", seqs)) %>%
-  filter(!is.na(cluster))
-
-library(Biostrings)
-
-dna <- DNAStringSet(sig_seqs$seqs)
-names(dna) <- sig_seqs$cluster
-writeXStringSet(dna, gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output))
+if (nrow(merged_data %>% filter(!is.na(anno))) == 0) {
+  out_file <- gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output)
+  system(paste("touch", out_file))
+} else {
+  # get fasta of all nonzero_seqeunces 
+  sig_seqs <- merged_data %>% filter(!grepl("rcept", feature)) %>% 
+    rowwise() %>% 
+    mutate(max_coef=max(abs(as.numeric(
+      strsplit(gsub("\\[|\\]", "", coefficients), split=",", fixed=TRUE)[[1]])))) %>% 
+    group_by(metadata_category) %>% 
+    slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
+    distinct(cluster, .keep_all = T) %>% 
+    mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{54}"), \(x) toString(unique(x)))) %>% 
+    select(-anno) %>% 
+    separate_longer_delim(seqs, ", ") %>% 
+    filter(!grepl("NNNNNNNNN", seqs)) %>%
+    filter(!is.na(cluster))
+  
+  sig_seqs <- sig_seqs %>% mutate(cluster=paste(cluster, seqs, sep="_"))
+  
+  library(Biostrings)
+  
+  dna <- DNAStringSet(sig_seqs$seqs)
+  names(dna) <- sig_seqs$cluster
+  writeXStringSet(dna, gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output))
+}

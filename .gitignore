@@ -4,3 +4,4 @@
 logs/*
 slurm-*
 results/*
+archive/*
