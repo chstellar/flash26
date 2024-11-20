@@ -21,9 +21,9 @@ np.random.seed(42)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a model to predict antibiotic resistance")
-    parser.add_argument("--data", type=str, help="Path to the data file")
-    parser.add_argument("--metadata", type=str, help="Path to the metadata file")
-    parser.add_argument("--output_prefix", type=str, help="Prefix for the output files")
+    parser.add_argument("--data", type=str, help="Path to the data file", required=True)
+    parser.add_argument("--metadata", type=str, help="Path to the metadata file", required=True)
+    parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
     return parser.parse_args()
 
 def read_feather_data(file_path):
