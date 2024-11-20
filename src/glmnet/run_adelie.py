@@ -59,6 +59,9 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     # Drop any classes with less than min_samples
     class_counts = class_counts[class_counts >= min_samples]
     classes_to_keep = class_counts.index
+    # if there are not >= 2 classes with >= min_samples samples, return None
+    if len(classes_to_keep) < 2:
+        return None, None, None, None, None
     merged_data = merged_data[merged_data[metadata_col].isin(classes_to_keep)]
     
     # Get the minimum number of samples per class
@@ -115,7 +118,7 @@ def main():
 
 
             if X_train is None:
-                print(f"Skipping {metadata_col} as there are not enough samples")
+                print(f"Skipping {metadata_col} as there are not enough samples after merging and filtering...")
                 print()
                 continue
 
