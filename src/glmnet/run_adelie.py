@@ -158,7 +158,10 @@ def main():
                 specificity = cm[0][0] / (cm[0][0] + cm[0][1])
                 sensitivity = cm[1][1] / (cm[1][0] + cm[1][1])
             
-            print(f"Accuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+            if specificity is None:
+                print(f"Accuracy: {accuracy:.2f}")
+            else:
+                print(f"Accuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
 
             # add the accuracy, specificity, and sensitivity to the model features
             model_features["accuracy"] = accuracy
