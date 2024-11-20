@@ -106,10 +106,13 @@ def main():
     # and more than 50 samples per category
     metadata_columns = get_metadata_columns(metadata, min_samples=50)
     
+    all_model_features = None
+
     # Iterate over the metadata columns
     with PdfPages(output_pdf) as pdf:
         for metadata_col in metadata_columns:
             print(f"Processing metadata column: {metadata_col}")
+            print()
             
             X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col, min_samples=args.min_samples)
 
@@ -176,7 +179,7 @@ def main():
             model_features = model_features[["metadata_category", "feature", "accuracy", "sensitivity", "specificity", "classes", "coefficients"]]
 
             # join with the larger set of model features
-            if metadata_col == metadata_columns[0]:
+            if all_model_features is None:
                 all_model_features = model_features
             else:
                 all_model_features = pd.concat([all_model_features, model_features], axis=0)
@@ -206,8 +209,20 @@ def main():
             # add a blank line 
             print()
 
-    # output the nonzero coefficients to a tsv file
-    all_model_features.to_csv(output_coef, sep="\t", index=False, float_format="%.4f")
+        if all_model_features is None:
+            # Write a blank page to the PDF
+            plt.figure()
+            plt.text(0.5, 0.5, "No metadata columns were processed", ha='center', va='center')
+            plt.axis('off')
+            pdf.savefig()
+            plt.close()
+        
+            # Write an empty output TSV with just column names
+            columns = ["metadata_category", "feature", "accuracy", "sensitivity", "specificity", "classes", "coefficients"]
+            pd.DataFrame(columns=columns).to_csv(output_coef, sep="\t", index=False)
+        else:
+            # output the nonzero coefficients to a tsv file
+            all_model_features.to_csv(output_coef, sep="\t", index=False, float_format="%.4f")
 
 
 if __name__ == "__main__":
