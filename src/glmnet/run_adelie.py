@@ -1,20 +1,19 @@
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
 from sklearn.metrics import confusion_matrix
-from sklearn.datasets import (
-    load_breast_cancer,
-    load_diabetes,
-    load_digits,
-)
 from sklearn.preprocessing import OneHotEncoder
-import adelie as ad
+
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+import adelie as ad
+
 import numpy as np
 import scipy.stats as st
 
 import pyarrow.feather as feather
-
 import pandas as pd
+from math import floor
 
 import argparse
 
@@ -40,55 +39,151 @@ def get_metadata_columns(metadata, min_samples=50):
     Filters the columns so it will only return metadata that have more than two
     discrete values with greater than min_samples per category
     """
-    metadata_columns = metadata.columns[metadata.columns != "sample_name"]
+    filtered_metadata = metadata.loc[:, metadata.columns != "sample_name"]
     # filter out columns with less than 2 unique values
-    metadata_columns = metadata_columns[metadata.apply(lambda x: len(x.unique()) > 2, axis=0)]
-    # only grab columns with two or more columns that have more than min_samples
-    metadata_columns = metadata_columns[metadata_columns.apply(lambda x: sum(x.value_counts() > min_samples) > 1)]
-    return metadata_columns
+    filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: len(x.unique()) > 2, axis=0)]
+    # only grab columns with two or more categories that have more than min_samples
+    filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() > min_samples) > 1, axis=0)]
+    return filtered_metadata.columns
 
 
-def merge_and_split_data(data, metadata, metadata_col):
+def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_prop=0.5):
+    metadata = metadata[["sample_name", metadata_col]]
     merged_data = pd.merge(data, metadata, on='sample_name', how='left')
     merged_data = merged_data.dropna(subset=[metadata_col])
-    merged_data = merged_data[merged_data[metadata_col] != "I"]
+
+    # Check the distribution of classes for this metadata category
+    class_counts = merged_data[metadata_col].value_counts()
     
-    num_to_keep = merged_data[metadata_col].value_counts()['S']
-    merged_data = merged_data.groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False))
+    # Drop any classes with less than min_samples
+    class_counts = class_counts[class_counts >= min_samples]
+    classes_to_keep = class_counts.index
+    merged_data = merged_data[merged_data[metadata_col].isin(classes_to_keep)]
     
-    X = merged_data.drop(["sample_name", metadata_col], axis=1)
-    y = merged_data[metadata_col]
+    # Get the minimum number of samples per class
+    # keep exactly half of the samples for each class for the training set
+    # and keep the rest of the samples for the test set
+    num_to_keep = class_counts.min()
+    num_to_keep = floor(num_to_keep * train_prop)
+    indices_to_keep = merged_data.groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
     
-    X_train, X_test, y_train, y_test = train_test_split(X.to_numpy(), y.to_numpy(), test_size=0.5, stratify=y)
+    # Split the data into training and test sets
+    X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
+    model_features = X_train.columns
+    y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
     
-    return np.asfortranarray(X_train), np.asfortranarray(X_test), y_train, y_test
+    X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(indices_to_keep)
+    y_test = merged_data[metadata_col].drop(indices_to_keep).to_numpy()
+    
+    return np.asfortranarray(X_train), np.asfortranarray(X_test), y_train, y_test, model_features
 
 def train_adelie_model(X_train, y_train):
-    oh = OneHotEncoder(sparse_output=False)
+    oh = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     y_train2 = oh.fit_transform(y_train[:, np.newaxis])
     
     model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial")
     model.fit(X_train.astype(np.float64), y_train2.astype(np.float64))
     
-    return model
+    return model, oh
 
 def main():
-    data = read_feather_data("/scratch/users/dcotter1/metaSPLASH_workflows/eFaecium-CollEtAl/eFaecium-CollEtAl_ohe_features_for_glmnet_filter3_shiftDist-keepTopES_top50000_k54_s54.feather")
-    metadata = read_metadata("/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/E_faecium_cleaned_resistance_metadata.tsv")
+    args = parse_args()
+    output_prefix = args.output_prefix
+    output_pdf = output_prefix + "_confusion_matrices.pdf"
+    output_coef = output_prefix + "_nonzero_coefficients.tsv"
     
-    X_train, X_test, y_train, y_test = merge_and_split_data(data, metadata)
+    # Load teh data and metadata
+    data = read_feather_data(args.data)
+    metadata = read_metadata(args.metadata)
+    # Get the metadata columns that have more than 2 unique values
+    # and more than 50 samples per category
+    metadata_columns = get_metadata_columns(metadata, min_samples=50)
     
-    model = train_adelie_model(X_train, y_train)
-    
-    yhat = model.predict(X_test.astype(np.float64))
-    
-    y_pred = [['R', 'S'][x] for x in yhat]
-    cm = confusion_matrix(y_test, y_pred)
-    
-    print(cm)
-    
-    accuracy = (cm[0][0] + cm[1][1]) / sum(sum(row) for row in cm)
-    print(f"Accuracy: {accuracy}")
+    # Iterate over the metadata columns
+    with PdfPages(output_pdf) as pdf:
+        for metadata_col in metadata_columns:
+            print(f"Processing metadata column: {metadata_col}")
+            
+            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col)
+            
+            model, oh = train_adelie_model(X_train, y_train)
+            
+            yhat = model.predict(X_test.astype(np.float64))
+            yhat_2d = np.zeros((yhat.size, yhat.max() + 1))
+            yhat_2d[np.arange(yhat.size), yhat] = 1
+            yhat = yhat_2d
+            
+            y_pred = oh.inverse_transform(yhat).flatten()
+            cm = confusion_matrix(y_test, y_pred)
+
+            # extract the nonzero coefficients
+            coef = model.coef_
+            # get the feature names for the nonzero coefficients
+            metadata_categories = oh.categories_[0]
+            model_features = [f"{feature}+{category}" for feature in model_features for category in metadata_categories]
+            
+            # get the names and values of the nonzero coefficients
+            model_features = pd.DataFrame(model_features, columns=["feature"])
+            model_features["coefficient"] = coef.toarray().flatten()
+            model_features = model_features[model_features["coefficient"] != 0]
+
+            # separate the feature names into the feature and category
+            model_features["feature"] = model_features["feature"].str.split("+")
+            model_features["category"] = model_features["feature"].str[1]
+            model_features["feature"] = model_features["feature"].str[0]
+            
+            # gather the coefficients and categorie names into two columns grouping by feature
+            model_features = model_features.groupby("feature").agg({"coefficient": list, "category": list}).reset_index()
+            model_features["classes"] = model_features["category"].apply(lambda x: "[" + ",".join([str(round(i, 4)) for i in x]) + "]")
+            model_features["coefficients"] = model_features["coefficient"].apply(lambda x: "[" + ",".join([str(round(i, 4)) for i in x]) + "]")
+
+            # add column for metadata category
+            model_features["metadata_category"] = metadata_col
+
+            # assuming cm can be larger than 2x2
+            if cm.shape[0] > 2:
+                accuracy = np.trace(cm) / np.sum(cm)
+                specificity = None
+                sensitivity = None
+            else:
+                accuracy = (cm[0][0] + cm[1][1]) / sum(sum(row) for row in cm)
+                specificity = cm[0][0] / (cm[0][0] + cm[0][1])
+                sensitivity = cm[1][1] / (cm[1][0] + cm[1][1])
+            
+            # add the accuracy, specificity, and sensitivity to the model features
+            model_features["accuracy"] = accuracy
+            model_features["specificity"] = specificity
+            model_features["sensitivity"] = sensitivity
+            model_features = model_features[["metadata_category", "feature", "accuracy", "sensitivity", "specificity", "classes", "coefficients"]]
+
+            # join with the larger set of model features
+            if metadata_col == metadata_columns[0]:
+                all_model_features = model_features
+            else:
+                all_model_features = pd.concat([all_model_features, model_features], axis=0)
+
+            # plot the confusion matrix and save to the pdf
+            # color by relative frequency
+            # add numbers to the cells of the confusion matrix
+            # add accuracy, specificity, and sensitivity to the title
+            plt.figure()
+            plt.imshow(cm / cm.sum(axis=1)[:, np.newaxis], cmap='viridis', vmin=0, vmax=1)
+            plt.colorbar()
+            for i in range(cm.shape[0]):
+                for j in range(cm.shape[1]):
+                    plt.text(j, i, f"{cm[i, j]}", ha='center', va='center')
+            plt.title(f"Confusion Matrix\nAccuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+            plt.xlabel("Predicted")
+            plt.ylabel("True")
+            plt.xticks(range(cm.shape[1]), metadata_categories, rotation=45)
+            plt.yticks(range(cm.shape[0]), metadata_categories, rotation=45)
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close()
+
+    # output the nonzero coefficients to a tsv file
+    all_model_features.to_csv(output_coef, sep="\t", index=False, float_format="%.4f")
+
 
 if __name__ == "__main__":
     main()
