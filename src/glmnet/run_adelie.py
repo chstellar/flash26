@@ -64,6 +64,8 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     # keep exactly half of the samples for each class for the training set
     # and keep the rest of the samples for the test set
     num_to_keep = class_counts.min()
+    if pd.isna(num_to_keep):
+        return None, None, None, None, None
     num_to_keep = floor(num_to_keep * train_prop)
     indices_to_keep = merged_data.groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
     
@@ -106,6 +108,10 @@ def main():
             
             X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col)
             
+            if X_train is None:
+                print(f"Skipping {metadata_col} as there are not enough samples")
+                continue
+
             model, oh = train_adelie_model(X_train, y_train)
             
             yhat = model.predict(X_test.astype(np.float64))
