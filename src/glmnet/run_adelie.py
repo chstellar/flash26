@@ -185,7 +185,10 @@ def main():
             for i in range(cm.shape[0]):
                 for j in range(cm.shape[1]):
                     plt.text(j, i, f"{cm[i, j]}", ha='center', va='center')
-            plt.title(f"Confusion Matrix\nAccuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+            if cm.shape[0] > 2:
+                plt.title(f"{metadata_col}\nAccuracy: {accuracy:.2f}")
+            else:
+                plt.title(f"{metadata_col}\nAccuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
             plt.xlabel("Predicted")
             plt.ylabel("True")
             plt.xticks(range(cm.shape[1]), metadata_categories, rotation=45)
