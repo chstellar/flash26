@@ -165,19 +165,23 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("sequences_filename", type=str)
-    parser.add_argument("-s", "--max_shift_dist", default=5, type=int)
-    parser.add_argument("-l", "--log_filename", type=str, default='cluster_anchors.log')
+    parser.add_argument("--input", type=str, required=True, help="Path to input file containing sequences")
+    parser.add_argument("--output", type=str, required=True, help="Path to output file containing clusters")
+    parser.add_argument("-s", "--maxShiftDist", default=5, type=int)
     parser.add_argument("-d", "--log_debug", action="store_false")
+    parser.add_argument("--temp_dir", type=str, default="Unused")
 
     args = parser.parse_args()
 
     level = logging.DEBUG if args.log_debug else logging.INFO
-    logging.basicConfig(filename=args.log_filename, level=level)
+    logging.basicConfig(stream=sys.stdout, level=level)
 
-    assert os.path.exists(args.sequences_filename)
-    anchors = list(pd.read_csv(args.sequences_filename, header=None)[0])
+    assert os.path.exists(args.input)
+    anchors = list(pd.read_csv(args.input, header=None)[0])
 
-    clusters = cluster_anchors(anchors, args.max_shift_dist)
+    clusters = cluster_anchors(anchors, args.maxShiftDist)
 
-    print(clusters)
+    with open(args.output, 'w') as f:
+        for i, cluster in enumerate(clusters):
+            for anchor in cluster:
+                f.write(f'{i}\t{anchor}\n')
