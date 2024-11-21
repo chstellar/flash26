@@ -118,18 +118,43 @@ representative_anchors <- one_anchor_per_cluster$anchor
 all_anchor_sets <- anchor_clusters_with_stats %>%
   group_split(new_cluster_id, .keep = T)
 
-# define a function to return only the anchors that are within a certain distance of the representative anchor
+
+# Define a function to return only the anchors that are within a certain distance of the representative anchor
+# 
+# Args:
+#   anchor_set: A data frame containing the set of anchors to be filtered.
+#   representative_anchor: A string representing the anchor to compare against.
+#   distance_metric: A string specifying the distance metric to use ("lev" for Levenshtein distance, "ham" for Hamming distance).
+#   distance_threshold: An integer specifying the maximum allowable distance (default is 5).
+#
+# Returns:
+#   A filtered data frame containing only the anchors within the specified distance of the representative anchor.
+#
+# Raises:
+#   Error if the distance metric is not recognized.
+#
 distance_filter <- function(anchor_set, representative_anchor, distance_metric, distance_threshold=5) {
+  # Check if the distance metric is Levenshtein distance
   if (distance_metric == "lev") {
+    # Calculate the Levenshtein distance between each anchor and the representative anchor
     lev_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "lv")
+    # Create a logical vector indicating which anchors are within the distance threshold
     dist_filter <- as.logical(lev_dist <= distance_threshold)
+    # Filter the anchor set based on the distance threshold
     anchor_set <- anchor_set[dist_filter,]
+    # Return the filtered anchor set
     return(anchor_set)
+  # Check if the distance metric is Hamming distance
   } else if (distance_metric == "ham") {
+    # Calculate the Hamming distance between each anchor and the representative anchor
     ham_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "hamming")
+    # Create a logical vector indicating which anchors are within the distance threshold
     dist_filter <- as.logical(ham_dist <= distance_threshold)
+    # Filter the anchor set based on the distance threshold
     anchor_set <- anchor_set[dist_filter,]
+    # Return the filtered anchor set
     return(anchor_set)
+  # Raise an error if the distance metric is not recognized
   } else {
     stop("Distance metric not recognized")
   }
@@ -140,9 +165,9 @@ distance_filter <- function(anchor_set, representative_anchor, distance_metric, 
 cat("Applying the distance filter to each cluster\n")
 cat("Using the ", opt$distance_metric, " distance metric\n")
 
-# only apply the distance filter to the first 10000 clusters
+# only apply the distance filter to the first 50000 clusters
 # this is to speed up the process
-max_anchor_clusters <- 10000
+max_anchor_clusters <- 50000
 max_anchor_clusters <- min(max_anchor_clusters, length(all_anchor_sets)) # make sure we don't go over the number of clusters
 all_anchor_sets <- all_anchor_sets[1:max_anchor_clusters]
 representative_anchors <- representative_anchors[1:max_anchor_clusters]

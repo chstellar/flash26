@@ -27,13 +27,15 @@ scripts:
     shiftDist-keepTopES: 'python src/clustering/deduplication_clustering.py'
     shiftDist-keepMostAbundant: 'python src/clustering/deduplication_clustering.py'
     shiftDist-levFilter: 'python src/clustering/deduplication_clustering.py'
+    shiftDist-hamFilter: 'python src/clustering/deduplication_clustering.py'
     mmseqs-levFilter: 'Rscript --vanilla src/clustering/cluster_with_mmseq.R'
     translated-clusters-levFilter: 'python src/clustering/translate_and_cluster.py'
     oldClusters: 'python src/clustering/deduplication_clustering.py'
   reorder_script:
     shiftDist-keepTopES: src/clustering/keep_topES_anchor_per_cluster.R
     shiftDist-keepMostAbundant: src/clustering/keep_mostAbundant_anchor_per_cluster.R
-    shiftDist-levFilter: src/clustering/filter_clusters_by_distance.R
+    shiftDist-levFilter: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
+    shiftDist-hamFilter: "src/clustering/filter_clusters_by_distance.R --distance_metric ham"
     mmseqs-levFilter: src/clustering/filter_clusters_by_distance.R
     translated-clusters-levFilter: src/clustering/filter_clusters_by_distance.R
     oldClusters: src/clustering/clusters_noReorder.R
