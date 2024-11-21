@@ -15,7 +15,10 @@ import pyarrow.feather as feather
 import pandas as pd
 from math import floor
 
+from os.path import basename
 import argparse
+
+import dill
 
 np.random.seed(42)
 
@@ -93,6 +96,11 @@ def train_adelie_model(X_train, y_train,n_threads=1):
     
     return model, oh
 
+# use dill to pickle the model
+def pickle_model(model, output_file):
+    with open(output_file, "wb") as f:
+        dill.dump(model, f)
+
 def main():
     args = parse_args()
     output_prefix = args.output_prefix
@@ -126,8 +134,13 @@ def main():
             except Exception as e:
                 print(f"Failed to train model for {metadata_col}: {e}")
                 continue
-            
+
+            # add a check to make sure there are more than 2 unique values in the predictions
+            # an error can be thrown if inverse_transform gets the wrong number of columns
             yhat = model.predict(X_test.astype(np.float64))
+            if len(np.unique(yhat)) < 2:
+                print(f"Skipping {metadata_col} as there are not enough unique predictions...")
+                continue
             yhat_2d = np.zeros((yhat.size, yhat.max() + 1))
             yhat_2d[np.arange(yhat.size), yhat] = 1
             yhat = yhat_2d
@@ -136,6 +149,12 @@ def main():
             cm = confusion_matrix(y_test, y_pred)
             print(f"Confusion matrix for {metadata_col}")
             print(cm)
+
+            # pickle the model to a file 
+            # name the file with the basename of the input data 
+            # and append the metadata column name
+            output_model = basename(args.data).replace(".feather", f"_{metadata_col}_model.pkl")
+            pickle_model(model, output_model)
 
             # extract the nonzero coefficients
             coef = model.coef_
