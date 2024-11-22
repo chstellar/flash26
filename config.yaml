@@ -53,7 +53,7 @@ scripts:
   rand_forests_script: src/glmnet/random_forests_embeddings.R
   genome_to_sample_sequences: src/process_genomes/sample_sequences_from_genomes.R
   format_embeddings_genomes: src/process_genomes/grab_overlapping_features.R
-  glmnet_genomes_script: src/glmnet/train_and_test_glmnet.R
+  glmnet_genomes_script: src/glmnet/run_adelie_genomes.py
   annotate_clusters: src/annotation/annotate_with_lookup_table.py
   merge_annotations: src/annotation/merge_coefs_with_annotations.R
   run_blast: src/annotation/blast_code/run_blast.sh
