@@ -36,7 +36,7 @@ if (!file.exists(opt$input_anchor_clusters) | !file.exists(opt$splash_stats) | i
 }
 
 # set up parallel processing
-plan(multicore, workers = opt$num_cores)
+plan(multisession, workers = opt$num_cores)
 
 # create a temporary directory to store intermediate files
 if (!is.null(opt$temp_dir)) {
