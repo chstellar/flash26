@@ -69,7 +69,7 @@ rule all_genomes:
     input:
             # all genome coefficients files
             expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
-                "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+                "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=["eColi-arcadia-amr"],
                select_type=["filter1"],
                cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-hamFilter"],
@@ -662,7 +662,7 @@ rule prepare_data_for_glmnet_genomes:
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} {params.normalized_flag} 
     """
 
-rule run_glmnet_genomes:
+rule run_adelie_genomes:
     """
     Take in main embeddings as train and genome embeddings as test plus both of their metadata files
     and run the glmnet script
@@ -674,20 +674,20 @@ rule run_glmnet_genomes:
         test_metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "genome_metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_genomes_script"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_glmnet_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
     threads: 16
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
         time = "24:00:00"
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
         --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
-        --even_classes
+        --n_threads {threads}
     """
 
 # the following rules pertain to annotations and blast searches
@@ -806,14 +806,14 @@ rule merge_annotations_genomes:
     """
     input:
         annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        coefficients = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        coefficients = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
     resources:
         # 32 GB of memory
         mem_mb = 32000
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_glmnet_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
     shell:"""
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
