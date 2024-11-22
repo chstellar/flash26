@@ -138,10 +138,14 @@ def main():
             yhat_2d[np.arange(yhat.size), yhat] = 1
             yhat = yhat_2d
             
-            y_pred = oh.inverse_transform(yhat).flatten()
-            cm = confusion_matrix(y_test, y_pred)
-            print(f"Confusion matrix for {metadata_col}")
-            print(cm)
+            try:
+                y_pred = oh.inverse_transform(yhat).flatten()
+                cm = confusion_matrix(y_test, y_pred)
+                print(f"Confusion matrix for {metadata_col}")
+                print(cm)
+            except Exception as e:
+                print(f"Failed to transform predictions for {metadata_col}: {e}")
+                continue
 
             # extract the nonzero coefficients
             coef = model.coef_
