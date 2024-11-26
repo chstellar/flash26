@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument("--data", type=str, help="Path to the data file", required=True)
     parser.add_argument("--metadata", type=str, help="Path to the metadata file", required=True)
     parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
-    parser.add_argument("--min_samples", type=int, default=50, help="Minimum number of samples per category to keep")
+    parser.add_argument("--min_samples", type=int, default=30, help="Minimum number of samples per category to keep")
     parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
     return parser.parse_args()
 
@@ -34,6 +34,10 @@ def read_feather_data(file_path):
 
 def read_metadata(file_path):
     metadata = pd.read_table(file_path)
+    if "sample_name" not in metadata.columns:
+        raise ValueError("Metadata file must contain a sample_name column")
+    # mutate all columns to strings for categorical analysis
+    metadata = metadata.apply(lambda x: x.astype(str))
     return metadata
 
 def get_metadata_columns(metadata, min_samples=50):

@@ -47,8 +47,19 @@ df_wide <- df %>%
   mutate(across(starts_with("cluster"), \(x) as.factor(x)))
 
 # one hot encode each column (adding a column for each unique seqeunce in the cluster column)
-df_ohe <- mltools::one_hot(as.data.table(df_wide%>%select(-sample_name)))
-df_ohe <- cbind(df_wide %>% select(sample_name), df_ohe)  
+# if there are too many samples and too many unique sequences, this will cause an integer overflow error
+if (nrow(df_wide) > 5000 & ncol(df_wide) > 4000) {
+  # split the dataframe into chunks by column and one hot encode each chunk before merging
+  df_samples <- df_wide %>% select(sample_name)
+  df_wide <- df_wide %>% select(-sample_name)
+  df_chunks <- split.default(df_wide, ceiling(seq_along(df_wide)/200))
+  df_ohe_chunks <- map(df_chunks, \(x) mltools::one_hot(as.data.table(x)))
+  df_ohe <- bind_cols(df_ohe_chunks)
+  df_ohe <- cbind(df_samples, df_ohe)
+} else {
+  df_ohe <- mltools::one_hot(as.data.table(df_wide%>%select(-sample_name)))
+  df_ohe <- cbind(df_wide %>% select(sample_name), df_ohe)  
+}
 
 # write out the one hot encoded matrix as a feather dataframe
 feather::write_feather(df_ohe, opt$output)

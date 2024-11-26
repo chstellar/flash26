@@ -27,14 +27,15 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
 #DATASETS = ["eFaecium-CollEtAl"]
-SELECT_TYPES = ["filter1", "filter2", "filter3", "filter4"]
+SELECT_TYPES = ["filter1"]
 #SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-levFilter", "mmseqs-levFilter", "translated-clusters-levFilter", "oldClusters"]
+CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-hamFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
-NUM_CLUSTERS = [4000]
+NUM_CLUSTERS = [10000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
-MODELS = ["esm", "hyena"]
+MODELS = ["esm", "hyena", "hyenaMarlowe"]
+#"hyenaMarlowe"
 NORMALIZE = ["normalized", "unnormalized"]
 
 ## constrain the wildcards of the pipeline
@@ -54,11 +55,11 @@ rule all:
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
                     "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr", "bartlau-phage-infection", "canTrop-AzoleResistance-PRJNA946688"],
+               dataset=DATASETS,
                select_type=SELECT_TYPES,
-               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-hamFilter"],
+               cluster_type=CLUSTER_TYPES,
                model=MODELS,
-               num_clusters=["10000"],
+               num_clusters=["10000", "20000"],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
@@ -85,10 +86,10 @@ rule all_ohe:
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
                     "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr", "vibrio-cholerae-PRJNA723557", "bartlau-phage-infection", "canTrop-AzoleResistance-PRJNA946688"],
+               dataset=DATASETS,
                select_type=SELECT_TYPES,
-               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-hamFilter"],
-               num_clusters=["10000"],
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=["10000", "20000"],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
@@ -337,7 +338,24 @@ rule embed_kmers_hyena:
     shell:"""
         bash {params.script} {input.unique_kmers} {output}
     """
-
+    
+rule embed_kmers_hyena_marlowe:
+    input:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+    params:
+        script = config["scripts"]["embed_kmers_hyena_marlowe_nov2024"]
+    threads: 8
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 32000,
+        partition = "gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaMarlowe-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+        bash {params.script} {input.unique_kmers} {output}
+    """
 
 rule prepare_data_for_glmnet_top_variance:
     """
@@ -355,7 +373,7 @@ rule prepare_data_for_glmnet_top_variance:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 128000),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
@@ -635,6 +653,25 @@ rule embed_kmers_hyena_genomes:
     shell:"""
         bash {params.script} {input.unique_kmers} {output}
     """
+    
+
+rule embed_kmers_hyena_marlowe_genomes:
+    input:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+    params:
+        script = config["scripts"]["embed_kmers_hyena_marlowe_nov2024"]
+    threads: 8
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 32000,
+        partition = "gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaMarlowe-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+        bash {params.script} {input.unique_kmers} {output}
+    """
 
 rule prepare_data_for_glmnet_genomes:
     """
@@ -676,11 +713,11 @@ rule run_adelie_genomes:
         script = Path(config["scripts"]["glmnet_genomes_script"]),
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
         python_env = Path(config["envs"]["adelie"])
-    threads: 16
+    threads: 64
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
-        time = "24:00:00"
+        mem_mb = lambda _, attempt: 512000 + ((attempt - 1) * 64000),
+        time = "36:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
