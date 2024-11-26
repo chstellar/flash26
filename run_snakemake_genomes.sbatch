@@ -8,4 +8,4 @@
 
 source /home/users/dcotter1/.bashrc
 mamba activate snakemake
-snakemake --profile slurm_profile/ all all_ohe
+snakemake --profile slurm_profile/ -R all_genomes
