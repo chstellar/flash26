@@ -422,7 +422,7 @@ rule run_adelie:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 128000),
         time = "24:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
