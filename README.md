@@ -6,46 +6,6 @@ Daniel Cotter -- 10/07/2024
 
 The following pipeline uses `Snakemake` to run metadata-driven prediction and attribution on SPLASH results.
 
-### Different filters used for anchor selection3
-
-These filters are used to select the set of all anchors from the SPLASH results that will be sent for clustering and reordering. See `config.yaml` for the script used for the filtering.
-
-#### Filter 1
-
-1. effect size >= 0.6
-2. number of nonzero samples > 10th percentile
-3. no lookup table hits to artifacts
-4. select top 150,000 anchors by number of nonzero samples
-
-#### Filter 2
-
-1. effect size >= 0.6
-2. number of nonzero samples > 10th percentile
-3. no lookup table hits to artifacts
-4. select top 150,000 anchors by effect size
-
-#### Filter 3
-
-1. effect size >= 0.9
-2. no lookup table hits to artifacts
-3. further filter out the bottom 60% of anchors by number nonzero samples
-4. filter 3: further filter out the bottom 60% of anchors by effect size
-5. filter 3: select top 100,000 anchors by effect size * number of nonzero samples
-
-### Different clustering methods
-
-These are different methods for clustering the anchors from step 1 and then informed reordering/pruning of the clusters. See `config.yaml` for the scripts used for these steps.
-
-#### shiftDist-keepTopES
-
-1. Cluster using Tavor's shift distance code. shiftDist = 5
-2. Arrange each cluster by effect size bin and keep the **one** highest effect size anchor per cluster.
-
-#### shiftDist-keepMostAbundant
-
-1. Cluster using Tavor's shift distance code. shiftDist = 5
-2. Arrange each cluster by number nonzero samples and keep the **one** most abundant anchor per cluster.
-
 ## Running the workflow
 
 ### 1. Install `mamba` and `snakemake`
@@ -133,6 +93,8 @@ You can change these by specifying new paramaters.In order to change the `SELECT
 
 In the config file, you should change out the temp directory and point it at your personal `$SCRATCH` folder as the pipeline will create all necessary intermediate files in this folder.
 
+Similarly, if there are any issues with python environments
+
 ### 5. Run `snakemake`
 
 You can run the workflow by typing the following in an interactive node:
@@ -145,19 +107,77 @@ This will then submit and watch all the jobs along the way until the pipeline is
 
 ## Input Files 
 
-Input files and paths are details in `dataset_table.csv` and the columns are descriptive. Metadata paths as well as SPLASH results paths are stored there.
+Input files and paths are detailed in `dataset_table.csv` and the columns are descriptive. Metadata paths as well as SPLASH results paths are stored there.
 
 ## Output Files
 
 Output files are available in the `results/` folder with the dataset name as a subfolder.
 The files that the script generates are as follows: 
 
-- Annotated nonzero coefficients files: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_glmnet_results_top4000_k54_s54_nonzero_coefficients_annotated.tsv
-- Pdfs: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_glmnet_results_top4000_k54_s54_confusion_matrices.pdf
-- Random Forests PDFS: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_confusion_matrics.pdf
-- Random forests important features: results/dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_important_features.tsv
+- Annotated nonzero coefficients files: `results/{dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_adelie_results_top4000_k54_s54_nonzero_coefficients_annotated.tsv`
+- Pdfs: `results/{dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_adelie_results_top4000_k54_s54_confusion_matrices.pdf`
+- Random Forests PDFS: `results/{dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_confusion_matrics.pdf`
+- Random forests important features: `results/{dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_important_features.tsv`
+
+## Details on Pipeline paramaters
+
+### Different filters used for anchor selection
+
+These filters are used to select the set of all anchors from the SPLASH results that will be sent for clustering and reordering. See `config.yaml` for the script used for the filtering.
+
+#### Filter 1
+
+1. effect size >= 0.6
+2. number of nonzero samples > 10th percentile
+3. no lookup table hits to artifacts
+4. select top 150,000 anchors by number of nonzero samples
+
+#### Filter 2
+
+1. effect size >= 0.6
+2. number of nonzero samples > 10th percentile
+3. no lookup table hits to artifacts
+4. select top 150,000 anchors by effect size
+
+#### Filter 3
+
+1. effect size >= 0.9
+2. no lookup table hits to artifacts
+3. further filter out the bottom 60% of anchors by number nonzero samples
+4. filter 3: further filter out the bottom 60% of anchors by effect size
+5. filter 3: select top 100,000 anchors by effect size * number of nonzero samples
+
+### Different clustering methods
+
+These are different methods for clustering the anchors from step 1 and then informed reordering/pruning of the clusters. See `config.yaml` for the scripts used for these steps.
+
+#### shiftDist-keepTopES
+
+1. Cluster using Tavor's shift distance code. shiftDist = 5
+2. Arrange each cluster by effect size bin and keep the **one** highest effect size anchor per cluster.
+
+#### shiftDist-keepMostAbundant
+
+1. Cluster using Tavor's shift distance code. shiftDist = 5
+2. Arrange each cluster by number nonzero samples and keep the **one** most abundant anchor per cluster.
+
+#### shiftDist-levFilter
+
+1. Cluster using Tavor's shift distance code. shiftDist = 5
+2. Pick the highest ES anchor in each clusters as the Rep and remove any other anchors that are more than lev > 5 away from it.
+
+#### shiftDist-hamFilter
+
+1. Cluster using Tavor's shift distance code. shiftDist = 5
+2. Pick the highest ES anchor in each clusters as the Rep and remove any other anchors that are more than hamming > 5 away from it.
 
 ## Additional details
+
+### Notes on paths and environments
+
+Currently there are a few python virtual environment paths that are hardcoded into the `config.yaml` file. These are hosted on $OAK and should be usable by anyone on our lab's partition. Additionally I have provided `requirements.txt` files in the `envs/` folder for each of these. Note that each of these environments is built on top of the `python/3.9.0` module provided by Sherlock, but if creating them directly this should not matter.
+
+One problem with embedding in the hyena models is that the Docker image, checkpoint and config file are all located on our partition's OAK storage. The `src/hyena_utils/embed_fasta*` scripts can be modified to accomadate this and I can provide a copy of the Docker image if neccessary. Otherwise, the pipeline can still be run with the model set as `esm` or `ohe`.
 
 ### Adding new filters and new clustering scripts
 
@@ -180,4 +200,3 @@ Use the slurm log for a given job to find out why. All of the logs that slurm pr
 - Add a rule to rclone everything automatically to Google Drive
 - Add a rule to grab everything for a given dataset and produce a summary plot of the accuracies.
 - Add in the attribution code
-- Add in GPN/Hyena
