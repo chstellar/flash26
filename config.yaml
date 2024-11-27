@@ -57,3 +57,4 @@ scripts:
   annotate_clusters: src/annotation/annotate_with_lookup_table.py
   merge_annotations: src/annotation/merge_coefs_with_annotations.R
   run_blast: src/annotation/blast_code/run_blast.sh
+  merge_blast_results: src/annotation/merge_coefs_with_blast.R
