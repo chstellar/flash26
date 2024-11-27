@@ -722,7 +722,7 @@ rule run_adelie_genomes:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
     shell:"""
-        python/3.9.0
+        ml python/3.9.0
         source {params.python_env}
         Python {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
         --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
