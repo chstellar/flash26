@@ -798,6 +798,25 @@ rule run_blast_nonzero_features:
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
     """
 
+rule merge_blast_results:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"]
+    resources:
+        # 8 GB of memory
+        mem_mb = 8000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+    """
+
 rule merge_annotations_OHE:
     """
     Merge the annotations for each cluster onto the non-zero coefficients file for OHE features
@@ -836,6 +855,25 @@ rule run_blast_nonzero_features_OHE:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+    """
+
+rule merge_blast_results_OHE:
+    """
+    Merge the blast results with the annotated sequences for OHE features
+    """
+    input:
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"]
+    resources:
+        # 8 GB of memory
+        mem_mb = 8000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
 
 
