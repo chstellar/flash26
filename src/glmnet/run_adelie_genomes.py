@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument("--test_features", type=str, help="Path to the test features file", required=True)
     parser.add_argument("--test_metadata", type=str, help="Path to the test metadata file", required=True)
     parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
-    parser.add_argument("--min_samples", type=int, default=50, help="Minimum number of samples per category to keep")
+    parser.add_argument("--min_samples", type=int, default=100, help="Minimum number of samples per category to keep")
     parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
     return parser.parse_args()
 
@@ -106,6 +106,7 @@ def main():
                 continue
 
             yhat = model.predict(X_test.astype(np.float64))
+            st.contingency.crosstab(y_test, yhat).count
             if len(np.unique(yhat)) < 2:
                 print(f"Skipping {metadata_col} as there are not enough unique predictions...")
                 continue
