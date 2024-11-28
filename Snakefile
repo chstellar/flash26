@@ -63,7 +63,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
 
 
 rule all_genomes:
@@ -92,7 +92,7 @@ rule all_ohe:
                num_clusters=["10000", "20000"],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
 
 
 rule choose_anchors:

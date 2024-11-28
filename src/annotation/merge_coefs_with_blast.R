@@ -44,7 +44,6 @@ merged_data <- merged_data %>% rowwise() %>% mutate(max_coef=max(abs(as.numeric(
 # Merge the data on the 'cluster' column 
 # there may be multiple entries in annotations that match
 # in this case, the coefficients will be repeated for each match
-merged_data <- left_join(coefficients, flat_annotations, by = "cluster")
 
 # Write the merged data to a new CSV file
 write_tsv(merged_data, opt$output, col_names = T, quote="needed")
