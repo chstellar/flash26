@@ -30,7 +30,7 @@ if (is.null(opt$blast_annotations) || is.null(opt$coefficients) || is.null(opt$o
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE)
 
-annotations <- annotations %>% select(query, identity, features) %>% mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
+annotations <- annotations %>% select(query, identity, features, contains("window")) %>% mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
 
 
 coefficients <- fread(opt$coefficients, header = TRUE)
