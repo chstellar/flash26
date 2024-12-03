@@ -65,6 +65,8 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     # Drop any classes with less than min_samples
     class_counts = class_counts[class_counts >= min_samples]
     classes_to_keep = class_counts.index
+    classes_to_keep = classes_to_keep[~pd.isna(classes_to_keep)]
+    classes_to_keep = classes_to_keep[classes_to_keep != "nan"]
     # if there are not >= 2 classes with >= min_samples samples, return None
     if len(classes_to_keep) < 2:
         return None, None, None, None, None
@@ -109,7 +111,7 @@ def main():
     metadata = read_metadata(args.metadata)
     # Get the metadata columns that have more than 2 unique values
     # and more than 50 samples per category
-    metadata_columns = get_metadata_columns(metadata, min_samples=50)
+    metadata_columns = get_metadata_columns(metadata, min_samples=args.min_samples)
     
     all_model_features = None
 
