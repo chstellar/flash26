@@ -229,12 +229,12 @@ align_to_representative <- function(x, colname, representative_anchor) {
   return(x)
 }
 
-# apply the alignment function to each cluster column
-wide_satc <- cbind(wide_satc[1], 
-                   future_pmap_dfc(list(wide_satc[,2:ncol(wide_satc)],
-                                        colnames(wide_satc[,2:ncol(wide_satc)]),
-                                        representative_anchors),
-                                   \(x,y,z) align_to_representative(x, y, z)))
+# # apply the alignment function to each cluster column
+# wide_satc <- cbind(wide_satc[1], 
+#                    future_pmap_dfc(list(wide_satc[,2:ncol(wide_satc)],
+#                                         colnames(wide_satc[,2:ncol(wide_satc)]),
+#                                         representative_anchors),
+#                                    \(x,y,z) align_to_representative(x, y, z)))
 
 # add the representative anchors with Ns to the wide satc where there are NAs
 wide_satc <- cbind(wide_satc[1],
