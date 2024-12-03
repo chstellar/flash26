@@ -222,7 +222,7 @@ def main():
             plt.ylabel("True")
             plt.xticks(range(cm.shape[1]), metadata_categories, rotation=45)
             # these need to start from the bottom
-            plt.yticks(range(cm.shape[0]), metadata_categories[::-1], rotation=45)
+            plt.yticks(range(cm.shape[0]), metadata_categories, rotation=45)
             plt.tight_layout()
             pdf.savefig()
             plt.close()
