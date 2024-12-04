@@ -8,11 +8,12 @@
 # import modules
 import argparse
 from collections import defaultdict
-from Bio import pairwise2
-from Bio.pairwise2 import format_alignment
 from multiprocessing import Pool
 import Bio.SeqIO as SeqIO
+from Bio.Seq import Seq
 from tqdm import tqdm
+import random
+from collections import Counter
 
 
 # define functions
@@ -36,72 +37,105 @@ def read_clusters(cluster_file):
 
 def translate_sequence(sequence, translation_table=1):
     translations = []
+    sequence = Seq(sequence)
     for frame in range(3):
-        trans = str(SeqIO.Seq(sequence[frame:]).translate(to_stop=True, table=translation_table, cds=False))
+        trans = str(Seq(sequence[frame:]).translate(to_stop=True, table=translation_table, cds=False))
         translations.append(trans)
     for frame in range(3):
-        trans = str(SeqIO.Seq(sequence.reverse_complement()[frame:]).translate(to_stop=True, table=translation_table, cds=False))
+        trans = str(Seq(sequence.reverse_complement()[frame:]).translate(to_stop=True, table=translation_table, cds=False))
         translations.append(trans)
+    translations = [trans for trans in translations if len(trans) >= 8]
     return translations
 
 
 def read_anchors(anchor_file):
-    anchors = {}
-    for record in SeqIO.parse(anchor_file, "fasta"):
-        anchors[record.id] = translate_sequence(str(record.seq))
+    anchors = []
+    if anchor_file.endswith(".fasta") or anchor_file.endswith(".fa"):
+        for record in SeqIO.parse(anchor_file, "fasta"):
+            anchors.append(str(record.seq))
+    else:
+        with open(anchor_file, "r") as f:
+            for line in f:
+                line = line.strip().split("\t")
+                anchors.append(line[0])
     return anchors
 
 
-def find_best_match(clusters, anchor_translations, num_threads, chunk_size=100):
-    def process_chunk(chunk):
-        chunk_best_matches = {}
-        for anchor_id, translations in chunk:
-            best_score = 0
-            best_cluster = None
-            for cluster_id, cluster_seqs in clusters.items():
-                for cluster_seq in cluster_seqs:
-                    cluster_translations = translate_sequence(cluster_seq)
-                    for anchor_translation in translations:
-                        for cluster_translation in cluster_translations:
-                            alignments = pairwise2.align.globalxx(anchor_translation, cluster_translation)
-                            score = alignments[0][2] if alignments else 0
-                            if score > best_score:
-                                best_score = score
-                                best_cluster = cluster_id
-            chunk_best_matches[anchor_id] = best_cluster
-        return chunk_best_matches
+def create_hashed_cluster_dict(clusters, m=4, N=300):
+    """
+    for each anchor, create a dictionary with the cluster_id as the value and the anchor as the key. 
+    Instead of inserting the anchor insert a the anchor with m characters masked as N. Do this for each 
+    anchor N times, so we have a dictionary that is num_anchors * N in size.
+    """
+    hashed_clusters = defaultdict(list)
+    for cluster_id, anchors in clusters.items():
+        for anchor in anchors:
+            translated_anchors = translate_sequence(anchor)
+            for tran_anch in translated_anchors:
+                for i in range(N):
+                    masked_anchor = list(tran_anch)
+                    indices = random.sample(range(len(tran_anch)), m)
+                    for index in indices:
+                        masked_anchor[index] = "N"
+                    masked_anchor = "".join(masked_anchor)
+                    if cluster_id not in hashed_clusters[masked_anchor]:
+                        hashed_clusters[masked_anchor].append(cluster_id)
+    return hashed_clusters
 
-    anchor_items = list(anchor_translations.items())
-    chunks = [anchor_items[i:i + chunk_size] for i in range(0, len(anchor_items), chunk_size)]
-    
-    best_matches = {}
-    with Pool(processes=num_threads) as pool:
-        for result in tqdm(pool.imap(process_chunk, chunks), total=len(chunks), desc="Processing chunks"):
-            best_matches.update(result)
-    
-    return best_matches
+def add_anchor_to_cluster(anchor, cluster_dict, m=4, N=300):
+    """
+    For each anchor, translate it and mask m characters as Ns. Do this N times. For each masked anchor,
+    check if it is in the cluster dictionary. If it is, add the cluster_id to the list of clusters for that anchor.
+    At the end return the anchor and the list of clusters it belongs to.
+    """
+    anchor_translations = translate_sequence(anchor)
+    cluster_ids = list()
+    for tran_anch in anchor_translations:
+        for i in range(N):
+            masked_anchor = list(tran_anch)
+            indices = random.sample(range(len(tran_anch)), m)
+            for index in indices:
+                masked_anchor[index] = "N"
+            masked_anchor = "".join(masked_anchor)
+            cur_clusters = cluster_dict.get(masked_anchor, [])
+            cluster_ids.extend(cur_clusters)
+    count = Counter(cluster_ids)
+    if len(count) == 0:
+        return anchor, None
+    elif Counter(cluster_ids).most_common(1)[0][1] <= 3:
+        return anchor, None
+    else:
+        most_common_cluster = Counter(cluster_ids).most_common(1)[0][0]
+        return anchor, most_common_cluster
 
-def update_clusters(clusters, best_matches, anchor_translations):
-    for anchor_id, cluster_id in best_matches.items():
-        if cluster_id:
-            clusters[cluster_id].append(anchor_id)
-        else:
-            clusters[anchor_id] = anchor_translations[anchor_id]
-    return clusters
 
-def write_clusters(clusters, output_file):
-    with open(output_file, "w") as f:
-        for cluster_id, seq_ids in clusters.items():
-            for seq_id in seq_ids:
-                f.write(f"{cluster_id}\t{seq_id}\n")
+def find_best_match(clusters, anchors, threads, m=4, N=300):
+    """
+    For each anchor in the anchor list, find the most common cluster it belongs to. This is the cluster
+    that we will assign the anchor to for downstream processing.
+    """
+    cluster_lookup = create_hashed_cluster_dict(clusters, m=m, N=N)
+    cluster_assignments = dict()
+    with Pool(threads) as p:
+        results = list(tqdm(p.imap(lambda x: add_anchor_to_cluster(x, cluster_lookup, m=m, N=N), anchors), total=len(anchors)))
+    for anchor, cluster_id in results:
+        if cluster_id is not None:
+            cluster_assignments[anchor] = cluster_id
+    return cluster_assignments
+
 
 def main():
     args = parse_args()
     clusters = read_clusters(args.cluster_file)
-    anchor_translations = read_anchors(args.anchor_file)
-    best_matches = find_best_match(clusters, anchor_translations, args.threads)
-    updated_clusters = update_clusters(clusters, best_matches, anchor_translations)
-    write_clusters(updated_clusters, args.output_clusters)
+    anchors = read_anchors(args.anchor_file)
+    cluster_assignments = find_best_match(clusters, anchors, args.threads)
+    with open(args.output_clusters, "w") as f:
+        for anchor, cluster_id in cluster_assignments.items():
+            if cluster_id is not None:
+                f.write(f"{cluster_id}\t{anchor}\n")
+            else:
+                f.write(f"NA\t{anchor}\n")
+
 
 if __name__ == "__main__":
     main()
