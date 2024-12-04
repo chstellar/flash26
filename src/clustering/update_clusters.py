@@ -131,9 +131,14 @@ def main():
     m = 4
     N = 300
     args = parse_args()
+    print("Reading clusters...")
     clusters = read_clusters(args.cluster_file)
+    print("Reading anchors...")
     anchors = read_anchors(args.anchor_file)
+    print("Creating hashed cluster dictionary...")
     cluster_lookup = create_hashed_cluster_dict(clusters, m=m, N=N)
+    print("Finished creating hashed cluster dictionary.")
+    print("\nProcessing anchors...")
     cluster_assignments = dict()
     with Pool(args.threads) as p:
         results = list(tqdm(p.starmap(process_anchor, [(anchor, cluster_lookup, m, N) for anchor in anchors]), total=len(anchors)))
