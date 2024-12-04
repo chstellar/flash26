@@ -124,6 +124,9 @@ def add_anchor_to_cluster(anchor, cluster_dict, m=4, N=300):
 #     return cluster_assignments
 
 
+def process_anchor(anchor, cluster_lookup, m, N):
+    return add_anchor_to_cluster(anchor, cluster_lookup, m, N)
+
 def main():
     m = 4
     N = 300
@@ -133,7 +136,7 @@ def main():
     cluster_lookup = create_hashed_cluster_dict(clusters, m=m, N=N)
     cluster_assignments = dict()
     with Pool(args.threads) as p:
-        results = list(tqdm(p.imap(lambda x: add_anchor_to_cluster(x, cluster_lookup, m=m, N=N), anchors), total=len(anchors)))
+        results = list(tqdm(p.imap(process_anchor, [(anchor, cluster_lookup, m, N) for anchor in anchors]), total=len(anchors)))
     for anchor, cluster_id in results:
         if cluster_id is not None:
             cluster_assignments[anchor] = cluster_id
