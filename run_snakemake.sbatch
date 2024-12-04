@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #SBATCH --job-name=metaSPLASH_snakemake
-#SBATCH -p horence,normal
+#SBATCH -p horence
 #SBATCH -c 1
 #SBATCH --mem=8G
 #SBATCH --time=72:00:00

@@ -373,7 +373,7 @@ rule prepare_data_for_glmnet_top_variance:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 128000),
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 256000),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
@@ -690,7 +690,7 @@ rule prepare_data_for_glmnet_genomes:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 64000),
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 256000),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
