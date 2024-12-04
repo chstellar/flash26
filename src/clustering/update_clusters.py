@@ -109,26 +109,34 @@ def add_anchor_to_cluster(anchor, cluster_dict, m=4, N=300):
         return anchor, most_common_cluster
 
 
-def find_best_match(clusters, anchors, threads, m=4, N=300):
-    """
-    For each anchor in the anchor list, find the most common cluster it belongs to. This is the cluster
-    that we will assign the anchor to for downstream processing.
-    """
+# def find_best_match(clusters, anchors, threads, m=4, N=300):
+#     """
+#     For each anchor in the anchor list, find the most common cluster it belongs to. This is the cluster
+#     that we will assign the anchor to for downstream processing.
+#     """
+#     cluster_lookup = create_hashed_cluster_dict(clusters, m=m, N=N)
+#     cluster_assignments = dict()
+#     with Pool(threads) as p:
+#         results = list(tqdm(p.imap(lambda x: add_anchor_to_cluster(x, cluster_lookup, m=m, N=N), anchors), total=len(anchors)))
+#     for anchor, cluster_id in results:
+#         if cluster_id is not None:
+#             cluster_assignments[anchor] = cluster_id
+#     return cluster_assignments
+
+
+def main():
+    m = 4
+    N = 300
+    args = parse_args()
+    clusters = read_clusters(args.cluster_file)
+    anchors = read_anchors(args.anchor_file)
     cluster_lookup = create_hashed_cluster_dict(clusters, m=m, N=N)
     cluster_assignments = dict()
-    with Pool(threads) as p:
+    with Pool(args.threads) as p:
         results = list(tqdm(p.imap(lambda x: add_anchor_to_cluster(x, cluster_lookup, m=m, N=N), anchors), total=len(anchors)))
     for anchor, cluster_id in results:
         if cluster_id is not None:
             cluster_assignments[anchor] = cluster_id
-    return cluster_assignments
-
-
-def main():
-    args = parse_args()
-    clusters = read_clusters(args.cluster_file)
-    anchors = read_anchors(args.anchor_file)
-    cluster_assignments = find_best_match(clusters, anchors, args.threads)
     with open(args.output_clusters, "w") as f:
         for anchor, cluster_id in cluster_assignments.items():
             if cluster_id is not None:
