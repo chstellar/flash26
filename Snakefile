@@ -29,12 +29,12 @@ DATASETS = list(metadata_table.index)
 #DATASETS = ["eFaecium-CollEtAl"]
 SELECT_TYPES = ["filter1"]
 #SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-hamFilter"]
+CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-hamFilter", "shiftDist-levFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [10000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
-MODELS = ["esm", "hyena", "hyenaMarlowe"]
+MODELS = ["esm", "hyena", "hyenaMarlowe", "hyenaHG38"]
 #"hyenaMarlowe"
 NORMALIZE = ["normalized", "unnormalized"]
 
@@ -73,7 +73,7 @@ rule all_genomes:
                 "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=["eColi-arcadia-amr"],
                select_type=["filter1"],
-               cluster_type=["shiftDist-keepTopES", "shiftDist-keepMostAbundant", "shiftDist-hamFilter"],
+               cluster_type=CLUSTER_TYPES,
                model=["esm", "hyena"],
                num_clusters=[10000],
                kmer_width=KMER_WIDTH,
@@ -353,6 +353,25 @@ rule embed_kmers_hyena_marlowe:
         slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaMarlowe-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+        bash {params.script} {input.unique_kmers} {output}
+    """
+
+
+rule embed_kmers_hyena_defaultHG38:
+    input:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+    params:
+        script = config["scripts"]["embed_kmers_hyena_defaultHG38"]
+    threads: 8
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 32000,
+        partition = "gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaHG38-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
         bash {params.script} {input.unique_kmers} {output}
     """
@@ -669,6 +688,25 @@ rule embed_kmers_hyena_marlowe_genomes:
         slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaMarlowe-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    shell:"""
+        bash {params.script} {input.unique_kmers} {output}
+    """
+
+
+rule embed_kmers_hyena_defaultHG38_genomes:
+    input:
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+    params:
+        script = config["scripts"]["embed_kmers_hyena_defaultHG38"]
+    threads: 8
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 32000,
+        partition = "gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaHG38-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
         bash {params.script} {input.unique_kmers} {output}
     """
