@@ -51,7 +51,7 @@ if (!is.null(opt$temp_dir)) {
 
 # define future plans
 setDTthreads(opt$num_threads)
-plan(multicore, workers=opt$num_threads)
+plan(multisession, workers=opt$num_threads)
 options(future.globals.maxSize=4000*1024^2)
 
 ## print a summary of the arguments
