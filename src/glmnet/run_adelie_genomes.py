@@ -40,7 +40,7 @@ def get_metadata_columns(metadata, min_samples=50):
     filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() > min_samples) > 1, axis=0)]
     return filtered_metadata.columns
 
-def merge_data(data, metadata, metadata_col, min_samples=50):
+def merge_data(data, metadata, metadata_col, min_samples=50, even_samples=False):
     metadata = metadata[["sample_name", metadata_col]]
     merged_data = pd.merge(data, metadata, on='sample_name', how='left')
     merged_data = merged_data.dropna(subset=[metadata_col])
@@ -51,6 +51,11 @@ def merge_data(data, metadata, metadata_col, min_samples=50):
     if len(classes_to_keep) < 2:
         return None, None, None
     merged_data = merged_data[merged_data[metadata_col].isin(classes_to_keep)]
+
+    if even_samples:
+        num_to_keep = class_counts.min()
+        indices_to_keep = merged_data.groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
+        merged_data = merged_data.loc[indices_to_keep]
 
     X = merged_data.drop(["sample_name", metadata_col], axis=1)
     y = merged_data[metadata_col].to_numpy()
@@ -87,7 +92,7 @@ def main():
             print(f"Processing metadata column: {metadata_col}")
             print()
             
-            X_train, y_train, model_features = merge_data(train_features, train_metadata, metadata_col, min_samples=args.min_samples)
+            X_train, y_train, model_features = merge_data(train_features, train_metadata, metadata_col, min_samples=args.min_samples, even_samples=True)
             X_test, y_test, _ = merge_data(test_features, test_metadata, metadata_col, min_samples=0)
             if X_test is not None:
                 test_classes_to_keep = np.isin(y_test, np.unique(y_train))
