@@ -762,7 +762,7 @@ rule run_adelie_genomes:
     shell:"""
         ml python/3.9.0
         source {params.python_env}
-        Python {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
+        python {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
         --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
         --n_threads {threads}
     """
