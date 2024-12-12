@@ -62,7 +62,7 @@ def translate_anchor(anchor, translation_table=1, protein_db=None):
         out_translations = []
         with open(protein_db, "rb") as f:
             for protein in translations:
-                matches = find_near_matches_in_file(protein, f, max_l_dist=1)
+                matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=1)
                 if matches:
                     translations.append(protein)
     else:
