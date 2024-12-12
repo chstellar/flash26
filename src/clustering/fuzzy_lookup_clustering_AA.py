@@ -5,6 +5,8 @@
 # output_clusters: the updated clusters file
 # num_threads: the number of threads to use
 
+# usage: python <fuzzy_lookup_clustering_AA.py> <anchor_file> <output_clusters> --translation_table <translation_table> --protein_db <protein_db>
+
 # import modules
 import argparse
 from multiprocessing import Pool
