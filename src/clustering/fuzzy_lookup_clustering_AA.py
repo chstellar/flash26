@@ -22,6 +22,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Add new anchors to existing clusters")
     parser.add_argument("anchor_file", type=str, help="the new anchors to be added")
     parser.add_argument("output_clusters", type=str, help="the updated clusters file")
+    parser.add_argument("--translation_table", type=int, default=1, help="the translation table to use")
+    parser.add_argument("--protein_db", type=str, help="a protein database to filter the translations", default=None)
     return parser.parse_args()
 
 def read_anchors(anchor_file):
@@ -138,7 +140,7 @@ def main():
     print("Reading anchors...")
     anchors = read_anchors(args.anchor_file)
     print("Clustering anchors...")
-    clusters, aa_matches = cluster_anchors(anchors, m, N, j)
+    clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=args.protein_db)
     print("Writing clusters...")
     with open(args.output_clusters, "w") as f:
         for cluster_id, cluster in clusters.items():
