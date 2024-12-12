@@ -305,3 +305,42 @@ comp_data %>% ggplot(aes(x=lancet_specificity, y=specificity)) + geom_abline(int
   geom_point(aes(color=filter, shape=model)) + theme_minimal() +
   coord_cartesian(xlim=c(0.6,1), ylim=c(0.6,1)) + ggtitle("Specificity") + geom_text(y=0.95,aes(x=lancet_specificity, label=metadata), angle=90, size=3)
 
+# compare beta coefficients across models
+## plot all data in one plot
+load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients.tsv")
+data1 <- fread(cmd=load_cmd1, header=FALSE, sep="\t", 
+               col.names = c("path_metadata", "feature", "accuracy",
+                             "sensitivity", "specificity", "classes", "coefficients"))
+
+load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
+data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
+               col.names = c("path_metadata", "feature", "accuracy",
+                             "sensitivity", "specificity", "classes", "coefficients"))
+
+
+get_max_coef <- function(x) {
+  betas = strsplit(gsub("\\[|\\]", "", x),split = ",")[[1]]
+  max_beta = betas[which.max(abs(as.numeric(betas)))]
+  return(max_beta)
+}
+
+data <- rbind(data1,data2)
+data <- data %>% rowwise() %>% mutate(max_beta = get_max_coef(coefficients)) %>% 
+  separate(path_metadata, into=c("path", "metadata"), sep=":") 
+
+data <- data %>% mutate(num_clusters = str_extract(path, "top(\\d+)", group=1))
+data <- data %>% mutate(path=dirname(gsub("^results/", "", path))) %>%
+  mutate(path=gsub("/","_",path)) %>%
+  dplyr::rename(paramater_set=path)
+data <- data %>% mutate(paramater_set=str_replace(paramater_set, "_", "/")) %>% 
+  separate(paramater_set, into=c("dataset", "paramater_set"), sep="/")
+data <- data %>% mutate(model=str_extract(paramater_set, 
+                                          'hyenaHG38_normalized|hyenaHG38_unnormalized|hyenaMarlowe_normalized|hyenaMarlowe_unnormalized|esm_normalized|esm_unnormalized|hyena_normalized|hyena_unnormalized|ohe')) %>% arrange(desc(model))
+
+data <- data %>% mutate(filter = str_extract(paramater_set, "(filter\\d)_",group=1)) %>% 
+  mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-]+)_", group=1))
+
+data %>% filter(model!="ohe") %>% 
+  select(-c(accuracy, sensitivity, specificity, classes, coefficients)) %>% 
+  group_by(dataset,metadata,num_clusters,filter,cluster_approach) %>% 
+  pivot_wider(values_from = max_beta, names_from=model) %>% View()
