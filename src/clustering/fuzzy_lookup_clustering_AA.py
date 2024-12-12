@@ -86,7 +86,7 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     aa_matches = []
     for id, anchor in enumerate(anchors):
         if id % 1000 == 0:
-            print(f"Processing anchor {idx}/{len(anchors)}")
+            print(f"Processing anchor {id}/{len(anchors)}")
         translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
         if not translations:
             print(f"No translations found for anchor {anchor}")

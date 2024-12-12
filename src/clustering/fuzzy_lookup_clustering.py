@@ -52,7 +52,7 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
     clusters = dict()
     for id, anchor in enumerate(anchors):
         if id % 1000 == 0:
-            print(f"Processing anchor {idx}/{len(anchors)}")
+            print(f"Processing anchor {id}/{len(anchors)}")
         masked_anchors = []
         for i in range(N):
             masked_anchor = list(anchor)
