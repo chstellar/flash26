@@ -63,11 +63,10 @@ def translate_anchor(anchor, translation_table=1, protein_db=None):
     # Filter out translations that are not found in a protein database
     if protein_db:
         out_translations = []
-        with open(protein_db, "rb") as f:
-            for protein in translations:
-                matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=2)
-                if matches:
-                    out_translations.append(protein)
+        for protein in translations:
+            matches = find_near_matches_in_file(protein.encode(), protein_db, max_l_dist=2)
+            if matches:
+                out_translations.append(protein)
     else:
         out_translations = translations
     return out_translations
