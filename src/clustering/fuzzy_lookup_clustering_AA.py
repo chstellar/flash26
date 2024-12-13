@@ -146,7 +146,7 @@ def main():
     print("Clustering anchors...")
     if args.protein_db:
         with open(args.protein_db, "rb") as f:
-            clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=args.protein_db)
+            clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=f)
     else:
         clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table)
     print("Writing clusters...")
