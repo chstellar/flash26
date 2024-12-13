@@ -130,8 +130,8 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
         if not found_cluster:
             for masked_anchor in masked_anchors:
                 lookup_dict[masked_anchor] = len(clusters)
-            clusters[len(clusters)] = [anchor]
             aa_matches[len(clusters)] = [[anchor, ";".join(translations)]]
+            clusters[len(clusters)] = [anchor]
     # Return the clusters dictionary with the cluster id as the key and the list of anchors as the value
     return clusters, aa_matches
 
