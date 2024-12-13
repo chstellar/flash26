@@ -143,7 +143,9 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                     masked_anchors.append(back_trimmed)
         if not found_cluster:
             translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
-            print(translations)
+            if not translations:
+                # if there are no translations that pass the db, skip the anchor
+                continue
             new_masked_anchors = []
             for i in range(N):
                 masked_anchor = list(translations[0])
