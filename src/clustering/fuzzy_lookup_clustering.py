@@ -50,6 +50,7 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
     lookup_dict = dict()
     clusters = dict()
     for id, anchor in enumerate(anchors):
+        continue_outer_loop = False
         if id % 1000 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
         masked_anchors = []
@@ -62,7 +63,13 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
             if masked_anchor in lookup_dict:
                 cluster_id = lookup_dict[masked_anchor]
                 clusters[cluster_id].append(anchor)
+                # update the lookup dictionary with all the masked anchors so far
+                for mask_anch in masked_anchors:
+                    lookup_dict[mask_anch] = cluster_id
+                continue_outer_loop = True
                 break
+            if continue_outer_loop:
+                continue
             masked_anchors.append(masked_anchor)
         for i in range(j):
             i = i + 1
@@ -71,11 +78,23 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
             if front_trimmed in lookup_dict:
                 cluster_id = lookup_dict[front_trimmed]
                 clusters[cluster_id].append(anchor)
+                continue_outer_loop = True
+                # update the lookup dictionary with all the masked anchors so far
+                # update the lookup dictionary with all the masked anchors so far
+                for mask_anch in masked_anchors:
+                    lookup_dict[mask_anch] = cluster_id
                 break
             if back_trimmed in lookup_dict:
                 cluster_id = lookup_dict[back_trimmed]
                 clusters[cluster_id].append(anchor)
+                continue_outer_loop = True
+                # update the lookup dictionary with all the masked anchors so far
+                # update the lookup dictionary with all the masked anchors so far
+                for mask_anch in masked_anchors:
+                    lookup_dict[mask_anch] = cluster_id
                 break
+            if continue_outer_loop:
+                continue
             masked_anchors.append(front_trimmed)
             masked_anchors.append(back_trimmed)
         # if there are no matches, create a new cluster
@@ -88,7 +107,7 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
 
 
 def main():
-    m = 4
+    m = 5
     N = 1000
     j = 5
     args = parse_args()
