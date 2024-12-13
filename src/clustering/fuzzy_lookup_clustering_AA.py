@@ -92,10 +92,10 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
         if not translations:
             #print(f"No translations found for anchor {anchor}")
             continue
-        masked_anchors = []
         found_cluster = False
         for tran_anch in translations:
             if not found_cluster:
+                masked_anchors = []
                 for i in range(N):
                     masked_anchor = list(tran_anch)
                     indices = random.sample(range(len(tran_anch)), m)
