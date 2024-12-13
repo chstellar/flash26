@@ -13,7 +13,7 @@ from multiprocessing import Pool
 import Bio.SeqIO as SeqIO
 from Bio.Seq import Seq
 import random
-from fuzzysearch import find_near_matches_in_file
+from fuzzysearch import find_near_matches
 
 # define functions
 def parse_args():
@@ -64,8 +64,7 @@ def translate_anchor(anchor, translation_table=1, protein_db=None):
     if protein_db:
         out_translations = []
         for protein in translations:
-            with open(protein_db, "rb") as f:
-                matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=1)
+            matches = find_near_matches(protein.encode(), protein_db, max_l_dist=1)
             if matches:
                 out_translations.append(protein)
     else:
@@ -178,7 +177,11 @@ def main():
     anchors = read_anchors(args.anchor_file)
     print("Clustering anchors...")
     if args.protein_db:
-        clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=args.protein_db)
+        with open(args.protein_db, "rb") as f:
+            database = f.read()
+            # remove newline characters
+            database = database.replace(b"\n", b"")
+        clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=database)
     else:
         clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table)
     print("Writing clusters...")
