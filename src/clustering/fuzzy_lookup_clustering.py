@@ -68,9 +68,9 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
                     lookup_dict[mask_anch] = cluster_id
                 continue_outer_loop = True
                 break
-            if continue_outer_loop:
-                continue
             masked_anchors.append(masked_anchor)
+        if continue_outer_loop:
+            continue
         for i in range(j):
             i = i + 1
             front_trimmed = anchor[i:len(anchor)]
@@ -93,10 +93,10 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
                 for mask_anch in masked_anchors:
                     lookup_dict[mask_anch] = cluster_id
                 break
-            if continue_outer_loop:
-                continue
             masked_anchors.append(front_trimmed)
             masked_anchors.append(back_trimmed)
+        if continue_outer_loop:
+            continue
         # if there are no matches, create a new cluster
         # update the lookup dictionary with the masked anchors and a new cluster id
         for masked_anchor in masked_anchors:

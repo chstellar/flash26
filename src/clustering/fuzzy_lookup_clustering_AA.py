@@ -113,6 +113,8 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                             lookup_dict[mask_anch] = cluster_id
                         break
                     masked_anchors.append(masked_anchor)
+                if found_cluster:
+                    break
                 for i in range(j):
                     i = i + 1
                     front_trimmed = tran_anch[i:len(tran_anch)]
