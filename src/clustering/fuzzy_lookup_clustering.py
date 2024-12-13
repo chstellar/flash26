@@ -7,7 +7,6 @@
 
 # import modules
 import argparse
-from multiprocessing import Pool
 import Bio.SeqIO as SeqIO
 import random
 
@@ -64,6 +63,7 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
                 cluster_id = lookup_dict[masked_anchor]
                 clusters[cluster_id].append(anchor)
                 break
+            masked_anchors.append(masked_anchor)
         for i in range(j):
             i = i + 1
             front_trimmed = anchor[i:len(anchor)]
