@@ -63,11 +63,11 @@ def translate_anchor(anchor, translation_table=1, protein_db=None):
     # Filter out translations that are not found in a protein database
     if protein_db:
         out_translations = []
-        with open(protein_db, "rb") as f:
-            for protein in translations:
-                matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=2)
-                if matches:
-                    out_translations.append(protein)
+        for protein in translations:
+            matches = find_near_matches_in_file(protein.encode(), protein_db, max_l_dist=2)
+            protein_db.seek(0)
+            if matches:
+                out_translations.append(protein)
     else:
         out_translations = translations
     return out_translations
@@ -144,7 +144,11 @@ def main():
     print("Reading anchors...")
     anchors = read_anchors(args.anchor_file)
     print("Clustering anchors...")
-    clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=args.protein_db)
+    if args.protein_db:
+        with open(args.protein_db, "rb") as f:
+            clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=args.protein_db)
+    else:
+        clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table)
     print("Writing clusters...")
     with open(args.output_clusters, "w") as f:
         for cluster_id, cluster in clusters.items():
