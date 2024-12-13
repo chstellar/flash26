@@ -67,7 +67,7 @@ def translate_anchor(anchor, translation_table=1, protein_db=None):
             for protein in translations:
                 matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=2)
                 if matches:
-                    translations.append(protein)
+                    out_translations.append(protein)
     else:
         out_translations = translations
     return out_translations
@@ -87,11 +87,11 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     clusters = dict()  # Dictionary to store clusters
     aa_matches = dict()  # List to store anchor and translation matches
     for id, anchor in enumerate(anchors):
-        if id % 1000 == 0:
+        if id % 100 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
         translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
         if not translations:
-            print(f"No translations found for anchor {anchor}")
+            #print(f"No translations found for anchor {anchor}")
             continue
         masked_anchors = []
         found_cluster = False
