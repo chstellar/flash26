@@ -107,6 +107,10 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                         clusters[cluster_id].append(anchor)
                         aa_matches[cluster_id].append([anchor, tran_anch])
                         found_cluster = True
+                        masked_anchors.append(masked_anchor)
+                        # update the lookup dictionary with all the masked anchors so far
+                        for mask_anch in masked_anchors:
+                            lookup_dict[mask_anch] = cluster_id
                         break
                     masked_anchors.append(masked_anchor)
                 for i in range(j):
@@ -118,12 +122,20 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                         clusters[cluster_id].append(anchor)
                         aa_matches[cluster_id].append([anchor, tran_anch])
                         found_cluster = True
+                        masked_anchors.append(front_trimmed)
+                        # update the lookup dictionary with all the masked anchors so far
+                        for mask_anch in masked_anchors:
+                            lookup_dict[mask_anch] = cluster_id
                         break
                     if back_trimmed in lookup_dict:
                         cluster_id = lookup_dict[back_trimmed]
                         clusters[cluster_id].append(anchor)
                         aa_matches[cluster_id].append([anchor, tran_anch])
                         found_cluster = True
+                        masked_anchors.append(back_trimmed)
+                        # update the lookup dictionary with all the masked anchors so far
+                        for mask_anch in masked_anchors:
+                            lookup_dict[mask_anch] = cluster_id
                         break
                     masked_anchors.append(front_trimmed)
                     masked_anchors.append(back_trimmed)
