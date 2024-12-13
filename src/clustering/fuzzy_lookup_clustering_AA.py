@@ -15,7 +15,6 @@ from Bio.Seq import Seq
 import random
 from fuzzysearch import find_near_matches_in_file
 
-
 # define functions
 def parse_args():
     """
@@ -34,9 +33,11 @@ def read_anchors(anchor_file):
     """
     anchors = []
     if anchor_file.endswith(".fasta") or anchor_file.endswith(".fa"):
+        # Read fasta file
         for record in SeqIO.parse(anchor_file, "fasta"):
             anchors.append(str(record.seq))
     else:
+        # Read tab-delimited file
         with open(anchor_file, "r") as f:
             for line in f:
                 line = line.strip().split("\t")
@@ -45,45 +46,46 @@ def read_anchors(anchor_file):
 
 def translate_anchor(anchor, translation_table=1, protein_db=None):
     """
-    translate the anchor sequence in all 6 reading frames and return the translated sequences
-    if a protein database is provided, filter out the translations that are not found in the database
+    Translate the anchor sequence in all 6 reading frames and return the translated sequences.
+    If a protein database is provided, filter out the translations that are not found in the database.
     """
     translations = []
     anchor = Seq(anchor)
     for frame in range(3):
+        # Translate in forward direction
         translated = str(Seq(anchor[frame:]).translate(to_stop=True, table=translation_table, cds=False))
+        # Translate in reverse direction
         translated_reverse = str(Seq(anchor.reverse_complement()[frame:]).translate(to_stop=True, table=translation_table, cds=False))
         translations.append(translated)
         translations.append(translated_reverse)
-    # filter out translations that are less than 8 characters
-    translations = [translated for translated in translations if len(translated) >= 8]
-    # filter out translation that are not found in a protein database
+    # Filter out translations that are less than 7 characters
+    translations = [translated for translated in translations if len(translated) >= 7]
+    # Filter out translations that are not found in a protein database
     if protein_db:
         out_translations = []
         with open(protein_db, "rb") as f:
             for protein in translations:
-                matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=1)
+                matches = find_near_matches_in_file(protein.encode(), f, max_l_dist=2)
                 if matches:
                     translations.append(protein)
     else:
         out_translations = translations
     return out_translations
 
-
 def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=None):
     """
     Create a dictionary of clusters, then shuffle the input list of anchors and assign them to clusters.
-    Fore each anchor, mask m random characters as N and check to see if the masked anchor is in the cluster 
+    For each anchor, mask m random characters as N and check to see if the masked anchor is in the cluster 
     dictionary. If it is, add the anchor to the cluster. If it is not, assign the anchor to a new cluster.
-    Additionally drop the first and last 1:j charaters from each anchor and check that those are in the cluster dictionary.
+    Additionally drop the first and last 1:j characters from each anchor and check that those are in the cluster dictionary.
     This can account for shifts in the anchor sequences.
     m: the number of characters to mask
     N: the number of masked anchors to generate
     j: the number of characters to drop up to from the beginning and end of each anchor
     """
-    lookup_dict = dict()
-    clusters = dict()
-    aa_matches = []
+    lookup_dict = dict()  # Dictionary to store masked anchors and their cluster IDs
+    clusters = dict()  # Dictionary to store clusters
+    aa_matches = dict()  # List to store anchor and translation matches
     for id, anchor in enumerate(anchors):
         if id % 1000 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
@@ -94,7 +96,7 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
         masked_anchors = []
         found_cluster = False
         for tran_anch in translations:
-            if found_cluster == False:
+            if not found_cluster:
                 for i in range(N):
                     masked_anchor = list(tran_anch)
                     indices = random.sample(range(len(tran_anch)), m)
@@ -125,14 +127,13 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                         break
                     masked_anchors.append(front_trimmed)
                     masked_anchors.append(back_trimmed)
-        if found_cluster == False:
+        if not found_cluster:
             for masked_anchor in masked_anchors:
                 lookup_dict[masked_anchor] = len(clusters)
             clusters[len(clusters)] = [anchor]
-            aa_matches[len(clusters)] = [[anchor, "-"]]
-    # return the clusters dictionary with the cluster id as the key and the list of anchors as the value
+            aa_matches[len(clusters)] = [[anchor, ";".join(translations)]]
+    # Return the clusters dictionary with the cluster id as the key and the list of anchors as the value
     return clusters, aa_matches
-
 
 def main():
     m = 3
@@ -148,13 +149,12 @@ def main():
         for cluster_id, cluster in clusters.items():
             for anchor in cluster:
                 f.write(f"{cluster_id}\t{anchor}\n")
-    # replace the file extension with _aa_matches.tsv
+    # Replace the file extension with _aa_matches.tsv
     aa_matches_file = args.output_clusters.split(".")[0] + "_aa_matches.tsv"
     with open(aa_matches_file, "w") as f:
         for cluster_id, matches in aa_matches.items():
             for match in matches:
                 f.write(f"{cluster_id}\t{match[0]}\t{match[1]}\n")
-
 
 if __name__ == "__main__":
     main()
