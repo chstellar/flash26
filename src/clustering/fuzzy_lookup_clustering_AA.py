@@ -86,52 +86,53 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     lookup_dict = dict()  # Dictionary to store masked anchors and their cluster IDs
     clusters = dict()  # Dictionary to store clusters
     aa_matches = dict()  # List to store anchor and translation matches
-    for id, anchor in enumerate(anchors):
-        if id % 100 == 0:
-            print(f"Processing anchor {id}/{len(anchors)}")
-        translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
-        if not translations:
-            #print(f"No translations found for anchor {anchor}")
-            continue
-        masked_anchors = []
-        found_cluster = False
-        for tran_anch in translations:
+    with open(protein_db, "rb") as database:
+        for id, anchor in enumerate(anchors):
+            if id % 10 == 0:
+                print(f"Processing anchor {id}/{len(anchors)}")
+            translations = translate_anchor(anchor, translation_table=translation_table, protein_db=database)
+            if not translations:
+                #print(f"No translations found for anchor {anchor}")
+                continue
+            masked_anchors = []
+            found_cluster = False
+            for tran_anch in translations:
+                if not found_cluster:
+                    for i in range(N):
+                        masked_anchor = list(tran_anch)
+                        indices = random.sample(range(len(tran_anch)), m)
+                        for idx in indices:
+                            masked_anchor[idx] = "N"
+                        masked_anchor = "".join(masked_anchor)
+                        if masked_anchor in lookup_dict:
+                            cluster_id = lookup_dict[masked_anchor]
+                            clusters[cluster_id].append(anchor)
+                            aa_matches[cluster_id].append([anchor, tran_anch])
+                            found_cluster = True
+                            break
+                    for i in range(j):
+                        i = i + 1
+                        front_trimmed = tran_anch[i:len(tran_anch)]
+                        back_trimmed = tran_anch[0:len(tran_anch)-i]
+                        if front_trimmed in lookup_dict:
+                            cluster_id = lookup_dict[front_trimmed]
+                            clusters[cluster_id].append(anchor)
+                            aa_matches[cluster_id].append([anchor, tran_anch])
+                            found_cluster = True
+                            break
+                        if back_trimmed in lookup_dict:
+                            cluster_id = lookup_dict[back_trimmed]
+                            clusters[cluster_id].append(anchor)
+                            aa_matches[cluster_id].append([anchor, tran_anch])
+                            found_cluster = True
+                            break
+                        masked_anchors.append(front_trimmed)
+                        masked_anchors.append(back_trimmed)
             if not found_cluster:
-                for i in range(N):
-                    masked_anchor = list(tran_anch)
-                    indices = random.sample(range(len(tran_anch)), m)
-                    for idx in indices:
-                        masked_anchor[idx] = "N"
-                    masked_anchor = "".join(masked_anchor)
-                    if masked_anchor in lookup_dict:
-                        cluster_id = lookup_dict[masked_anchor]
-                        clusters[cluster_id].append(anchor)
-                        aa_matches[cluster_id].append([anchor, tran_anch])
-                        found_cluster = True
-                        break
-                for i in range(j):
-                    i = i + 1
-                    front_trimmed = tran_anch[i:len(tran_anch)]
-                    back_trimmed = tran_anch[0:len(tran_anch)-i]
-                    if front_trimmed in lookup_dict:
-                        cluster_id = lookup_dict[front_trimmed]
-                        clusters[cluster_id].append(anchor)
-                        aa_matches[cluster_id].append([anchor, tran_anch])
-                        found_cluster = True
-                        break
-                    if back_trimmed in lookup_dict:
-                        cluster_id = lookup_dict[back_trimmed]
-                        clusters[cluster_id].append(anchor)
-                        aa_matches[cluster_id].append([anchor, tran_anch])
-                        found_cluster = True
-                        break
-                    masked_anchors.append(front_trimmed)
-                    masked_anchors.append(back_trimmed)
-        if not found_cluster:
-            for masked_anchor in masked_anchors:
-                lookup_dict[masked_anchor] = len(clusters)
-            aa_matches[len(clusters)] = [[anchor, ";".join(translations)]]
-            clusters[len(clusters)] = [anchor]
+                for masked_anchor in masked_anchors:
+                    lookup_dict[masked_anchor] = len(clusters)
+                aa_matches[len(clusters)] = [[anchor, ";".join(translations)]]
+                clusters[len(clusters)] = [anchor]
     # Return the clusters dictionary with the cluster id as the key and the list of anchors as the value
     return clusters, aa_matches
 
