@@ -76,6 +76,13 @@ for (i in 1:length(unique_datasets)) {
     distinct(filter, cluster_approach, metadata, model, .keep_all=T) %>% 
     mutate(model = paste0(model, " (", num_clusters, " clusters)")) %>% select(-num_clusters) %>% 
     pivot_wider(names_from = model, values_from = specificity)
+  sensitivity_data <- data %>% 
+    filter(dataset==DATASET) %>% 
+    filter(num_clusters=="10000") %>%
+    select(filter, cluster_approach, metadata, model, sensitivity, num_clusters) %>% 
+    distinct(filter, cluster_approach, metadata, model, .keep_all=T) %>% 
+    mutate(model = paste0(model, " (", num_clusters, " clusters)")) %>% select(-num_clusters) %>% 
+    pivot_wider(names_from = model, values_from = sensitivity)
   all_cols <- colnames(accuracy_data %>% select(-c(filter, cluster_approach, metadata, `ohe (10000 clusters)`)))
   pdf(file.path(opt$output_folder, paste0(DATASET, "_model_comparisons_", format(Sys.time(), "%Y%m%d"), ".pdf")))
   for (i in all_cols) {
@@ -92,6 +99,12 @@ for (i in 1:length(unique_datasets)) {
       ggrepel::geom_text_repel(aes(label=metadata)) +
       ggtitle("Specificity")
     print(p2)
+    p3 <- sensitivity_data %>% 
+      ggplot(aes(x=`ohe (10000 clusters)`,y=!!y_col)) + geom_abline(slope=1, intercept = 0, color="black", lty="dashed") + 
+      geom_point(aes(shape=filter, color=cluster_approach), size=2) + theme_minimal() + coord_cartesian(ylim=c(0,1), xlim=c(0,1)) +
+      ggrepel::geom_text_repel(aes(label=metadata)) +
+      ggtitle("Sensitivity")
+    print(p3)
   }
   dev.off()
 }
