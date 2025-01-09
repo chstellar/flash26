@@ -254,7 +254,7 @@ def main():
             print()
             print(f"Processing metadata column: {metadata_col} with interaction terms of nonzero features")
             # extract nonzero features and perform same analysis with interaction terms
-            unique_features = model_features["feature"]
+            unique_features = model_features[["feature"]]
             unique_features = unique_features.drop_duplicates()
             unique_features = unique_features["feature"].tolist()
 
