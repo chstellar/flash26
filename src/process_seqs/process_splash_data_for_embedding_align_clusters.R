@@ -120,6 +120,20 @@ representative_anchors <- anchor_clusters %>% group_by(cluster_id) %>%
 
 # read in the satc and pivot it wider 
 wide_satc <- merge(satc_dt, anchor_clusters, by="anchor", all.x=TRUE)
+
+# identify clusters that are not in the satc file
+missing_clusters <- setdiff(anchor_clusters$cluster_id, wide_satc$cluster_id)
+
+# add the missing cluster for one sample with the representative anchor and Ns
+missing_df <- data.frame(sample=unique(head(wide_satc$sample))[1],
+                         anchor=representative_anchors[missing_clusters],
+                         target=strrep("N", nchar(representative_anchors[missing_clusters])),
+                         count=0,
+                         cluster_id=missing_clusters,
+                         rank=1)
+
+wide_satc <- rbind(wide_satc, missing_df)
+
 wide_satc <- as.data.table(wide_satc)
 wide_satc <- wide_satc[order(cluster_id, rank)]
 wide_satc <- unique(wide_satc, by=c("sample", "cluster_id"))
@@ -182,7 +196,7 @@ align_to_representative <- function(x, colname, representative_anchor) {
     }
     
     # first trim the leading Ns from the aligned seq
-    aligned_seq <- substr(aligned_seq, 4, nchar(aligned_seq))
+    # aligned_seq <- substr(aligned_seq, 4, nchar(aligned_seq))
     
     # trim or pad with Ns the aligned sequence to be the same length as the reference
     if (nchar(aligned_seq) < nchar(ref_seq)) {

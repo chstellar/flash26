@@ -94,6 +94,29 @@ rule all_ohe:
                kmer_step=KMER_STEP,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
 
+rule all_test_aa:
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505"],
+               select_type=["filter1"],
+               cluster_type=["aa-test-clustered"],
+               model=["esm", "hyena"],
+               num_clusters=[10000],
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
+               FILE = ["nonzero_coefficients_blast_annotated.tsv", "confusion_matrices.pdf"]),
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505"],
+               select_type=["filter1"],
+               cluster_type=["aa-test-clustered"],
+               num_clusters=["10000"],
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
+
 
 rule choose_anchors:
     """
