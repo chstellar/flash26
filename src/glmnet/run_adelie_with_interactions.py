@@ -359,6 +359,8 @@ def main():
 
             if specificity is None:
                 interaction_model_features["accuracy"] = accuracy
+                interaction_model_features["specificity"] = "NA"
+                interaction_model_features["sensitivity"] = "NA"
             else:
                 interaction_model_features["accuracy"] = accuracy
                 interaction_model_features["specificity"] = specificity
