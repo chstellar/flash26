@@ -71,9 +71,9 @@ rule all_genomes:
             # all genome coefficients files
             expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
                 "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eColi-arcadia-amr"],
+               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr"],
                select_type=["filter1"],
-               cluster_type=CLUSTER_TYPES,
+               cluster_type=["aa-test-clustered"],
                model=["esm", "hyena"],
                num_clusters=[10000],
                kmer_width=KMER_WIDTH,
@@ -115,7 +115,7 @@ rule all_test_aa:
                num_clusters=["10000"],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
 
 
 rule choose_anchors:
