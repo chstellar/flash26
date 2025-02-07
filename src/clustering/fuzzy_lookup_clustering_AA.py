@@ -88,7 +88,7 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     for id, anchor in enumerate(anchors):
         if id % 10 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
-        translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
+        translations = translate_anchor(anchor, translation_table=translation_table, protein_db=None)
         if not translations:
             #print(f"No translations found for anchor {anchor}")
             continue
@@ -142,16 +142,34 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                     masked_anchors.append(front_trimmed)
                     masked_anchors.append(back_trimmed)
         if not found_cluster:
-            for masked_anchor in masked_anchors:
+            translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
+            if not translations:
+                # if there are no translations that pass the db, skip the anchor
+                continue
+            new_masked_anchors = []
+            for i in range(N):
+                masked_anchor = list(translations[0])
+                indices = random.sample(range(len(translations[0])), m)
+                for idx in indices:
+                    masked_anchor[idx] = "N"
+                masked_anchor = "".join(masked_anchor)
+                new_masked_anchors.append(masked_anchor)
+            for i in range(j):
+                i = i + 1
+                front_trimmed = translations[0][i:len(translations[0])]
+                back_trimmed = translations[0][0:len(translations[0])-i]
+                new_masked_anchors.append(front_trimmed)
+                new_masked_anchors.append(back_trimmed)
+            for masked_anchor in new_masked_anchors:
                 lookup_dict[masked_anchor] = len(clusters)
-            aa_matches[len(clusters)] = [[anchor, ";".join(translations)]]
+            aa_matches[len(clusters)] = [[anchor, ";".join(translations[0])]]
             clusters[len(clusters)] = [anchor]
 
     # Return the clusters dictionary with the cluster id as the key and the list of anchors as the value
     return clusters, aa_matches
 
 def main():
-    m = 3
+    m = 2
     N = 300
     j = 2
     args = parse_args()

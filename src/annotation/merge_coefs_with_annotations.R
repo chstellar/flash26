@@ -55,7 +55,7 @@ if (nrow(merged_data %>% filter(!is.na(anno))) == 0) {
     group_by(metadata_category) %>% 
     slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
     distinct(cluster, .keep_all = T) %>% 
-    mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{54}"), \(x) toString(unique(x)))) %>% 
+    mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{30,70}"), \(x) toString(unique(x)))) %>% 
     select(-anno) %>% 
     separate_longer_delim(seqs, ", ") %>% 
     filter(!grepl("NNNNNNNNN", seqs)) %>%

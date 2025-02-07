@@ -19,4 +19,4 @@ output_file=$2
 
 # Call the Python script with the provided arguments
 cd ${HYENA_WDR}
-singularity run --nv --writable-tmpfs -B ${HYENA_WDR} ${SINGULARITY_IMG} python ${PYTHON_SCRIPT} --model_cfg ${MODEL_CFG} --ckpt_path ${MODEL_CKPT} --seq_file ${input_file} --output_file ${output_file} --max_seqlen 160000 --nlayers 8 --batch_size 1
+singularity run --nv --writable-tmpfs -B ${HYENA_WDR} ${SINGULARITY_IMG} python ${PYTHON_SCRIPT} --model_cfg ${MODEL_CFG} --ckpt_path ${MODEL_CKPT} --seq_file ${input_file} --output_file ${output_file} --max_seqlen 160000 --nlayers 8 --batch_size 100

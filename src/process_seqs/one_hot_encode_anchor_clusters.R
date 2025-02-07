@@ -48,7 +48,7 @@ df_wide <- df %>%
 
 # one hot encode each column (adding a column for each unique seqeunce in the cluster column)
 # if there are too many samples and too many unique sequences, this will cause an integer overflow error
-if (nrow(df_wide) > 5000 & ncol(df_wide) > 4000) {
+if (nrow(df_wide) > 3000 & ncol(df_wide) > 4000) {
   # split the dataframe into chunks by column and one hot encode each chunk before merging
   df_samples <- df_wide %>% select(sample_name)
   df_wide <- df_wide %>% select(-sample_name)
