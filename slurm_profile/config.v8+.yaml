@@ -12,7 +12,7 @@ cluster-generic-submit-cmd:
     {resources.slurm_extra}
 default-resources:
   - time="2:00:00"
-  - partition="horence,normal"
+  - partition="horence,owners,normal"
   - mem_mb=4000
   - slurm_extra=""
 jobs: 2000

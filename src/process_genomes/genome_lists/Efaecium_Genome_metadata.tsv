@@ -1,4 +1,4 @@
-sample_name	ampicillin	gentamicin	linezolid	quinupristin_dalfopristin	streptomycin	teicoplanin	tigecycline	vancomycin
+sample_name	ampicillin_RIS	gentamicin_RIS	linezolid_RIS	quinupristin_dalfopristin_RIS	streptomycin_RIS	teicoplanin_RIS	tigecycline_RIS	vancomycin_RIS
 1352.10281	resistant	NA	NA	NA	NA	NA	NA	resistant
 1352.10276	resistant	NA	NA	NA	NA	NA	NA	susceptible
 1352.10275	resistant	NA	NA	NA	NA	NA	NA	susceptible

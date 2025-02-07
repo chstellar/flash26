@@ -29,7 +29,7 @@ DATASETS = list(metadata_table.index)
 #DATASETS = ["eFaecium-CollEtAl"]
 SELECT_TYPES = ["filter1"]
 #SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-hamFilter", "shiftDist-levFilter"]
+CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-levFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [10000]
 KMER_WIDTH = [54]
@@ -85,7 +85,7 @@ rule all_genomes:
 rule all_ohe:
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
@@ -100,22 +100,50 @@ rule all_test_aa:
                     "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=["eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505"],
                select_type=["filter1"],
-               cluster_type=["aa-test-clustered"],
+               cluster_type=["test-aa-clustered-v2"],
                model=["esm", "hyena"],
-               num_clusters=[10000],
+               num_clusters=[20000],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
+               normalize=["normalized"],
                FILE = ["nonzero_coefficients_blast_annotated.tsv", "confusion_matrices.pdf"]),
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_glmnet_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
                dataset=["eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505"],
                select_type=["filter1"],
-               cluster_type=["aa-test-clustered"],
-               num_clusters=["10000"],
+               cluster_type=["test-aa-clustered-v2"],
+               num_clusters=[20000],
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
+               normalize=["normalized"],
+               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
+               
+rule all_8mers:
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eColi-8mer", "eFac-8mer"],
+               select_type=["filter1"],
+               cluster_type=["noClusters"],
+               model=["esm", "hyena"],
+               num_clusters=[20000],
+               kmer_width=39,
+               kmer_step=39,
+               normalize=["normalized"],
+               FILE = ["nonzero_coefficients_blast_annotated.tsv", "confusion_matrices.pdf"])
+               
+rule all_8mers_ohe:
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
+                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["eColi-8mer", "eFac-8mer"],
+               select_type=["filter1"],
+               cluster_type=["noClusters"],
+               num_clusters=[20000],
+               kmer_width=39,
+               kmer_step=39,
+               normalize=["normalized"],
+               FILE = ["nonzero_coefficients_blast_annotated.tsv", "confusion_matrices.pdf"])
 
 
 rule choose_anchors:
@@ -352,7 +380,7 @@ rule embed_kmers_hyena:
     threads: 8
     resources:
         # 64 GB of memory
-        time = "3:00:00",
+        time = "6:00:00",
         mem_mb = 32000,
         partition = "gpu,owners",
         slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
@@ -464,7 +492,7 @@ rule run_adelie:
     threads: 32
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 128000),
+        mem_mb = lambda _, attempt: 512000 + ((attempt - 1) * 128000),
         time = "24:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
@@ -516,7 +544,7 @@ rule prepare_data_for_glmnet_ohe:
     threads: 4
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 32000),
+        mem_mb = lambda _, attempt: 96000 + ((attempt - 1) * 64000),
         time = "3:00:00"
     shell:"""
         ml R/4.3.2
@@ -808,7 +836,7 @@ rule annotate_clusters:
     threads: 4
     resources:
         # 32 GB of memory
-        mem_mb = 32000
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 32000),
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
     shell:"""
@@ -830,7 +858,7 @@ rule merge_annotations:
         script = config["scripts"]["merge_annotations"]
     resources:
         # 32 GB of memory
-        mem_mb = 32000
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 32000),
     output:
         coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv"),
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
@@ -851,7 +879,8 @@ rule run_blast_nonzero_features:
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, "split_fasta")
     resources:
         # 64 GB of memory
-        mem_mb = 64000
+        mem_mb = 64000,
+        time = "5:00:00"
     threads: 16
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
@@ -910,7 +939,8 @@ rule run_blast_nonzero_features_OHE:
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "split_fasta")
     resources:
         # 64 GB of memory
-        mem_mb = 64000
+        mem_mb = 64000,
+        time = "5:00:00"
     threads: 16
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")

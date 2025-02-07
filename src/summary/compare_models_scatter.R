@@ -53,7 +53,7 @@ data <- data %>% mutate(model=str_extract(paramater_set,
                                           'hyenaHG38_normalized|hyenaHG38_unnormalized|hyenaMarlowe_normalized|hyenaMarlowe_unnormalized|esm_normalized|esm_unnormalized|hyena_normalized|hyena_unnormalized|ohe')) %>% arrange(desc(model))
 
 data <- data %>% mutate(filter = str_extract(paramater_set, "(filter\\d)_",group=1)) %>% 
-  mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-]+)_", group=1))
+  mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-2]+)_", group=1))
 
 data %>% filter(filter =="filter1" ) %>% filter(cluster_approach=="shiftDist-keepTopES") %>% filter(num_clusters=="10000") %>% ggplot(aes(x=dataset, y=specificity)) + geom_boxplot(aes(fill=model)) + 
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + scale_color_brewer(type="qual") + scale_fill_brewer(type="qual")
