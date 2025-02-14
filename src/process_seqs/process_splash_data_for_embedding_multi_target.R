@@ -174,7 +174,8 @@ if (opt$num_targets == 1){
       mutate(target_rank=row_number(count)) %>% ungroup()
     
     # filter the data to only keep the target that is target_rank == i per sample-anchor pair
-    wide_satc <- wide_satc %>% filter(target_rank == i) %>% distinct(sample, cluster_id, .keep_all=T)
+    wide_satc <- wide_satc %>% distinct(sample, cluster_id, target_rank, .keep_all=T) %>% 
+      filter(target_rank == i)
     
     # if this has created any missing clusters then add them back in
     missing_clusters <- setdiff(anchor_clusters$cluster_id, wide_satc$cluster_id)
