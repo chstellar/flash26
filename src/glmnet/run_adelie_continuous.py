@@ -117,9 +117,6 @@ def merge_and_split_data_continuous(data, metadata, metadata_col, train_prop=0.7
 
     # convert the entire X matrix to numeric
 
-    X_train = X_train.apply(pd.to_numeric)
-    X_test = X_test.apply(pd.to_numeric)
-
     y_train = y_train.astype(np.float64)
     y_test = y_test.astype(np.float64)
 
