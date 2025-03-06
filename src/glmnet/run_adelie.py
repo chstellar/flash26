@@ -88,7 +88,7 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
         model_features = X_train.columns
         y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
 
-        test_indices = merged_data.drop(["sample_name", metadata_col], axis=1).drop(indices_to_keep).groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
+        test_indices = merged_data.drop(indices_to_keep).groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
         X_test = merged_data.drop(["sample_name", metadata_col], axis=1).loc[test_indices]
         y_test = merged_data[metadata_col].loc[test_indices].to_numpy()
     else:
