@@ -132,7 +132,7 @@ def main():
             print(f"Processing metadata column: {metadata_col}")
             print()
             
-            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col, min_samples=args.min_samples)
+            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col, min_samples=args.min_samples, balanced_test=args.balanced_test)
 
             if X_train is None:
                 print(f"Skipping {metadata_col} as there are not enough samples after merging and filtering...")
