@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
     parser.add_argument("--min_samples", type=int, default=30, help="Minimum number of samples per category to keep")
     parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
+    parser.add_argument("--balanced_test", action="store_true", help="Keep the same number of samples per class in the test set")
     return parser.parse_args()
 
 def read_feather_data(file_path):
@@ -67,7 +68,7 @@ def get_metadata_columns(metadata, min_samples=50):
     return filtered_metadata_discrete.columns, filtered_metadata_continuous.columns
 
 
-def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_prop=0.5):
+def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_prop=0.5, balanced_test=False):
     metadata = metadata[["sample_name", metadata_col]]
     merged_data = pd.merge(data, metadata, on='sample_name', how='left')
     merged_data = merged_data.dropna(subset=[metadata_col])
@@ -94,13 +95,23 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     num_to_keep = floor(num_to_keep * train_prop)
     indices_to_keep = merged_data.groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
     
-    # Split the data into training and test sets
-    X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
-    model_features = X_train.columns
-    y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
-    
-    X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(indices_to_keep)
-    y_test = merged_data[metadata_col].drop(indices_to_keep).to_numpy()
+    # If we want a balanced test set, keep the same number of samples per class in the test set
+    if balanced_test:
+        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
+        model_features = X_train.columns
+        y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
+
+        test_indices = merged_data.drop(["sample_name", metadata_col], axis=1).drop(indices_to_keep).groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
+        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).loc[test_indices]
+        y_test = merged_data[metadata_col].loc[test_indices].to_numpy()
+    else:
+        # Split the data into training and test sets
+        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
+        model_features = X_train.columns
+        y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
+        
+        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(indices_to_keep)
+        y_test = merged_data[metadata_col].drop(indices_to_keep).to_numpy()
     
     return np.asfortranarray(X_train), np.asfortranarray(X_test), y_train, y_test, model_features
 
