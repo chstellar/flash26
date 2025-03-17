@@ -98,7 +98,7 @@ dt <- fread(cmd=load_cmd, header=TRUE, select = 1:18)
 
 # filter out the bottom 10% of anchors by number nonzero samples
 sample_cutoff <- quantile(dt$number_nonzero_samples, 0.1)
-dt <- dt %>% filter(number_nonzero_samples > sample_cutoff)
+dt <- dt %>% filter(number_nonzero_samples >= sample_cutoff)
 
 ## run lookup table to filter out artifacts -----------
 # write all anchors to a file
@@ -131,7 +131,7 @@ lookup_stats <- fread(out_lookup_stats, header=F, col.names=c("query", "stats"))
 lookup_stats <- lookup_stats %>% mutate(anchor = anchors_to_keep$anchor)
 
 # filter out anchors that have lookup table hits to artifacts
-artifact_pattern <- "plas|illum|syn|arp|RF|JUNK|Ral|purge|P,|Univec"
+artifact_pattern <- "plas|illum|syn|arp|RF|JUNK|Ral|purge|P,|Univec|cattle|chicken"
 anchors_to_keep <- lookup_stats %>% filter(!grepl(artifact_pattern, query, ignore.case=T)) %>% select(anchor)
 
 cat(paste0("Finished filtering. Kept ", nrow(anchors_to_keep), " anchors out of ", nrow(lookup_stats), " total anchors.\n"))
