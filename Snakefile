@@ -26,17 +26,21 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Dynamically generate {dataset} based on the metadata table
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
-#DATASETS = ["eFaecium-CollEtAl"]
 SELECT_TYPES = ["filter1"]
 #SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-keepTopES", "shiftDist-levFilter"]
+CLUSTER_TYPES = ["shiftDist-levFilter"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
-NUM_CLUSTERS = [10000]
+NUM_CLUSTERS = [20000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
-MODELS = ["esm", "hyena", "hyenaMarlowe", "hyenaHG38"]
+MODELS = ["esm", "hyena"]
 #"hyenaMarlowe"
 NORMALIZE = ["normalized", "unnormalized"]
+
+# for temp testing
+DATASETS = ["sepsis-PRJNA507824"]
+MODELS = ["hyena"]
+NORMALIZE = ["normalized"]
 
 ## constrain the wildcards of the pipeline
 wildcard_constraints:
@@ -59,7 +63,7 @@ rule all:
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
                model=MODELS,
-               num_clusters=["10000", "20000"],
+               num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
@@ -89,10 +93,10 @@ rule all_ohe:
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
-               num_clusters=["10000", "20000"],
+               num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
 
 rule all_test_aa:
     input:
