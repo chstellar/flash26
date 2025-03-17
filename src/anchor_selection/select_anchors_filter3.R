@@ -28,7 +28,7 @@ option_list <- list(
   make_option(c("-n", "--num_anchors"), "Number of anchors to select",
               type="integer", default = 1000000),
   make_option(c("-e", "--effect_size"), "Effect size threshold",
-              type="numeric", default=0.9),
+              type="numeric", default=0.6),
   make_option(c("-l", "--lookup_table"), "Lookup table file", type="character"),
   make_option(c("--splash_bin"), "Path to SPLASH binary folder",
               type="character", default="/oak/stanford/groups/horence/dcotter1/splash-2.6.1/"),
@@ -86,7 +86,7 @@ cat("###################################################################\n\n")
 headers <- fread(opt$input, nrows = 1, header=T)
 effect_size_bin_col <- grep("effect_size_bin", names(headers))
 
-# load the input file using awk to filter out rows with effect size < 0.7
+# load the input file using awk to filter out rows with effect size < 0.6
 load_cmd <- paste0("cat ", opt$input, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", opt$effect_size, ") print $0}'")
 if (grepl(".gz$", opt$input)) {
   load_cmd = paste0("z", load_cmd)
@@ -96,6 +96,10 @@ if (grepl(".gz$", opt$input)) {
 cat(paste("Reading in anchors from", opt$input, "with effect size >=", opt$effect_size))
 cat("\n\n")
 dt <- fread(cmd=load_cmd, header=TRUE, select = 1:18)
+
+# filter out the bottom 10% of anchors by number nonzero samples
+sample_cutoff <- quantile(dt$number_nonzero_samples, 0.1)
+dt <- dt %>% filter(number_nonzero_samples >= sample_cutoff)
 
 ## run lookup table to filter out artifacts -----------
 # write all anchors to a file
@@ -128,7 +132,7 @@ lookup_stats <- fread(out_lookup_stats, header=F, col.names=c("query", "stats"))
 lookup_stats <- lookup_stats %>% mutate(anchor = anchors_to_keep$anchor)
 
 # filter out anchors that have lookup table hits to artifacts
-artifact_pattern <- "plas|illum|syn|arp|RF|JUNK|Ral|purge|P,|Univec"
+artifact_pattern <- "plas|illum|syn|arp|RF|JUNK|Ral|purge|P,|Univec|cattle|chicken"
 anchors_to_keep <- lookup_stats %>% filter(!grepl(artifact_pattern, query, ignore.case=T)) %>% select(anchor)
 
 cat(paste0("Finished filtering. Kept ", nrow(anchors_to_keep), " anchors out of ", nrow(lookup_stats), " total anchors.\n"))
@@ -138,10 +142,10 @@ cat(paste0("Keeping the top ", opt$num_anchors, " by number_nonzero_samples for 
 anchors_to_keep <- anchors_to_keep %>% 
   left_join(dt %>% select(anchor, effect_size_bin, number_nonzero_samples), by="anchor") 
 
-samples_cutoff = quantile(anchors_to_keep$number_nonzero_samples, .6)
+samples_cutoff = quantile(anchors_to_keep$number_nonzero_samples, .4)
 anchors_to_keep <- anchors_to_keep %>% filter(number_nonzero_samples >=samples_cutoff)
 
-effect_size_cutoff = quantile(anchors_to_keep$effect_size_bin, .6)
+effect_size_cutoff = quantile(anchors_to_keep$effect_size_bin, .4)
 
 anchors_to_keep <- anchors_to_keep %>% filter(number_nonzero_samples >= samples_cutoff) %>%
   arrange(desc(effect_size_bin*number_nonzero_samples)) %>%

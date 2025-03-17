@@ -26,11 +26,10 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Dynamically generate {dataset} based on the metadata table
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
-SELECT_TYPES = ["filter1"]
-#SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-levFilter"]
+SELECT_TYPES = ["filter1", "filter3"]
+CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
-NUM_CLUSTERS = [20000]
+NUM_CLUSTERS = [30000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
 MODELS = ["esm", "hyena"]
@@ -38,7 +37,7 @@ MODELS = ["esm", "hyena"]
 NORMALIZE = ["normalized", "unnormalized"]
 
 # for temp testing
-DATASETS = ["sepsis-PRJNA507824"]
+DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688"] # "tuberculosis-PZAres", "GBS-ERP015737", "aspergillus-PRJNA632561"
 MODELS = ["hyena"]
 NORMALIZE = ["normalized"]
 
@@ -161,7 +160,8 @@ rule choose_anchors:
     params:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
         lookup_table = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "lookup_table"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type)
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
+        num_anchors = 5000000
     threads: 2
     resources:
         # 64 GB of memory
@@ -171,7 +171,7 @@ rule choose_anchors:
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} \
-        --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir}
+        --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors}
     """
 
 
@@ -187,7 +187,8 @@ rule cluster_anchors:
     params:
         script = lambda wildcards: Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
         python_env = Path(config["envs"]["default_python"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
+        translation_table = lambda wildcards: "--translation_table " + metadata_table.loc[wildcards.dataset, "translation_table"] if wildcards.cluster_type == "masked-aa-clustered" else ""
     threads: 4
     resources:
         # dynamically allocate memory based on the attempt
@@ -199,7 +200,7 @@ rule cluster_anchors:
         ml R/4.3.2
         ml python/3.9.0
         source {params.python_env}
-        {params.script} --input {input} --output {output} --temp_dir {params.tmp_dir}
+        {params.script} --input {input} --output {output} --temp_dir {params.tmp_dir} {params.translation_table}
     """
 
 

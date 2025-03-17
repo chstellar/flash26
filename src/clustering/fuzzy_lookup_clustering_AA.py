@@ -21,8 +21,8 @@ def parse_args():
     Parse the command line arguments and return the parsed arguments.
     """
     parser = argparse.ArgumentParser(description="Add new anchors to existing clusters")
-    parser.add_argument("anchor_file", type=str, help="the new anchors to be added")
-    parser.add_argument("output_clusters", type=str, help="the updated clusters file")
+    parser.add_argument("--input", type=str, help="the new anchors to be added")
+    parser.add_argument("--output", type=str, help="the updated clusters file")
     parser.add_argument("--translation_table", type=int, default=1, help="the translation table to use")
     parser.add_argument("--protein_db", type=str, help="a protein database to filter the translations", default=None)
     return parser.parse_args()
@@ -174,7 +174,7 @@ def main():
     j = 2
     args = parse_args()
     print("Reading anchors...")
-    anchors = read_anchors(args.anchor_file)
+    anchors = read_anchors(args.input)
     print("Clustering anchors...")
     if args.protein_db:
         with open(args.protein_db, "rb") as f:
@@ -185,7 +185,7 @@ def main():
     else:
         clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table)
     print("Writing clusters...")
-    with open(args.output_clusters, "w") as f:
+    with open(args.output, "w") as f:
         for cluster_id, cluster in clusters.items():
             for anchor in cluster:
                 f.write(f"{cluster_id}\t{anchor}\n")

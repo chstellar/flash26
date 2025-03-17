@@ -34,6 +34,8 @@ scripts:
     aa-test-clustered: ''
     test-aa-clustered-v2: ''
     noClusters: ''
+    masked-aa-clustered: 'src/clustering/fuzzy_lookup_clustering_AA.py'
+    masked-nucleotide-clustered: 'src/clustering/fuzzy_lookup_clustering.py'
   reorder_script:
     shiftDist-keepTopES: src/clustering/keep_topES_anchor_per_cluster.R
     shiftDist-keepMostAbundant: src/clustering/keep_mostAbundant_anchor_per_cluster.R
@@ -45,6 +47,8 @@ scripts:
     aa-test-clustered: ''
     test-aa-clustered-v2: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     noClusters: ''
+    masked-aa-clustered: 'src/clustering/filter_clusters_by_distance.R --distance_metric lev'
+    masked-nucleotide-clustered: 'src/clustering/filter_clusters_by_distance.R --distance_metric lev'
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
   prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py
