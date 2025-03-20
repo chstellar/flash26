@@ -31,6 +31,8 @@ def parse_args():
     parser.add_argument("--min_samples", type=int, default=30, help="Minimum number of samples per category to keep")
     parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
     parser.add_argument("--balanced_test", action="store_true", help="Keep the same number of samples per class in the test set")
+    parser.add_argument("--n_iter", type=int, default=100, help="Number of iterations to drop features")
+    parser.add_argument("--drop_full_cluster", action="store_true", help="Drop all features that belong to the same cluster")
     return parser.parse_args()
 
 def read_feather_data(file_path):
@@ -127,8 +129,8 @@ def main():
     # and more than 50 samples per category
     metadata_columns = get_metadata_columns(metadata, min_samples=args.min_samples)
 
-    N_ITER = 100
-    drop_full_cluster = True
+    N_ITER = args.n_iter
+    drop_full_cluster = args.drop_full_cluster
 
     metadata_col = args.metadata_col
     if metadata_col not in metadata_columns:
