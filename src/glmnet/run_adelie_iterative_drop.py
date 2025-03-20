@@ -235,7 +235,7 @@ def main():
         if drop_full_cluster:
             # drop all features that belong to the same cluster
             clusters = np.unique([re.sub(r"_embedding_\d+$", "", feature) for feature in model_features["feature"].values])
-            features_to_drop = np.concatenate((features_to_drop, unique_clusters))
+            features_to_drop = np.concatenate((features_to_drop, clusters))
         else:
             features_to_drop = np.concatenate((features_to_drop, model_features["feature"].values))
         X_train = original_X_train.copy()
