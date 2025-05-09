@@ -140,7 +140,7 @@ if (!is_empty(missing_clusters)) {
 }
 
 wide_satc <- as.data.table(wide_satc)
-wide_satc <- wide_satc[order(cluster_id, rank, count)]
+wide_satc <- wide_satc[order(cluster_id, rank, -count)]
 
 # if opt$num_targets is 1 then we can just take the top target per cluster
 if (opt$num_targets == 1){
@@ -168,47 +168,53 @@ if (opt$num_targets == 1){
   names(dna) <- seqs$sample
   writeXStringSet(dna, paste0(opt$output_prefix, "_sample_sequences.fasta"))
 } else {
+  # for each sample anchor pair assign a target_rank based on the target count, the data.table
+  # is already sorted by cluster_id, rank, and decreasing count
+  all_clustered_dfs <- split(wide_satc, wide_satc$cluster_id)
+  new_satc_all <- future_map_dfr(all_clustered_dfs, \(x) {
+    x %>% group_by(sample, anchor) %>%
+      mutate(target_rank=row_number(-count)) %>% ungroup()
+  }, .progress = T)
+  rm(all_clustered_dfs)
+  gc()
+  
+  # pivot the target column wider using the values in target_rank and call the columns target_i
+  new_satc_all <- new_satc_all %>% select(-count) %>%
+    group_by(sample, anchor, cluster_id, rank) %>%
+    pivot_wider(names_from=target_rank, names_glue="target_{target_rank}", values_from="target") %>%
+    ungroup()
+  
+  # grab the target length for replacing missing information later
+  target_len <- head(new_satc_all$target_1, 1) %>% nchar()
+  
   for (i in 1:opt$num_targets) {
-    # for each sample anchor pair assign a target_rank based on the target count
-    wide_satc <- wide_satc %>% group_by(sample, anchor) %>% 
-      mutate(target_rank=row_number(count)) %>% ungroup()
+    # With the pivoted data, arrange by sample, cluster id, and rank, then use distinct to grab the top anchor per cluster
+    # for each sample
+    new_satc <- new_satc_all %>% arrange(sample, cluster_id, rank) %>% 
+      distinct(sample, cluster_id, .keep_all=T) %>%
+      select(sample, cluster_id, anchor, !!sym(paste0("target_", i))) %>%
+      dplyr::rename(target=paste0("target_", i))
     
-    # filter the data to only keep the target that is target_rank == i per sample-anchor pair
-    wide_satc <- wide_satc %>% distinct(sample, cluster_id, target_rank, .keep_all=T) %>% 
-      filter(target_rank == i)
-    
-    # if this has created any missing clusters then add them back in
-    missing_clusters <- setdiff(anchor_clusters$cluster_id, wide_satc$cluster_id)
-    if (!is_empty(missing_clusters)) {
-      missing_df <- data.frame(
-        sample=unique(head(wide_satc$sample))[1],
-        anchor=representative_anchors[missing_clusters],
-        target=strrep("N", nchar(representative_anchors[missing_clusters])),
-        count=0,
-        cluster_id=missing_clusters,
-        rank=1,
-        target_rank=i)
-      wide_satc <- rbind(wide_satc, missing_df)
-    }
-    
-    # remove the target_rank column
-    wide_satc <- wide_satc %>% select(-target_rank)
+    # replace any missing targets with Ns 
+    new_satc <- new_satc %>% mutate(target=ifelse(is.na(target), strrep("N", target_len), target))
     
     # proceed as before but append target_i to the end of the filenames
-    wide_satc <- wide_satc %>% mutate(seq=str_c(anchor, target, sep="")) %>% 
+    new_satc <- new_satc %>% mutate(seq=str_c(anchor, target, sep="")) %>% 
       select(sample, cluster_id, seq)
     
-    wide_satc <- dcast(wide_satc, sample ~ cluster_id, value.var="seq")
+    new_satc <- as.data.table(new_satc)
+    new_satc <- dcast(new_satc, sample ~ cluster_id, value.var="seq")
+    new_satc <- as.data.frame(new_satc)
     
     # add the representative anchors to the wide satc
-    wide_satc <- cbind(wide_satc[1],
-                       map2_df(wide_satc[,2:ncol(wide_satc)], 
+    new_satc <- cbind(new_satc[1],
+                       map2_df(new_satc[,2:ncol(new_satc)], 
                                1:length(representative_anchors), 
                                \(x,y) ifelse(is.na(x), str_c(representative_anchors[y], strrep("N", 27), sep = ""), x)))
-    wide_satc <- wide_satc %>% ungroup()
+    new_satc <- new_satc %>% ungroup()
     
     # join the columns together into one sequence and write to a tsv
-    seqs <- wide_satc %>% unite(seq, -sample, sep="")
+    seqs <- new_satc %>% unite(seq, -sample, sep="")
     seqs %>% write_tsv(paste0(opt$output_prefix, "_sample_sequences_target_", i, ".tsv"))
     
     # write the data to a fasta file

@@ -3,6 +3,7 @@ import pandas as pd
 from Bio import SeqIO
 import argparse
 from pathlib import Path
+import tempfile  # Import tempfile module
 
 
 def parse_args():
@@ -71,7 +72,6 @@ def main():
     cluster_file = args.cluster_seqs
     lookup_table = args.lookup_table
     final_output_file = args.output
-    temp_fasta_file = os.path.join(args.temp_dir, 'temp.fasta')
     lookup_table_output = os.path.join(args.temp_dir, 'lookup_table_output.txt')
     splash_bin = args.splash_bin
     
@@ -79,8 +79,10 @@ def main():
     if not os.path.exists(args.temp_dir):
         os.mkdir(args.temp_dir)
     
-    # create the temp fasta file
-    create_temp_fasta(cluster_file, temp_fasta_file)
+    # create a unique temporary fasta file
+    with tempfile.NamedTemporaryFile(dir=args.temp_dir, suffix='.fasta', delete=False) as temp_file:
+        temp_fasta_file = temp_file.name
+        create_temp_fasta(cluster_file, temp_fasta_file)
 
     # run lookup table on the temp fasta file
     run_lookup(temp_fasta_file, lookup_table, lookup_table_output, splash_bin)
@@ -88,6 +90,7 @@ def main():
     # merge the original cluster file with the output of the lookup table
     merge_results(cluster_file, lookup_table_output, final_output_file)
     
+    # Clean up temporary files
     os.remove(temp_fasta_file)
     os.remove(lookup_table_output)
 

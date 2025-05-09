@@ -1,0 +1,193 @@
+suppressPackageStartupMessages(library(Biostrings))
+suppressPackageStartupMessages(library(stringdist))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(optparse))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(msa))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(ComplexHeatmap))
+
+
+option_list <- list(
+  make_option(c("--nonzero_annotations"), type = "character", default = NULL, 
+              help = "Path to the nonzero annotations tsv file", metavar = "character"),
+  make_option(c("--clusters"), type = "character", default = NULL, 
+              help = "Path to the clusters tsv file", metavar = "character"),
+  make_option(c("--feather_file"), type = "character", default = NULL, 
+              help = "Path to the X matrix feather file", metavar = "character"),
+  make_option(c("--sample_seqs"), type = "character", default = NULL, 
+              help = "Path to the sample sequences file", metavar = "character"),
+  make_option(c("--metadata"), type = "character", default = NULL, 
+              help = "Path to the metadata tsv file", metavar = "character"),
+  make_option(c("--output"), type = "character", default = NULL, 
+              help = "Path to set of output plots", metavar = "character"),
+  make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
+              help = "default to using products for column names instead of genes"),
+  make_option(c("--num_hits"), type="numeric", default=10,
+              help = "num nonzero coefficients to plot", metavar = "numeric")
+)
+
+# Parse command line options
+opt_parser <- OptionParser(option_list = option_list)
+opt <- parse_args(opt_parser)
+
+# Check if all required arguments are provided
+if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
+  print_help(opt_parser)
+  stop("All arguments must be supplied", call. = FALSE)
+}
+
+# set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
+known_causes = "NNNNNNNNNNNNNNN"
+
+# # testing
+# setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
+# opt$nonzero_annotations = "results/eFaecium-CollEtAl/filter1/shiftDist-levFilter/hyena/normalized/eFaecium-CollEtAl_hyena_adelie_results_top20000_k54_s54_nonzero_coefficients_blast_annotated.tsv"
+# opt$clusters = "results/eFaecium-CollEtAl/filter1/shiftDist-levFilter/eFaecium-CollEtAl_sequences_per_cluster_top20000-clusters_k54_s54.tsv"
+# opt$feather = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/eFaecium-CollEtAl/eFaecium-CollEtAl_hyena_top_variance_features_for_glmnet_filter1_shiftDist-levFilter_top20000_k54_s54_normalized.feather"
+# opt$sample_seqs = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/eFaecium-CollEtAl/eFaecium-CollEtAl_prepared_sequences_filter1_shiftDist-levFilter_top20000_sample_sequences.tsv"
+# opt$metadata = "/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/E_faecium_cleaned_resistance_metadata.tsv"
+# opt$output = "/oak/stanford/groups/horence/dcotter1/share/250506/test_eFac_more_blast_hits_out.pdf"
+
+
+
+filename = data.frame(path=opt$nonzero_annotations)
+
+filename <- filename %>% 
+  mutate(num_clusters = str_extract(path, "top(\\d+)", group=1)) %>%
+  mutate(path=dirname(gsub("^results/", "", path))) %>%
+  mutate(path=gsub("/","_",path)) %>%
+  dplyr::rename(paramater_set=path) %>%
+  mutate(paramater_set=str_replace(paramater_set, "_", "/")) %>% 
+  separate(paramater_set, into=c("dataset", "paramater_set"), sep="/") %>%
+  mutate(model=str_extract(paramater_set,
+                           'hyenaHG38_normalized|hyenaHG38_unnormalized|hyenaMarlowe_normalized|hyenaMarlowe_unnormalized|esm_normalized|esm_unnormalized|hyena_normalized|hyena_unnormalized|ohe')) %>%
+  mutate(filter = str_extract(paramater_set, "(filter\\d)_",group=1)) %>% 
+  mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-2]+)_", group=1)) 
+
+paramaters <- filename %>% pivot_longer(everything(), names_to="paramater", values_to="value") %>% deframe()
+
+
+# Define Function 
+get_max_abs_value <- function(x) {
+  sapply(x, function(str) {
+    nums <- as.numeric(strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]])
+    max(abs(nums), na.rm = TRUE)
+  })
+}
+
+
+get_first_coef <- function(x) {
+  sapply(x, function(str) {
+    nums <- as.numeric(strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]])
+    nums[1]
+  })
+}
+
+get_first_class <- function(x) {
+  sapply(x, function(str) {
+    classes <- strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]]
+    classes[1]
+  })
+}
+
+# read in input files
+dt <- fread(opt$nonzero_annotations)
+all_clusters <- fread(opt$clusters) %>% select(-kmer)
+feather_dt <- feather::read_feather(opt$feather)
+all_metadata <- fread(opt$metadata)
+
+categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
+
+pdf(opt$output, width=12, height=8)
+
+# write a title page first
+plot(0:10, type = "n", xaxt="n", yaxt="n", bty="n", xlab = "", ylab = "")
+text(5, 8, paramaters['dataset'])
+text(5, 7, paramaters['filter'])
+text(5, 6, paramaters['cluster_approach'])
+text(5, 5, paramaters['model'])
+text(5, 4, paste("At most", paramaters['num_clusters'], "clusters"))
+
+for (category in categories) {
+  summ_dt <- dt %>% filter(metadata_category==category) %>%
+    separate_longer_delim(features, delim = "},") %>% 
+    mutate(products=str_extract(features, "'product': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
+    mutate(genes=str_extract(features, "'gene': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
+    select(-features) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>% 
+    arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
+    rowwise() %>%
+    mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
+    ungroup() %>%
+    select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, products, genes) %>%
+    mutate(query = str_remove(query, "cluster_\\d+_")) %>%
+    group_by(cluster) %>%
+    ungroup() %>%
+    distinct(cluster,products,query,genes,.keep_all = T) %>% group_by(cluster)
+  
+  my_classes <- summ_dt[1,]$classes %>% unlist()
+  
+  if (opt$products) {
+    summ_dt <- summ_dt %>% group_by(cluster,query) %>%
+      mutate(label=ifelse(!is_empty(unique(na.omit(products))), paste(unique(na.omit(products)),collapse=","), paste(unique(na.omit(genes)), collapse=","))) %>% 
+      distinct(cluster, query, label, .keep_all=T) %>% ungroup()
+  } else {
+    summ_dt <- summ_dt %>% group_by(cluster,query) %>%
+      mutate(label=ifelse(!is_empty(unique(na.omit(genes))), paste(unique(na.omit(genes)), collapse=","), paste(unique(na.omit(products)),collapse=","))) %>% 
+      distinct(cluster, query, label, .keep_all=T) %>% ungroup()
+  }
+  
+  summ_dt <- summ_dt %>% group_by(cluster, feature, max_coefficient, first_coef) %>% summarise(label=paste(label, collapse=",")) %>% 
+    arrange(-max_coefficient) %>% ungroup()
+  
+  important_features <- summ_dt %>% select(feature, first_coef) %>% deframe()
+  
+  sub_feather_dt <- feather_dt %>% select(sample_name, all_of(names(important_features)))
+  
+  sub_feather_dt <- sub_feather_dt %>% mutate(across(all_of(names(important_features)), \(x) x * important_features[cur_column()]))
+  
+  sub_feather_dt <- sub_feather_dt %>% left_join(all_metadata %>% select(sample_name, !!category) %>% dplyr::rename(class:=!!category)) %>% relocate(class, .after=sample_name)
+
+  # Reshape the data to wide format for heatmap
+  heatmap_data <- sub_feather_dt %>%
+    filter(class %in% my_classes) %>%
+    select(-class) %>%
+    column_to_rownames("sample_name") %>%
+    as.matrix()
+  
+  # define dynamic colors
+  n_colors <- min(length(my_classes), 8)  # Set2 has max 8 colors
+  class_palette <- colorRampPalette(brewer.pal(max(n_colors,3), "Dark2"))(length(my_classes))
+  class_colors <- setNames(class_palette, my_classes)
+  
+  
+  # Create class annotation 
+  class_annotation <- sub_feather_dt %>%
+    filter(class %in% my_classes) %>%
+    select(sample_name, class) %>%
+    distinct() %>%
+    column_to_rownames("sample_name")
+  
+  # Create a heatmap annotation for classes
+  ha <- rowAnnotation(df = class_annotation, 
+                      col = list(class = class_colors))
+  
+  # Create the heatmap with hierarchical clustering
+  heatmap_plot <- Heatmap(heatmap_data, 
+                          name = "Value",  
+                          left_annotation = ha,
+                          cluster_rows = TRUE,  # Enable hierarchical clustering for rows
+                          cluster_columns = FALSE,  # Enable hierarchical clustering for columns
+                          show_row_names = FALSE, 
+                          show_column_names = TRUE,
+                          heatmap_legend_param = list(title = expression("embedding" %*% ~ beta), at = c(min(heatmap_data), 0, max(heatmap_data)), labels = c("Negative", "Zero", "Positive")),
+                          column_title = "Embedding Features",
+                          row_title = "Samples",
+  )
+  
+
+  draw(heatmap_plot,column_title=category, column_title_gp=grid::gpar(fontsize=16))
+
+}
+dev.off()

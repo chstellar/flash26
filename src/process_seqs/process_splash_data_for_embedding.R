@@ -27,9 +27,10 @@ option_list <- list(
               type="character"),
   make_option(c("--satc_util_bin"), "Path to SATC Util binary folder",
               type="character", default="/oak/stanford/groups/horence/dcotter1/satc_utils/"),
-  make_option(c("--num_cores"), "Number of cores to use", type="integer", default = 8)
+  make_option(c("--num_cores"), "Number of cores to use", type="integer", default = 8),
+  make_option(c("--single_cell"), help="Whether to merge the first two columns of the SATC file to create sample barcode pairs",
+              type= "logical", default=FALSE, action="store_true")
 )
-
 
 # parse command line arguments
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -52,6 +53,9 @@ if (!is.null(opt$temp_dir)) {
   temp_dir <- file.path(dirname(opt$output_prefix), "tmp/")
   system(paste("mkdir -p", temp_dir))
 }
+
+system(paste0("rm ", temp_dir, "/*"))
+system(paste0("rm ", temp_dir, "/dumped/*"))
 
 # read in the anchor cluster file
 anchor_clusters <- fread(opt$cluster_file, 
@@ -83,6 +87,12 @@ if (!file.exists(all_satc_file)) {
   system(paste("grep -v '^[ACTG]{3}' ", all_satc_file, " | grep -v '[ACTG]$' > ", 
                file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt")))
   system(paste("mv", file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt"), all_satc_file))
+}
+
+if (opt$single_cell) {
+  temp_merged_file <- file.path(opt$temp_dir, "all_satc_SC_merged_columns.txt")
+  system(paste("awk 'BEGIN {OFS=\"\\t\"} {print $1\"_\"$2, $3, $4, $5}'", all_satc_file, ">", temp_merged_file))
+  system(paste("mv", temp_merged_file, all_satc_file))
 }
 
 # undump the satc files

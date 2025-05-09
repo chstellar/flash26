@@ -27,9 +27,10 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
 SELECT_TYPES = ["filter1", "filter3"]
-CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered"]
+#CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered"]
+CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered"]
 #CLUSTER_TYPES = ["shiftDist-keepTopES"]
-NUM_CLUSTERS = [30000]
+NUM_CLUSTERS = [20000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
 MODELS = ["esm", "hyena"]
@@ -37,9 +38,20 @@ MODELS = ["esm", "hyena"]
 NORMALIZE = ["normalized", "unnormalized"]
 
 # for temp testing
-DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688"] # "tuberculosis-PZAres", "GBS-ERP015737", "aspergillus-PRJNA632561"
+DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688", "GBS-ERP015737", "aspergillus-PRJNA632561", "strepA"] # "strepA", "tuberculosis-PZAres"
 MODELS = ["hyena"]
 NORMALIZE = ["normalized"]
+#SELECT_TYPES=["filter1"]
+#CLUSTER_TYPES=["test-shiftDist-genomes-clustered", "test-AA-genomes-clustered", "shiftDist-levFilter"]
+#DATASETS = ["eFaecium-CollEtAl"]
+#NUM_CLUSTERS = [10000]
+
+## testing
+#DATASETS = ["y1000-genomes-data"]
+#NORMALIZE=["normalized", "unnormalized"]
+SELECT_TYPES=["filter1"]
+#CLUSTER_TYPES=["shiftDist-levFilter"]
+NUM_CLUSTERS=[20000]
 
 ## constrain the wildcards of the pipeline
 wildcard_constraints:
@@ -66,7 +78,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]) # "nonzero_coefficients_blast_annotated.tsv"
 
 
 rule all_genomes:
@@ -74,11 +86,11 @@ rule all_genomes:
             # all genome coefficients files
             expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
                 "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eFaecium-CollEtAl", "eColi-arcadia-amr"],
-               select_type=["filter1"],
-               cluster_type=["aa-test-clustered"],
-               model=["esm", "hyena"],
-               num_clusters=[10000],
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
@@ -95,7 +107,7 @@ rule all_ohe:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated_plots.pdf"]) # "nonzero_coefficients_blast_annotated.tsv"
 
 rule all_test_aa:
     input:
@@ -161,17 +173,19 @@ rule choose_anchors:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
         lookup_table = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "lookup_table"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
-        num_anchors = 5000000
-    threads: 2
+        num_anchors = 3000000,
+        effect_size = 0.7
+    threads: 4
     resources:
-        # 64 GB of memory
-        mem_mb = 64000
+        # 128 GB of memory
+        mem_mb = 128000
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} \
-        --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors}
+        --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors} \
+        --effect_size {params.effect_size}
     """
 
 
@@ -188,12 +202,12 @@ rule cluster_anchors:
         script = lambda wildcards: Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
         python_env = Path(config["envs"]["default_python"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
-        translation_table = lambda wildcards: "--translation_table " + metadata_table.loc[wildcards.dataset, "translation_table"] if wildcards.cluster_type == "masked-aa-clustered" else ""
+        translation_table = lambda wildcards: f"--translation_table {metadata_table.loc[wildcards.dataset, "translation_table"]}"  if wildcards.cluster_type == "masked-aa-clustered" else ""
     threads: 4
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 32000 + ((attempt - 1) * 32000),
-        time = "3:00:00"
+        mem_mb = lambda wildcards, attempt: 640000 + ((attempt - 1) * 128000) if (wildcards.cluster_type == "masked-aa-clustered" or wildcards.cluster_type == "masked-nucleotide-clustered") else 64000 + ((attempt - 1) * 128000), # change back to 256000 after next run
+        time = lambda wildcards, attempt: "12:00:00" if (wildcards.cluster_type == "masked-aa-clustered" or wildcards.cluster_type == "masked-nucleotide-clustered") else "3:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
     shell:"""
@@ -261,6 +275,7 @@ rule prepare_sequences:
         satc_dir = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "SPLASH_results"], "result_satc"),
         output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters"),
+        single_cell = lambda wildcards: "--single_cell" if "SC10X" in wildcards.dataset else ""
     threads: 16
     resources:
         # 128 GB of memory
@@ -273,7 +288,7 @@ rule prepare_sequences:
         Rscript --vanilla {params.script} --anchor_file {input.anchor_file} \
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         --satc_files {params.satc_dir} --output_prefix {params.output_prefix} \
-        --temp_dir {params.tmp_dir} --num_cores {threads}
+        --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell}
     """
 
 
@@ -364,8 +379,8 @@ rule embed_kmers_ESM:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_esm-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -387,8 +402,8 @@ rule embed_kmers_hyena:
         # 64 GB of memory
         time = "6:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -405,8 +420,8 @@ rule embed_kmers_hyena_marlowe:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaMarlowe-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -424,8 +439,8 @@ rule embed_kmers_hyena_defaultHG38:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaHG38-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -449,6 +464,7 @@ rule prepare_data_for_glmnet_top_variance:
     resources:
         # dynamically allocate memory based on the attempt
         mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 256000),
+        time = "6:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
@@ -699,8 +715,8 @@ rule embed_kmers_ESM_genomes:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_esm-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -721,8 +737,8 @@ rule embed_kmers_hyena_genomes:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -740,8 +756,8 @@ rule embed_kmers_hyena_marlowe_genomes:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaMarlowe-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -759,8 +775,8 @@ rule embed_kmers_hyena_defaultHG38_genomes:
         # 64 GB of memory
         time = "3:00:00",
         mem_mb = 32000,
-        partition = "gpu,owners",
-        slurm_extra = "-G 1 -C 'GPU_GEN:AMP|GPU_GEN:VLT|GPU_GEN:TUR'"
+        partition = "horence,gpu,owners",
+        slurm_extra = "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyenaHG38-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
@@ -850,6 +866,32 @@ rule annotate_clusters:
         python {params.script} --cluster_seqs {input.cluster_seqs} --lookup_table {input.lookup_table} \
         --output {output} --temp_dir {params.temp_dir} --splash_bin {params.splash_bin} 
     """
+    
+rule annotate_clusters_amr:
+    """
+    Annotate the clusters with the lookup table
+    NEED to add in code to clean up the output
+    """
+    input:
+        cluster_seqs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        lookup_table = config["lookup_table_for_annotation_AMR"]
+    params:
+        script = config["scripts"]["annotate_clusters"],
+        python_env = config["envs"]["default_python"],
+        temp_dir = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}"),
+        splash_bin = config["splash_bin"]
+    threads: 4
+    resources:
+        # 32 GB of memory
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 32000),
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_AMR-annotated.tsv")
+    shell:"""
+        ml python/3.9.0
+        source {params.python_env}
+        python {params.script} --cluster_seqs {input.cluster_seqs} --lookup_table {input.lookup_table} \
+        --output {output} --temp_dir {params.temp_dir} --splash_bin {params.splash_bin} 
+    """
 
 
 rule merge_annotations:
@@ -871,6 +913,26 @@ rule merge_annotations:
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
     """
+    
+    
+rule merge_annotations_AMR:
+    """
+    Merge the annotations for each cluster onto the non-zero coefficients file
+    """
+    input:
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_AMR-annotated.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_annotations"]
+    resources:
+        # 32 GB of memory
+        mem_mb = lambda _, attempt: 64000 + ((attempt - 1) * 32000),
+    output:
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_AMR-annotated.tsv")
+    shell:"""
+    ml R/4.3.2
+    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs} --noFasta
+    """    
 
 rule run_blast_nonzero_features:
     """
@@ -911,6 +973,53 @@ rule merge_blast_results:
         ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
+    
+rule plot_blast_features:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+    params:
+        script = config["scripts"]["plot_blast_results"]
+    resources:
+        # 8 GB of memory
+        mem_mb = 8000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --nonzero_annotations {input} --output {output}
+    """
+
+rule plot_blast_heatmaps:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    params:
+        script = config["scripts"]["plot_blast_heatmaps"]
+    resources:
+        # 128 GB of memory
+        mem_mb = 128000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_heatmaps.pdf")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} \
+        --nonzero_annotations {input.nonzero_features}\
+        --clusters {input.clusters} \
+        --feather_file {input.feather} \
+        --sample_seqs {input.sequences} \
+        --metadata {input.metadata} \
+        --output {output}
+    """
+
 
 rule merge_annotations_OHE:
     """
@@ -930,6 +1039,25 @@ rule merge_annotations_OHE:
     shell:"""
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
+    """
+    
+rule merge_annotations_OHE_AMR:
+    """
+    Merge the annotations for each cluster onto the non-zero coefficients file for OHE features
+    """
+    input:
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_AMR-annotated.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_annotations"]
+    resources:
+        # 32 GB of memory
+        mem_mb = 32000
+    output:
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_AMR-annotated.tsv")
+    shell:"""
+    ml R/4.3.2
+    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs} --noFasta
     """
 
 rule run_blast_nonzero_features_OHE:
@@ -971,7 +1099,24 @@ rule merge_blast_results_OHE:
         ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
-
+    
+rule plot_blast_features_OHE:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+    params:
+        script = config["scripts"]["plot_blast_results"]
+    resources:
+        # 8 GB of memory
+        mem_mb = 8000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --nonzero_annotations {input} --output {output}
+    """
 
 rule merge_annotations_genomes:
     """

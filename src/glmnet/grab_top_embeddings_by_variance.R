@@ -103,6 +103,8 @@ cluster_files <- paste0(temp_embeddings_dir, "embeddings_cluster_", 0:(length(cl
 
 cat("Writing all clusters and their embeddings out to file in: ", temp_embeddings_dir)
 
+system(paste0("rm ", temp_embeddings_dir, "/*"))
+
 if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
   future_walk2(clusters, cluster_files, \(x,y) join_and_write_clusters(x, y, all_embeddings = embeddings))
 }

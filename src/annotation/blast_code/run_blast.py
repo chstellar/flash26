@@ -11,7 +11,6 @@ SPLIT_THRESH = 100
 SPLIT_EACH = 50
 
 def run_blast(splitted_fasta, blast_folder, max_workers):
-
     fmt="6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore sseqid sgi sacc slen staxids stitle"
 
     def run_single_blast(f):
@@ -20,7 +19,7 @@ def run_blast(splitted_fasta, blast_folder, max_workers):
         if os.path.exists(blast_out) and os.path.getsize(blast_out) > 0:
             print(f"Skipping {f} as blast output already exists")
             return
-        cmd = f"blastn -outfmt '{fmt}' -query {f} -remote -db core_nt -out {blast_out} -evalue 0.1 -task blastn -dust no -word_size 24 -reward 1 -penalty -3 -max_target_seqs 4"
+        cmd = f"blastn -outfmt '{fmt}' -query {f} -remote -db core_nt -out {blast_out} -evalue 0.1 -task blastn -dust no -word_size 24 -reward 1 -penalty -3 -max_target_seqs 5"
         subprocess.run(cmd, shell=True, check=True)
         print(f"Blast complete for {f}")
 

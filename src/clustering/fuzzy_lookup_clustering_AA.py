@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--output", type=str, help="the updated clusters file")
     parser.add_argument("--translation_table", type=int, default=1, help="the translation table to use")
     parser.add_argument("--protein_db", type=str, help="a protein database to filter the translations", default=None)
+    parser.add_argument("--temp_dir", type=str, help="redundant path to temp_dir. necessary for snakemake execution", default=None)
     return parser.parse_args()
 
 def read_anchors(anchor_file):
@@ -86,7 +87,7 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     clusters = dict()  # Dictionary to store clusters
     aa_matches = dict()  # List to store anchor and translation matches
     for id, anchor in enumerate(anchors):
-        if id % 10 == 0:
+        if id % 5000 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
         translations = translate_anchor(anchor, translation_table=translation_table, protein_db=None)
         if not translations:
@@ -190,7 +191,7 @@ def main():
             for anchor in cluster:
                 f.write(f"{cluster_id}\t{anchor}\n")
     # Replace the file extension with _aa_matches.tsv
-    aa_matches_file = args.output_clusters.split(".")[0] + "_aa_matches.tsv"
+    aa_matches_file = args.output.split(".")[0] + "_aa_matches.tsv"
     with open(aa_matches_file, "w") as f:
         for cluster_id, matches in aa_matches.items():
             for match in matches:

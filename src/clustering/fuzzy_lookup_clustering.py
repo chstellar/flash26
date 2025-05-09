@@ -19,6 +19,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Add new anchors to existing clusters")
     parser.add_argument("--input", type=str, help="the new anchors to be added")
     parser.add_argument("--output", type=str, help="the updated clusters file")
+    parser.add_argument("--temp_dir", type=str, help="redundant path to temp_dir. necessary for snakemake execution", default=None)
     return parser.parse_args()
 
 def read_anchors(anchor_file):
@@ -51,7 +52,7 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
     clusters = dict()
     for id, anchor in enumerate(anchors):
         continue_outer_loop = False
-        if id % 1000 == 0:
+        if id % 5000 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
         masked_anchors = []
         for i in range(N):

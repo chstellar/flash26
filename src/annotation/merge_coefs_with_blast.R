@@ -1,7 +1,7 @@
 # Load necessary libraries
-library(optparse)
-library(data.table)
-library(tidyverse)
+suppressPackageStartupMessages(library(optparse))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(tidyverse))
 #library(Biostrings)
 
 # Define command line options

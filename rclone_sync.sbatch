@@ -7,4 +7,4 @@
 
 ml system
 ml rclone
-rclone copy results/ gdrive:Salzman\ Lab/Shared\ Materials/MetaSPLASH_all_results/results_by_dataset
+rclone copy results/ gdrive:Salzman\ Lab/Shared\ Materials/MetaSPLASH_all_results/results_by_dataset/may_08_2025

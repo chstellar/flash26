@@ -29,23 +29,33 @@ library(ggpubr)
 
 
 ## plot all data in one plot
-load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients.tsv")
+load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients_blast_annotated.tsv")
 data1 <- fread(cmd=load_cmd1, header=FALSE, sep="\t", 
                col.names = c("path_metadata", "feature", "accuracy",
-                             "sensitivity", "specificity", "classes", "coefficients"))
+                             "sensitivity", "specificity", "classes", "coefficients", 
+                             "cluster", "query", "identity", "features", "features_10000_window"))
 
-load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
+load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients_blast_annotated.tsv")
 data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
                col.names = c("path_metadata", "feature", "accuracy",
-                             "sensitivity", "specificity", "classes", "coefficients"))
+                             "sensitivity", "specificity", "classes", "coefficients", 
+                             "cluster", "query", "identity", "features", "features_10000_window"))
 
 
-data <- rbind(data1,data2)
+data <- rbind(data1,data2) %>% select(-features_10000_window)
+
+data <- data %>% separate_longer_delim(features, delim = "},") %>% 
+  mutate(products=str_extract(features, "'product': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
+  mutate(genes=str_extract(features, "'gene': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
+  select(-features) %>%
+  group_by(path_metadata, accuracy, sensitivity, specificity) %>% 
+  summarise(products=list(unique(products)),
+            genes=list(unique(genes))) %>% ungroup()
 
 data <- data %>% 
   distinct(path_metadata, .keep_all = T) %>%
   separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
-  select(path, metadata, accuracy, sensitivity, specificity) %>%
+  select(path, metadata, accuracy, sensitivity, specificity, products, genes) %>%
   filter(metadata != "metadata_category")
 
 # extract the dataset name from the path
@@ -71,71 +81,28 @@ pdf(file.path(opt$output_folder, paste0("all_datsets", "_model_comparisons_", sy
 
 merged_accuracy_data <- data %>% 
   filter(num_clusters=="20000") %>%
-  filter(!(dataset %in% c("prism-metabolomics-SRP129027", "vibrio-cholerae-PRJNA723557", "sepsis-PRJNA507824"))) %>%
-  filter(cluster_approach %in% c("shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered")) %>%
+  filter(!(dataset %in% c("prism-metabolomics-SRP129027", "vibrio-cholerae-PRJNA723557"))) %>%
+  filter(cluster_approach %in% c("shiftDist-levFilter", "masked-aa-clustered")) %>%
   filter(model %in% c("ohe", "hyena_normalized", "hyena_unnormalized", "esm_normalized", "esm_unnormalized")) %>%
-  select(dataset, filter, cluster_approach, metadata, model, accuracy, num_clusters) %>% 
+  select(dataset, filter, cluster_approach, metadata, model, accuracy, num_clusters, products, genes) %>% 
   distinct(filter, cluster_approach, metadata, model, .keep_all=T) %>% 
   mutate(model = paste0(model, " (", num_clusters, " clusters)")) %>% select(-num_clusters) 
 
-merged_accuracy_data %>% ungroup() %>% 
+merged_accuracy_data %>% ungroup() %>% select(-products, -genes) %>% 
   ggplot(aes(x=dataset,y=accuracy,fill=model)) + 
   geom_boxplot() + 
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
   scale_color_brewer(type="qual") + scale_fill_brewer(type="qual") +
   theme(legend.position="bottom")
 
-merged_accuracy_data %>% ungroup() %>% 
+merged_accuracy_data %>% ungroup() %>% select(-products, -genes) %>% 
   ggplot(aes(x=dataset,y=accuracy,fill=cluster_approach)) + 
   geom_boxplot() + 
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
   scale_color_brewer(type="qual") + scale_fill_brewer(type="qual") +
   theme(legend.position="bottom")
 
-non_amr_metadata_categories <- c("reference", "studyaccession", "species", "virulence_score", "resistance_score", "num_resistance_classes",
-                                 "num_resistance_genes", "date", "main_st", "major_wards", "neonate", "GPSC", "GPSC type", "Continent", "Predicted_PEN_MIC", 
-                                 "Predicted_PEN_MIC_CLSI", "folA", "folP", "Predicted_Cotrimoxazole_susceptibility", "cat1", "Predicted_Chloramphenicol_susceptibility",
-                                 "ermB1", "mef1", "Predicted_Erythromycin_susceptibility", "tet", "Predicted_Tetracycline_susceptibility",
-                                 "No_of_nonsusceptible", "MDR")
-
-merged_accuracy_data %>% ungroup() %>% 
-  filter(cluster_approach=="masked-aa-clustered") %>%
-  filter(filter=="filter1") %>%
-  filter(dataset %in% c("eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505", "klebsiella-AMR-PRJEB42462")) %>%
-  filter(!(metadata %in% non_amr_metadata_categories)) %>%
-  pivot_wider(id_cols=dataset:metadata, names_from = model, values_from=accuracy) %>%
-  ggplot(aes(x=`ohe (20000 clusters)`,y=`hyena_normalized (20000 clusters)`,color=dataset)) + 
-  geom_abline(intercept=0,slope=1,lty="dashed") +
-  ggrepel::geom_text_repel(aes(label=metadata), color="black") +
-  geom_point() + theme_minimal() + coord_cartesian(xlim=c(0,1),ylim=c(0,1))
-
-p <- merged_accuracy_data %>% ungroup() %>% 
-  filter(cluster_approach=="masked-aa-clustered") %>%
-  filter(filter=="filter1") %>%
-  #filter(model=="hyena_unnormalized (20000 clusters)") %>%
-  filter(dataset %in% c("eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505", "klebsiella-AMR-PRJEB42462")) %>%
-  mutate(dataset=str_extract(dataset, "\\w+")) %>%
-  mutate(model = gsub(" \\(20000 clusters\\)", "", model)) %>%
-  filter(!(metadata %in% non_amr_metadata_categories)) %>% 
-  group_by(dataset) %>% 
-  mutate(maxAcc=max(accuracy)) %>% mutate(maxAcc=ifelse(maxAcc==accuracy, metadata, NA)) %>% 
-  ggplot(aes(x=dataset, y=accuracy)) + 
-  geom_point(aes(color=model), position = position_jitter(width=0.2,height=0), size=1.1) +
-  geom_boxplot(fill=NA, outlier.color = NA, size=1.1) + 
-  scale_y_continuous("Prediction Accuracy", expand=c(0,0), lim=c(0,1.1), labels=scales::label_percent()) +
-  ggrepel::geom_text_repel(aes(label=maxAcc), nudge_x = 0.3, nudge_y = 0.1,na.rm = TRUE) +
-  xlab("Dataset") + 
-  labs(color="Model") +
-  coord_cartesian(xlim=c(1,4.5)) +
-  theme_pubclean() + theme(legend.position = c(0.8,0.25)) +
-  theme(axis.text = element_text(size=10)) 
-print(p)
-
-#ggsave(p, filename="/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline/results/summary/amr_comparison_boxplot.pdf", width=5.5, height=4.5)
-
-
-
-merged_accuracy_data %>% ungroup() %>% 
+merged_accuracy_data %>% ungroup() %>% select(-products, -genes) %>% 
   pivot_wider(id_cols=dataset:model, names_from = cluster_approach, values_from=accuracy) %>%
   ggplot(aes(x=`masked-aa-clustered`,y=`shiftDist-levFilter`,color=dataset,shape=model)) + 
   geom_abline(intercept=0,slope=1,lty="dashed") +
@@ -198,7 +165,7 @@ for (i in 1:length(unique_datasets)) {
   summ_accuracy <- data %>% 
     filter(dataset==DATASET) %>% 
     filter(num_clusters=="20000") %>%
-    filter(cluster_approach %in% c("shiftDist-levFilter", "masked-aa-clustered")) %>%
+    filter(cluster_approach %in% c("shiftDist-levFilter", "test-aa-clustered-v2")) %>%
     filter(model %in% c("ohe", "hyena_normalized", "hyena_unnormalized", "esm_normalized", "esm_unnormalized")) %>%
     select(dataset, filter, cluster_approach, metadata, model, accuracy, num_clusters) %>% 
     distinct(filter, cluster_approach, metadata, model, .keep_all=T) %>% 
@@ -221,10 +188,10 @@ full_df %>% group_by(dataset) %>% summarise(across(-c(filter:num_clusters), \(x)
   write_tsv(file.path(opt$output_folder, paste0("all_datsets_SUMMARY", "_model_comparisons_table_", system_time, ".tsv")), col_names = T, quote="needed")
 
 
-full_df %>% group_by(dataset) %>% slice_max(ohe_accuracy+hyena_normalized_accuracy+hyena_unnormalized_accuracy,n=2) %>% 
+full_df %>% group_by(dataset) %>% slice_max(ohe_accuracy+hyena_normalized_accuracy+esm_normalized_accuracy+esm_unnormalized_accuracy+hyena_unnormalized_accuracy,n=2) %>% 
   summarise(across(-c(filter:num_clusters), \(x) mean(x,na.rm=T))) %>% 
   write_tsv(file.path(opt$output_folder, paste0("all_datsets_SUMMARY_top2_per_dataset", "_model_comparisons_table_", system_time, ".tsv")), col_names = T, quote="needed")
 
-full_df %>% group_by(dataset) %>% slice_min(ohe_accuracy+hyena_normalized_accuracy+hyena_unnormalized_accuracy,n=2) %>% 
+full_df %>% group_by(dataset) %>% slice_min(ohe_accuracy+hyena_normalized_accuracy+esm_normalized_accuracy+esm_unnormalized_accuracy+hyena_unnormalized_accuracy,n=2) %>% 
   summarise(across(-c(filter:num_clusters), \(x) mean(x,na.rm=T))) %>% 
   write_tsv(file.path(opt$output_folder, paste0("all_datsets_SUMMARY_bottom2_per_dataset", "_model_comparisons_table_", system_time, ".tsv")), col_names = T, quote="needed")

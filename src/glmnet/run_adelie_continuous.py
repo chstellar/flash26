@@ -38,7 +38,7 @@ def read_metadata(file_path):
     if "sample_name" not in metadata.columns:
         raise ValueError("Metadata file must contain a sample_name column")
     # mutate all columns to strings for categorical analysis
-    metadata = metadata.apply(lambda x: x.astype(str))
+    # metadata = metadata.apply(lambda x: x.astype(str))
     return metadata
 
 def get_metadata_columns(metadata, min_samples=50):
@@ -52,7 +52,7 @@ def get_metadata_columns(metadata, min_samples=50):
     # filter out columns with less than 2 unique values
     filtered_metadata_discrete = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: len(x.unique()) >= 2, axis=0)]
     # only grab columns with two or more categories that have more than min_samples
-    filtered_metadata_discrete = filtered_metadata_discrete.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() > min_samples) > 1, axis=0)]
+    filtered_metadata_discrete = filtered_metadata_discrete.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts(dropna=True) > min_samples) > 1, axis=0)]
    
     # grab all the columns which are a continuous variable
     # first remove the  discrete columns from filtered metadata

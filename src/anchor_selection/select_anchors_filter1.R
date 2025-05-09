@@ -127,7 +127,7 @@ if (file.exists(out_lookup_stats)) {
 }
 
 # read in the lookup table stats
-lookup_stats <- fread(out_lookup_stats, header=F, col.names=c("query", "stats"))
+lookup_stats <- fread(out_lookup_stats, header=F, col.names=c("query", "stats"), sep="\t")
 lookup_stats <- lookup_stats %>% mutate(anchor = anchors_to_keep$anchor)
 
 # filter out anchors that have lookup table hits to artifacts

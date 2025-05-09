@@ -8,4 +8,10 @@
 
 source /home/users/dcotter1/.bashrc
 mamba activate snakemake
-snakemake --profile slurm_profile/ all all_genomes all_ohe
+snakemake -R plot_blast_features --profile slurm_profile/ all
+
+
+ml system
+ml rclone
+rclone copy results/ gdrive:Salzman\ Lab/Shared\ Materials/MetaSPLASH_all_results/results_by_dataset/may_08_2025
+

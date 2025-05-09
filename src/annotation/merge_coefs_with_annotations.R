@@ -1,7 +1,7 @@
 # Load necessary libraries
-library(optparse)
-library(data.table)
-library(tidyverse)
+suppressPackageStartupMessages(library(optparse))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(tidyverse))
 #library(Biostrings)
 
 # Define command line options
@@ -11,7 +11,9 @@ option_list <- list(
     make_option(c("-c", "--coefficients"), type = "character", default = NULL, 
                             help = "Path to the coefficients CSV file", metavar = "character"),
     make_option(c("-o", "--output"), type = "character", default = NULL, 
-                            help = "Path to the output CSV file", metavar = "character")
+                            help = "Path to the output CSV file", metavar = "character"),
+    make_option(c("--noFasta"), type= "logical", default=FALSE, action="store_true",
+                help = "suppress printing a fasta of significant sequences at the end")
 )
 
 # Parse command line options
@@ -43,29 +45,32 @@ write_tsv(merged_data, opt$output, col_names = T, quote="needed")
 
 # Print a message indicating the script has finished
 cat("Merging complete. Output saved to", opt$output, "\n")
-if (nrow(merged_data %>% filter(!is.na(anno))) == 0) {
-  out_file <- gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output)
-  system(paste("touch", out_file))
-} else {
-  # get fasta of all nonzero_seqeunces 
-  sig_seqs <- merged_data %>% filter(!grepl("rcept", feature)) %>% 
-    rowwise() %>% 
-    mutate(max_coef=max(abs(as.numeric(
-      strsplit(gsub("\\[|\\]", "", coefficients), split=",", fixed=TRUE)[[1]])))) %>% 
-    group_by(metadata_category) %>% 
-    slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
-    distinct(cluster, .keep_all = T) %>% 
-    mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{30,70}"), \(x) toString(unique(x)))) %>% 
-    select(-anno) %>% 
-    separate_longer_delim(seqs, ", ") %>% 
-    filter(!grepl("NNNNNNNNN", seqs)) %>%
-    filter(!is.na(cluster))
-  
-  sig_seqs <- sig_seqs %>% mutate(cluster=paste(cluster, seqs, sep="_"))
-  
-  library(Biostrings)
-  
-  dna <- DNAStringSet(sig_seqs$seqs)
-  names(dna) <- sig_seqs$cluster
-  writeXStringSet(dna, gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output))
+
+if (!opt$noFasta) {
+  if (nrow(merged_data %>% filter(!is.na(anno))) == 0) {
+    out_file <- gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output)
+    system(paste("touch", out_file))
+  } else {
+    # get fasta of all nonzero_seqeunces 
+    sig_seqs <- merged_data %>% filter(!grepl("rcept", feature)) %>% 
+      rowwise() %>% 
+      mutate(max_coef=max(abs(as.numeric(
+        strsplit(gsub("\\[|\\]", "", coefficients), split=",", fixed=TRUE)[[1]])))) %>% 
+      group_by(metadata_category) %>% 
+      slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
+      distinct(cluster, .keep_all = T) %>% 
+      mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{30,70}"), \(x) toString(unique(x)))) %>% 
+      select(-anno) %>% 
+      separate_longer_delim(seqs, ", ") %>% 
+      filter(!grepl("NNNNNNNNN", seqs)) %>%
+      filter(!is.na(cluster))
+    
+    sig_seqs <- sig_seqs %>% mutate(cluster=paste(cluster, seqs, sep="_"))
+    
+    library(Biostrings)
+    
+    dna <- DNAStringSet(sig_seqs$seqs)
+    names(dna) <- sig_seqs$cluster
+    writeXStringSet(dna, gsub("nonzero_coefficients_annotated.tsv", "significant_sequences.fasta", opt$output))
+  }
 }

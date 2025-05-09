@@ -16,8 +16,9 @@ default-resources:
   - mem_mb=4000
   - slurm_extra=""
 jobs: 2000
-max-jobs-per-second: 100
-max-status-checks-per-second: 5
+local-cores: 1
+max-jobs-per-second: 500
+max-status-checks-per-second: 15
 restart-times: 2
 latency-wait: 60
 keep-going: True
