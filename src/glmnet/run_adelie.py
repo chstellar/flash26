@@ -155,10 +155,28 @@ def main():
             yhat_2d[np.arange(yhat.size), yhat] = 1
             yhat = yhat_2d
             
+            yhat_train = model.predict(X_train.astype(np.float64))
+            if len(np.unique(yhat_train)) >= 2:
+                yhat_train_2d = np.zeros((yhat_train.size, yhat_train.max() + 1))
+                yhat_train_2d[np.arange(yhat_train.size), yhat_train] = 1
+                yhat_train = yhat_train_2d
+            
+            try:
+                y_train_pred = oh.inverse_transform(yhat_train).flatten()
+                cm_train = confusion_matrix(y_train, y_train_pred)
+                print(f"train confusion matrix for {metadata_col}")
+                print(cm_train)
+                train_accuracy = np.trace(cm_train) / np.sum(cm_train)
+                print(f"Train accuracy: {train_accuracy:.2f}\n")
+            except Exception as e:
+                print(f"Failed to transform train predictions for {metadata_col}: {e}")
+                train_accuracy = 0
+                
+            
             try:
                 y_pred = oh.inverse_transform(yhat).flatten()
                 cm = confusion_matrix(y_test, y_pred)
-                print(f"Confusion matrix for {metadata_col}")
+                print(f"Test confusion matrix for {metadata_col}")
                 print(cm)
             except Exception as e:
                 print(f"Failed to transform predictions for {metadata_col}: {e}")
@@ -205,9 +223,10 @@ def main():
 
             # add the accuracy, specificity, and sensitivity to the model features
             model_features["accuracy"] = accuracy
+            model_features["train_accuracy"] = train_accuracy
             model_features["specificity"] = specificity if specificity is not None else "NA"
             model_features["sensitivity"] = sensitivity if sensitivity is not None else "NA"
-            model_features = model_features[["metadata_category", "feature", "accuracy", "sensitivity", "specificity", "classes", "coefficients"]]
+            model_features = model_features[["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "classes", "coefficients"]]
 
             # join with the larger set of model features
             if all_model_features is None:
@@ -250,7 +269,7 @@ def main():
             plt.close()
         
             # Write an empty output TSV with just column names
-            columns = ["metadata_category", "feature", "accuracy", "sensitivity", "specificity", "classes", "coefficients"]
+            columns = ["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "classes", "coefficients"]
             pd.DataFrame(columns=columns).to_csv(output_coef, sep="\t", index=False)
         else:
             # output the nonzero coefficients to a tsv file

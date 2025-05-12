@@ -6,3 +6,4 @@ slurm-*
 results/*
 archive/*
 src/*.tar
+old/*

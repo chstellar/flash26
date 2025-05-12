@@ -74,6 +74,6 @@ scripts:
   merge_annotations: src/annotation/merge_coefs_with_annotations.R
   run_blast: src/annotation/blast_code/run_blast.sh
   merge_blast_results: src/annotation/merge_coefs_with_blast.R
-  plot_blast_results: src/annotation/blast_code/plot_blast_annotations.R
+  plot_blast_results: src/annotation/blast_code/plot_blast_annotations_each_feature.R
   plot_blast_heatmaps: src/annotation/blast_code/plot_nonzero_features_heatmap.R
   plot_blast_cluster_distros: ''

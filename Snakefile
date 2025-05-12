@@ -38,7 +38,7 @@ MODELS = ["esm", "hyena"]
 NORMALIZE = ["normalized", "unnormalized"]
 
 # for temp testing
-DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688", "GBS-ERP015737", "aspergillus-PRJNA632561", "strepA"] # "strepA", "tuberculosis-PZAres"
+DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688", "GBS-ERP015737", "aspergillus-PRJNA632561", "strepA", "y1000-genomes-data"] # "strepA", "tuberculosis-PZAres"
 MODELS = ["hyena"]
 NORMALIZE = ["normalized"]
 #SELECT_TYPES=["filter1"]
@@ -51,7 +51,7 @@ NORMALIZE = ["normalized"]
 #NORMALIZE=["normalized", "unnormalized"]
 SELECT_TYPES=["filter1"]
 #CLUSTER_TYPES=["shiftDist-levFilter"]
-NUM_CLUSTERS=[20000]
+#NUM_CLUSTERS=[20000]
 
 ## constrain the wildcards of the pipeline
 wildcard_constraints:
@@ -107,7 +107,7 @@ rule all_ohe:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated_plots.pdf"]) # "nonzero_coefficients_blast_annotated.tsv"
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]) # "nonzero_coefficients_blast_annotated.tsv"
 
 rule all_test_aa:
     input:
@@ -946,9 +946,9 @@ rule run_blast_nonzero_features:
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, "split_fasta")
     resources:
         # 64 GB of memory
-        mem_mb = 64000,
-        time = "5:00:00"
-    threads: 16
+        mem_mb = 128000,
+        time = "9:00:00"
+    threads: 32
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
@@ -979,17 +979,28 @@ rule plot_blast_features:
     Merge the blast results with the annotated sequences
     """
     input:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     params:
         script = config["scripts"]["plot_blast_results"]
     resources:
-        # 8 GB of memory
-        mem_mb = 8000
+        # 128 GB of memory
+        mem_mb = 128000,
+        msa = 1
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
     shell:"""
         ml R/4.3.2
-        Rscript --vanilla {params.script} --nonzero_annotations {input} --output {output}
+        Rscript --vanilla {params.script} \
+        --nonzero_annotations {input.nonzero_features}\
+        --clusters {input.clusters} \
+        --feather_file {input.feather} \
+        --sample_seqs {input.sequences} \
+        --metadata {input.metadata} \
+        --output {output}
     """
 
 rule plot_blast_heatmaps:
@@ -1071,10 +1082,10 @@ rule run_blast_nonzero_features_OHE:
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "split_fasta")
     resources:
-        # 64 GB of memory
-        mem_mb = 64000,
-        time = "5:00:00"
-    threads: 16
+        # 128 GB of memory
+        mem_mb = 128000,
+        time = "9:00:00"
+    threads: 32
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
@@ -1105,17 +1116,56 @@ rule plot_blast_features_OHE:
     Merge the blast results with the annotated sequences
     """
     input:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
     params:
         script = config["scripts"]["plot_blast_results"]
     resources:
-        # 8 GB of memory
-        mem_mb = 8000
+        # 128 GB of memory
+        mem_mb = 128000,
+        msa = 1
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
     shell:"""
         ml R/4.3.2
-        Rscript --vanilla {params.script} --nonzero_annotations {input} --output {output}
+        Rscript --vanilla {params.script} \
+        --nonzero_annotations {input.nonzero_features}\
+        --clusters {input.clusters} \
+        --feather_file {input.feather} \
+        --sample_seqs {input.sequences} \
+        --metadata {input.metadata} \
+        --output {output}
+    """
+    
+rule plot_blast_heatmaps_OHE:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+    params:
+        script = config["scripts"]["plot_blast_heatmaps"]
+    resources:
+        # 128 GB of memory
+        mem_mb = 128000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_heatmaps.pdf")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} \
+        --nonzero_annotations {input.nonzero_features}\
+        --clusters {input.clusters} \
+        --feather_file {input.feather} \
+        --sample_seqs {input.sequences} \
+        --metadata {input.metadata} \
+        --output {output}
     """
 
 rule merge_annotations_genomes:

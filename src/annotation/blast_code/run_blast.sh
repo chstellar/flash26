@@ -2,7 +2,8 @@
 NUM_ARRAY=50
 export IMAGE="/oak/stanford/groups/horence/julias/splash_postprocessing/khoa_annotation/SPLASH_UTILS/feature_annotation/python-sequtils-blast-splash-pfam_latest.sif"
 export REPO="/oak/stanford/groups/horence/khoa/scratch/repos/SPLASH_UTILS"
-export ENV="singularity run -B $REPO,$OAK $IMAGE"
+export BLAST_DB="/scratch/users/dcotter1/blast_db/"
+export ENV="singularity run -B $REPO,$OAK,$BLAST_DB $IMAGE"
 
 INPUT_FASTA=$1
 SPLIT_TEMP_FOLDER=$2

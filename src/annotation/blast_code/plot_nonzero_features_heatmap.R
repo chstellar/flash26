@@ -41,7 +41,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
 
-# # testing
+# # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
 # opt$nonzero_annotations = "results/eFaecium-CollEtAl/filter1/shiftDist-levFilter/hyena/normalized/eFaecium-CollEtAl_hyena_adelie_results_top20000_k54_s54_nonzero_coefficients_blast_annotated.tsv"
 # opt$clusters = "results/eFaecium-CollEtAl/filter1/shiftDist-levFilter/eFaecium-CollEtAl_sequences_per_cluster_top20000-clusters_k54_s54.tsv"
@@ -100,7 +100,10 @@ all_metadata <- fread(opt$metadata)
 
 categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
 
-pdf(opt$output, width=12, height=8)
+out_csvs_prefix <- file.path(dirname(opt$output), "raw_matrices", tools::file_path_sans_ext(basename(opt$output)))
+system(paste("mkdir -p", file.path(dirname(opt$output), "raw_matrices")))
+
+pdf(opt$output, width=16, height=16)
 
 # write a title page first
 plot(0:10, type = "n", xaxt="n", yaxt="n", bty="n", xlab = "", ylab = "")
@@ -128,6 +131,10 @@ for (category in categories) {
   
   my_classes <- summ_dt[1,]$classes %>% unlist()
   
+  if (sum(str_detect(my_classes, "0.0")) > 0) {
+    my_classes <- as.numeric(my_classes)
+  }
+  
   if (opt$products) {
     summ_dt <- summ_dt %>% group_by(cluster,query) %>%
       mutate(label=ifelse(!is_empty(unique(na.omit(products))), paste(unique(na.omit(products)),collapse=","), paste(unique(na.omit(genes)), collapse=","))) %>% 
@@ -138,19 +145,34 @@ for (category in categories) {
       distinct(cluster, query, label, .keep_all=T) %>% ungroup()
   }
   
-  summ_dt <- summ_dt %>% group_by(cluster, feature, max_coefficient, first_coef) %>% summarise(label=paste(label, collapse=",")) %>% 
+  summ_dt <- summ_dt %>% group_by(cluster, feature, max_coefficient, first_coef) %>% summarise(label=paste(unique(label), collapse=",")) %>% 
     arrange(-max_coefficient) %>% ungroup()
   
   important_features <- summ_dt %>% select(feature, first_coef) %>% deframe()
   
   sub_feather_dt <- feather_dt %>% select(sample_name, all_of(names(important_features)))
+
+  sub_feather_unscaled <- sub_feather_dt
   
   sub_feather_dt <- sub_feather_dt %>% mutate(across(all_of(names(important_features)), \(x) x * important_features[cur_column()]))
   
-  sub_feather_dt <- sub_feather_dt %>% left_join(all_metadata %>% select(sample_name, !!category) %>% dplyr::rename(class:=!!category)) %>% relocate(class, .after=sample_name)
+  sub_feather_dt <- sub_feather_dt %>% left_join(all_metadata %>% select(sample_name, !!category) %>% dplyr::rename(class:=!!category)) %>% 
+    relocate(class, .after=sample_name) 
+  
+  sub_feather_unscaled <- sub_feather_unscaled %>% left_join(all_metadata %>% select(sample_name, !!category) %>% dplyr::rename(class:=!!category)) %>% 
+    relocate(class, .after=sample_name) 
+  
+  column_labels <- summ_dt %>% select(feature,cluster,label) %>%mutate(label=str_c(cluster, label, sep=" ")) %>% select(-cluster) %>%
+    mutate(label=str_wrap(str_trunc(gsub(",",", ", label), 60, side="right"), 30)) %>% deframe()
 
   # Reshape the data to wide format for heatmap
   heatmap_data <- sub_feather_dt %>%
+    filter(class %in% my_classes) %>%
+    select(-class) %>%
+    column_to_rownames("sample_name") %>%
+    as.matrix()
+  
+  unscaled_heatmap_data <- sub_feather_unscaled %>%
     filter(class %in% my_classes) %>%
     select(-class) %>%
     column_to_rownames("sample_name") %>%
@@ -175,7 +197,8 @@ for (category in categories) {
   
   # Create the heatmap with hierarchical clustering
   heatmap_plot <- Heatmap(heatmap_data, 
-                          name = "Value",  
+                          name = "Value",
+                          column_labels = column_labels[colnames(heatmap_data)],
                           left_annotation = ha,
                           cluster_rows = TRUE,  # Enable hierarchical clustering for rows
                           cluster_columns = FALSE,  # Enable hierarchical clustering for columns
@@ -188,6 +211,30 @@ for (category in categories) {
   
 
   draw(heatmap_plot,column_title=category, column_title_gp=grid::gpar(fontsize=16))
-
+  
+  cov_mat <- cov(heatmap_data)
+  
+  cov_heatmap <- Heatmap(cov_mat, 
+                         name = "Covariance",
+                         cluster_rows = TRUE,  # Enable hierarchical clustering for rows
+                         cluster_columns = TRUE,  # Enable hierarchical clustering for columns
+                         show_row_names = TRUE, 
+                         show_column_names = TRUE,
+                         cell_fun = function(j, i, x, y, width, height, fill) {
+                           grid.text(sprintf("%.2f", cov_mat[i, j]), x, y, gp = gpar(fontsize = 6))},
+                         heatmap_legend_param = list(title = "Covariance", at = c(min(cov_mat), 0, max(cov_mat)), labels = c("Negative", "Zero", "Positive")),
+                         column_title = "Embedding Features",
+                         row_title = "Embedding Features",
+                         
+  )
+  
+  draw(cov_heatmap)
+  
+  out_csv_beta_name <- paste(out_csvs_prefix, category, "nonzero_feature_matrix_scaled_by_beta.csv", sep = "_")
+  write_csv(heatmap_data %>% as.data.frame() %>% rownames_to_column("sample_name"), out_csv_beta_name, col_names = T, quote="needed")
+  
+  out_csv_no_beta_name <- paste(out_csvs_prefix, category, "nonzero_feature_matrix_unsacled.csv", sep="_")
+  write_csv(unscaled_heatmap_data %>% as.data.frame() %>% rownames_to_column("sample_name"), out_csv_no_beta_name, col_names = T, quote="needed")
+  
 }
 dev.off()
