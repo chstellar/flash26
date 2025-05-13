@@ -226,7 +226,12 @@ def main():
             model_features["train_accuracy"] = train_accuracy
             model_features["specificity"] = specificity if specificity is not None else "NA"
             model_features["sensitivity"] = sensitivity if sensitivity is not None else "NA"
-            model_features = model_features[["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "classes", "coefficients"]]
+
+            out_cm = [map(str, row) for row in cm]
+            out_cm = "{" + ";".join([",".join(row) for row in out_cm]) + "}"
+            model_features["confusion_matrix"] = out_cm
+
+            model_features = model_features[["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "out_cm", "classes", "coefficients"]]
 
             # join with the larger set of model features
             if all_model_features is None:
@@ -269,7 +274,7 @@ def main():
             plt.close()
         
             # Write an empty output TSV with just column names
-            columns = ["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "classes", "coefficients"]
+            columns = ["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "out_cm", "classes", "coefficients"]
             pd.DataFrame(columns=columns).to_csv(output_coef, sep="\t", index=False)
         else:
             # output the nonzero coefficients to a tsv file
