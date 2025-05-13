@@ -1,4 +1,4 @@
-# select_anchors_filter2.R
+# select_anchors_filter1.R
 # Daniel Cotter
 # 2024-09-12
 
@@ -11,7 +11,8 @@
 # Filter 2: effect size >= 0.6
 # Filter 2: number of nonzero samples > 10th percentile
 # Filter 2: no lookup table hits to artifacts
-# Filter 2: select top 150,000 anchors by effect size
+# remove top 15% of anchors by M
+# Filter 2: select top N anchors by number of nonzero samples
 
 ## import packages --------
 suppressPackageStartupMessages(library(data.table))
@@ -98,7 +99,7 @@ dt <- fread(cmd=load_cmd, header=TRUE, select = 1:18)
 
 # filter out the bottom 10% of anchors by number nonzero samples
 sample_cutoff <- quantile(dt$number_nonzero_samples, 0.1)
-dt <- dt %>% filter(number_nonzero_samples > sample_cutoff)
+dt <- dt %>% filter(number_nonzero_samples >= sample_cutoff)
 
 ## run lookup table to filter out artifacts -----------
 # write all anchors to a file
@@ -127,11 +128,11 @@ if (file.exists(out_lookup_stats)) {
 }
 
 # read in the lookup table stats
-lookup_stats <- fread(out_lookup_stats, header=F, col.names=c("query", "stats"))
+lookup_stats <- fread(out_lookup_stats, header=F, col.names=c("query", "stats"), sep="\t")
 lookup_stats <- lookup_stats %>% mutate(anchor = anchors_to_keep$anchor)
 
 # filter out anchors that have lookup table hits to artifacts
-artifact_pattern <- "plas|illum|syn|arp|RF|JUNK|Ral|purge|P,|Univec"
+artifact_pattern <- "plas|illum|syn|arp|RF|JUNK|Ral|purge|P,|Univec|cattle|chicken"
 anchors_to_keep <- lookup_stats %>% filter(!grepl(artifact_pattern, query, ignore.case=T)) %>% select(anchor)
 
 cat(paste0("Finished filtering. Kept ", nrow(anchors_to_keep), " anchors out of ", nrow(lookup_stats), " total anchors.\n"))
@@ -139,8 +140,13 @@ cat(paste0("Keeping the top ", opt$num_anchors, " by number_nonzero_samples for 
 
 ## select the most important anchors -----------
 anchors_to_keep <- anchors_to_keep %>% 
-  left_join(dt %>% select(anchor, number_nonzero_samples, effect_size_bin), by="anchor") %>%
-  arrange(desc(effect_size_bin)) %>%
+  left_join(dt %>% select(anchor, M, number_nonzero_samples), by="anchor") 
+
+M_cutoff <- quantile(anchors_to_keep %>% filter(M>50) %>% pull(M), 0.99)
+
+anchors_to_keep <- anchors_to_keep %>%
+  filter(M < M_cutoff) %>%
+  arrange(desc(number_nonzero_samples)) %>%
   head(opt$num_anchors)
 
 ## write the output -----------

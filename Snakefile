@@ -39,7 +39,7 @@ NORMALIZE = ["normalized", "unnormalized"]
 
 # for temp testing
 DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688", "GBS-ERP015737", "aspergillus-PRJNA632561", "strepA", "y1000-genomes-data"] # "strepA", "tuberculosis-PZAres"
-MODELS = ["hyena"]
+MODELS = ["hyena", "esm"]
 NORMALIZE = ["normalized"]
 #SELECT_TYPES=["filter1"]
 #CLUSTER_TYPES=["test-shiftDist-genomes-clustered", "test-AA-genomes-clustered", "shiftDist-levFilter"]
@@ -47,11 +47,11 @@ NORMALIZE = ["normalized"]
 #NUM_CLUSTERS = [10000]
 
 ## testing
-#DATASETS = ["y1000-genomes-data"]
-#NORMALIZE=["normalized", "unnormalized"]
+#DATASETS = ["test-data-tracy-SC10X"]
+NORMALIZE=["normalized", "unnormalized"]
 SELECT_TYPES=["filter1"]
 #CLUSTER_TYPES=["shiftDist-levFilter"]
-#NUM_CLUSTERS=[20000]
+#NUM_CLUSTERS=[10000]
 
 ## constrain the wildcards of the pipeline
 wildcard_constraints:
@@ -78,7 +78,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]) # "nonzero_coefficients_blast_annotated.tsv"
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf"]) # "nonzero_coefficients_blast_annotated.tsv", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"
 
 
 rule all_genomes:
@@ -107,7 +107,7 @@ rule all_ohe:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]) # "nonzero_coefficients_blast_annotated.tsv"
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf"]) # "nonzero_coefficients_blast_annotated.tsv", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"
 
 rule all_test_aa:
     input:
@@ -346,17 +346,23 @@ rule translate_kmers_ESM:
     ESM2 model (or any other protein-based language model).
     """
     input:
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
     params:
         script = Path(config["scripts"]["translate_script"]),
-        translation_table = lambda wildcards: metadata_table.loc[wildcards.dataset, "translation_table"],
-        python_env = Path(config["envs"]["default_python"])
+        translation_table = lambda wildcards: metadata_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_translated_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
+    threads: 32
+    resources:
+        # 64 GB of memory
+        time = "3:00:00",
+        mem_mb = 64000,
     shell:"""
-        ml python/3.9.0
-        source {params.python_env}
-        python {params.script} -t {params.translation_table} {input} {output}
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --kmers {input} \
+        --translation_table {params.translation_table} \
+        --num_cores {threads} \
+        --output {output}
     """
 
 

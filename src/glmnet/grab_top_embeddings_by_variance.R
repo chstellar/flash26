@@ -103,6 +103,7 @@ cluster_files <- paste0(temp_embeddings_dir, "embeddings_cluster_", 0:(length(cl
 
 cat("Writing all clusters and their embeddings out to file in: ", temp_embeddings_dir)
 
+# Cleaning up temp directory
 system(paste0("rm ", temp_embeddings_dir, "/*"))
 
 if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
@@ -152,3 +153,6 @@ top_var_dt <- top_var_dt %>% relocate(sample_name)
 embeddings_feather <- opt$output
 cat("Writing top variance embeddings to ", embeddings_feather, "\n")
 feather::write_feather(top_var_dt, embeddings_feather)
+
+# Cleaning up temp directory
+system(paste0("rm ", temp_embeddings_dir, "/*"))

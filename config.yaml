@@ -57,7 +57,7 @@ scripts:
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
   prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py
-  translate_script: src/process_seqs/translate_fasta.py
+  translate_script: src/process_seqs/translate_kmers_by_cluster.R
   extract_embeddings: src/esm_utils/extract_embeddings_from_torch_objects.py
   embed_kmers_hyena: src/hyena_utils/embed_fasta_H100.sh
   embed_kmers_hyena_marlowe_nov2024: src/hyena_utils/embed_fasta_marlowe_model.sh
