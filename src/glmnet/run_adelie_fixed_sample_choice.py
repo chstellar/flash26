@@ -56,35 +56,56 @@ def get_metadata_columns(metadata, min_samples=50):
     return filtered_metadata.columns
 
 
-def merge_and_split_data(data, metadata, metadata_col, train_samples, test_samples, min_samples):
+def merge_and_split_data(data, metadata, metadata_col, train_samples, test_samples, min_samples=15):
     # Merge data and metadata on sample_name
     metadata = metadata[["sample_name", metadata_col]]
     merged_data = pd.merge(data, metadata, on='sample_name', how='left')
-    
+
     # Drop rows with missing metadata_col values
     merged_data = merged_data.dropna(subset=[metadata_col])
-    
+
     # Keep only samples provided by the user
     train_data = merged_data[merged_data['sample_name'].isin(train_samples)]
     test_data = merged_data[merged_data['sample_name'].isin(test_samples)]
-    
-    # Check if y_train has at least two categories with at least two observations each
+
+    # Check the distribution of metadata categories in train_data
     train_class_counts = train_data[metadata_col].value_counts()
-    sufficient_classes = train_class_counts[train_class_counts >= min_samples]
-    
+
+    # Keep only classes with at least min_samples observations
+    sufficient_classes = train_class_counts[train_class_counts >= min_samples].index.tolist()
+
+    # Ensure at least two classes meet the min_samples criterion
     if len(sufficient_classes) < 2:
-        print("Warning: Not enough categories with sufficient observations in training data.")
+        print(f"Warning: Not enough categories with sufficient observations ({min_samples}) in training data.")
         return None, None, None, None, None
-    
+
+    # Filter train_data to only include sufficient classes
+    train_data = train_data[train_data[metadata_col].isin(sufficient_classes)]
+
+    # Determine the minimum number of samples available across these sufficient classes
+    min_class_count = train_data[metadata_col].value_counts().min()
+
+    # Balance the training set by sampling min_class_count samples from each category
+    balanced_train_indices = (
+        train_data.groupby(metadata_col, group_keys=False)
+        .apply(lambda x: x.sample(n=min_class_count, random_state=42))
+        .index
+    )
+
+    balanced_train_data = train_data.loc[balanced_train_indices]
+
+    # Now filter test_data to only include classes present in balanced training set
+    test_data = test_data[test_data[metadata_col].isin(sufficient_classes)]
+
     # Extract features and labels
-    X_train = train_data.drop(["sample_name", metadata_col], axis=1)
-    y_train = train_data[metadata_col].to_numpy()
-    
+    X_train = balanced_train_data.drop(["sample_name", metadata_col], axis=1)
+    y_train = balanced_train_data[metadata_col].to_numpy()
+
     X_test = test_data.drop(["sample_name", metadata_col], axis=1)
     y_test = test_data[metadata_col].to_numpy()
-    
+
     model_features = X_train.columns
-    
+
     return np.asfortranarray(X_train), np.asfortranarray(X_test), y_train, y_test, model_features
 
 def train_adelie_model(X_train, y_train,n_threads=1):
