@@ -68,15 +68,28 @@ if (!file.exists(anchor_filter)) {
 
 # list all of the genome files in the genome directory
 genome_files <- list.files(opt$genome_files, pattern = ".fna|.fasta|.fa", full.names = T)
-genome_files <- genome_files[basename(tools::file_path_sans_ext(genome_files)) %in% fread(opt$genome_list, header=F, col.names=c("genome"))$genome]
-genome_files <- data.frame(genome=genome_files) %>% 
-  mutate(genome_name=tools::file_path_sans_ext(basename(genome)),
-         genome_capitalized=file.path(temp_dir, "capitalized", basename(genome)),
-         genome_oneline=file.path(temp_dir, "oneline", basename(genome)),
-         genome_satc = gsub("\\.[fastan]+", ".satc", 
-                            file.path(temp_dir, 'satc', basename(genome))),
-         genome_dump = gsub("\\.[fastan]+", ".satc.dump", 
-                          file.path(temp_dir, 'dumped', basename(genome))))
+genome_files <- genome_files[str_remove(basename(tools::file_path_sans_ext(genome_files)),"_1") %in% fread(opt$genome_list, header=F, col.names=c("genome"))$genome]
+
+if (FALSE) {
+  genome_files <- genome_files[genome_files %>% str_detect("_1")]
+  genome_files <- data.frame(genome=genome_files) %>% 
+    mutate(genome_name=str_remove(tools::file_path_sans_ext(basename(genome)),"_1"),
+           genome_capitalized=file.path(temp_dir, "capitalized", basename(genome)),
+           genome_oneline=file.path(temp_dir, "oneline", basename(genome)),
+           genome_satc = gsub("\\.[fastanq]+", ".satc", 
+                              file.path(temp_dir, 'satc', basename(genome))),
+           genome_dump = gsub("\\.[fastanq]+", ".satc.dump", 
+                              file.path(temp_dir, 'dumped', basename(genome))))
+} else {
+  genome_files <- data.frame(genome=genome_files) %>% 
+    mutate(genome_name=tools::file_path_sans_ext(basename(genome)),
+           genome_capitalized=file.path(temp_dir, "capitalized", basename(genome)),
+           genome_oneline=file.path(temp_dir, "oneline", basename(genome)),
+           genome_satc = gsub("\\.[fastanq]+", ".satc", 
+                              file.path(temp_dir, 'satc', basename(genome))),
+           genome_dump = gsub("\\.[fastanq]+", ".satc.dump", 
+                              file.path(temp_dir, 'dumped', basename(genome))))
+}
 
 system(paste("mkdir -p", file.path(temp_dir, "capitalized")))
 system(paste("mkdir -p", file.path(temp_dir, "oneline")))
@@ -87,16 +100,21 @@ system(paste("mkdir -p", file.path(temp_dir, "dumped")))
 all_genome_file <- file.path(opt$temp_dir, "all_satc_merged.txt")
 
 if (!file.exists(all_genome_file)) {
-  # first process all of the genomes through Biostrings and rewrite them out to file
-  future_walk2(genome_files$genome, genome_files$genome_capitalized, \(x,y) {
-    Biostrings::readDNAStringSet(x) %>% Biostrings::writeXStringSet(y)
-  })
   
-  # next make each of the fasta entries occur on only one line 
-  future_walk2(genome_files$genome_capitalized, genome_files$genome_oneline, \(x,y) {
-    system(paste0("awk '/^[>;]/ { if (seq) { print seq }; ", 'seq=""; ' ,"print } /^[^>;]/ { seq = seq $0 } END { print seq }' ", 
-                  x, " > ", y))
-  })
+  if (TRUE) {
+    # first process all of the genomes through Biostrings and rewrite them out to file
+    future_walk2(genome_files$genome, genome_files$genome_capitalized, \(x,y) {
+      Biostrings::readDNAStringSet(x) %>% Biostrings::writeXStringSet(y)
+    })
+    
+    # next make each of the fasta entries occur on only one line 
+    future_walk2(genome_files$genome_capitalized, genome_files$genome_oneline, \(x,y) {
+      system(paste0("awk '/^[>;]/ { if (seq) { print seq }; ", 'seq=""; ' ,"print } /^[^>;]/ { seq = seq $0 } END { print seq }' ", 
+                    x, " > ", y))
+    })
+  } else {
+    genome_files <- genome_files %>% mutate(genome_oneline=genome)
+  }
 
 
 
@@ -141,6 +159,11 @@ wide_satc <- merge(satc_dt, anchor_clusters, by="anchor", all.x=TRUE)
 wide_satc <- as.data.table(wide_satc)
 wide_satc <- wide_satc[order(cluster_id, rank)]
 wide_satc <- unique(wide_satc, by=c("sample", "cluster_id"))
+
+missing_sample = anchor_clusters %>% arrange(cluster_id, rank) %>% distinct(cluster_id, .keep_all=T) %>% 
+  mutate(sample="NULLSAMPLE") %>% mutate(target="NNNN") %>% mutate(count=1)
+
+wide_satc <- rbind(wide_satc, missing_sample)
 
 wide_satc <- wide_satc %>% mutate(seq=str_c(anchor, target, sep="")) %>% 
   select(sample, cluster_id, seq)
@@ -237,11 +260,13 @@ align_to_representative <- function(x, colname, representative_anchor) {
 #                                    \(x,y,z) align_to_representative(x, y, z)))
 
 # add the representative anchors with Ns to the wide satc where there are NAs
-wide_satc <- cbind(wide_satc[1],
+wide_satc <- base::cbind(wide_satc[1],
                    map2_df(wide_satc[,2:ncol(wide_satc)], 
                            1:length(representative_anchors), 
                            \(x,y) ifelse(is.na(x), str_c(representative_anchors[y], strrep("N", 27), sep = ""), x)))
 wide_satc <- wide_satc %>% ungroup()
+
+wide_satc <- wide_satc %>% filter(sample!="NULLSAMPLE") 
 
 # join the columns together into one sequence and write to a tsv
 seqs <- wide_satc %>% unite(seq, -sample, sep="")
