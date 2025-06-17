@@ -26,30 +26,23 @@ metadata_table = pd.read_csv(metadata_table_path, index_col = "dataset_short_nam
 # TODO: Dynamically generate {dataset} based on the metadata table
 # TODO: Define the other wildcards based on the config file
 DATASETS = list(metadata_table.index)
-SELECT_TYPES = ["filter1", "filter3"]
-#CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered"]
+SELECT_TYPES = ["filter1"]
 CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered"]
-#CLUSTER_TYPES = ["shiftDist-keepTopES"]
 NUM_CLUSTERS = [20000]
 KMER_WIDTH = [54]
 KMER_STEP = [54]
-MODELS = ["esm", "hyena"]
+MODELS = ["hyena"]
+NORMALIZE=["normalized", "unnormalized"]
+#MODELS = ["esm", "hyena"]
 #"hyenaMarlowe"
-NORMALIZE = ["normalized", "unnormalized"]
 
 # for temp testing
-DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688", "GBS-ERP015737", "aspergillus-PRJNA632561", "strepA", "y1000-genomes-data"] # "strepA", "tuberculosis-PZAres"
-MODELS = ["hyena", "esm"]
-NORMALIZE = ["normalized"]
-#SELECT_TYPES=["filter1"]
-#CLUSTER_TYPES=["test-shiftDist-genomes-clustered", "test-AA-genomes-clustered", "shiftDist-levFilter"]
-#DATASETS = ["eFaecium-CollEtAl"]
-#NUM_CLUSTERS = [10000]
+DATASETS = ["eFaecium-CollEtAl", "eColi-arcadia-amr", "pneumo-ERP001505", "staph-aureus-SRP126135", "klebsiella-AMR-PRJEB42462", "H5N1-cattle", "canTrop-AzoleResistance-PRJNA946688", "GBS-ERP015737", "aspergillus-PRJNA632561", "strepA", "test-data-tracy-SC10X"] # "strepA", "tuberculosis-PZAres", "y1000-genomes-data", "y1000-genomes-resistance"
+
 
 ## testing
-#DATASETS = ["test-data-tracy-SC10X"]
-NORMALIZE=["normalized", "unnormalized"]
-SELECT_TYPES=["filter1"]
+#DATASETS = ["y1000-genomes-withinOrder"]
+
 #CLUSTER_TYPES=["shiftDist-levFilter"]
 #NUM_CLUSTERS=[10000]
 
@@ -63,7 +56,11 @@ wildcard_constraints:
     kmer_width=r"\d+",
     kmer_step=r"\d+",
     normalize=r"[A-Za-z]+"
-
+    
+## 
+DATASETS = ["eFaecium-CollEtAl-splitByStudy"]
+MODELS = ["hyena"]
+NORMALIZE=["normalized"]
 
 ## Define the rules for the pipeline
 rule all:
@@ -78,7 +75,8 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf"]) # "nonzero_coefficients_blast_annotated.tsv", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf",
+               "nonzero_coefficients_blastp_annotated.tsv"]) # , 
 
 
 rule all_genomes:
@@ -94,7 +92,20 @@ rule all_genomes:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]),
+            expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               
+               
 
 
 rule all_ohe:
@@ -107,32 +118,33 @@ rule all_ohe:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf"]) # "nonzero_coefficients_blast_annotated.tsv", "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv","nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf", "nonzero_coefficients_blastp_annotated.tsv"]) # "nonzero_coefficients_blast_annotated.tsv", 
 
-rule all_test_aa:
+rule all_y1000:
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505"],
-               select_type=["filter1"],
-               cluster_type=["test-aa-clustered-v2"],
-               model=["esm", "hyena"],
-               num_clusters=[20000],
+                    "{dataset}_{model}_{task}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["y1000-genomes-data", "y1000-genomes-resistance"],
+               task=["adelie", "adelie-train-only"],
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               normalize=["normalized"],
-               FILE = ["nonzero_coefficients_blast_annotated.tsv", "confusion_matrices.pdf"]),
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=["eColi-arcadia-amr", "eFaecium-CollEtAl", "pneumo-ERP001505"],
-               select_type=["filter1"],
-               cluster_type=["test-aa-clustered-v2"],
-               num_clusters=[20000],
+               normalize=NORMALIZE,
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_heatmaps.pdf", "nonzero_coefficients_blastp_annotated.tsv"]), # "nonzero_coefficients_blast_annotated_plots.pdf",
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe",  "{dataset}_ohe_{task}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+               dataset=["y1000-genomes-data", "y1000-genomes-resistance"],
+               task=["adelie", "adelie-train-only"],
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
-               normalize=["normalized"],
-               FILE = ["nonzero_coefficients.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "nonzero_coefficients_AMR-annotated.tsv", "confusion_matrices.pdf", "nonzero_coefficients_blast_annotated.tsv", "nonzero_coefficients_heatmaps.pdf", "nonzero_coefficients_blastp_annotated.tsv"]) # "nonzero_coefficients_blast_annotated_plots.pdf",
                
+            
 rule all_8mers:
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
@@ -174,11 +186,12 @@ rule choose_anchors:
         lookup_table = lambda wildcards: Path(metadata_table.loc[wildcards.dataset, "lookup_table"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
         num_anchors = 3000000,
-        effect_size = 0.7
+        effect_size = 0.6
     threads: 4
     resources:
         # 128 GB of memory
-        mem_mb = 128000
+        mem_mb = 128000,
+        time = "4:00:00"
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     shell:"""
@@ -529,9 +542,36 @@ rule run_adelie:
         source {params.python_env}
         python {params.script} --data {input.embeddings} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
-        --n_threads {threads}
+        --n_threads {threads} --train_prop 0.5
     """
+# change train prop back to 0.6
 
+rule run_train_only_adelie:
+    """
+    This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
+    """
+    input:
+        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
+    params:
+        script = Path(config["scripts"]["adelie"]),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie-train-only_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
+        python_env = Path(config["envs"]["adelie"])
+    threads: 32
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 512000 + ((attempt - 1) * 128000),
+        time = "24:00:00"
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie-train-only_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie-train-only_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+    shell:"""
+        ml python/3.9.0
+        source {params.python_env}
+        python {params.script} --data {input.embeddings} \
+        --metadata {input.metadata} --output_prefix {params.output_prefix} \
+        --n_threads {threads} --min_samples 15 --train_prop 1
+    """
 
 rule run_regression_trees:
     """
@@ -622,7 +662,31 @@ rule run_adelie_ohe:
         source {params.python_env}
         python {params.script} --data {input.features} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
-        --n_threads {threads}
+        --n_threads {threads} --train_prop 0.6
+    """
+    
+rule run_train_only_adelie_ohe:
+    input:
+        features = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather"),
+        metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"]
+    params:
+        script = Path(config["scripts"]["adelie"]),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie-train-only_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
+        python_env = Path(config["envs"]["adelie"])
+    threads: 16
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 128000 + ((attempt - 1) * 64000),
+        time = "18:00:00"
+    output:
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie-train-only_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie-train-only_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+    shell:"""
+                ml python/3.9.0
+        source {params.python_env}
+        python {params.script} --data {input.features} \
+        --metadata {input.metadata} --output_prefix {params.output_prefix} \
+        --n_threads {threads} --min_samples 15 --train_prop 1
     """
 
 # the following rules are for the genome sequences
@@ -832,7 +896,7 @@ rule run_adelie_genomes:
     threads: 64
     resources:
         # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 512000 + ((attempt - 1) * 64000),
+        mem_mb = lambda _, attempt: 512000 + ((attempt - 1) * 128000),
         time = "36:00:00"
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
@@ -948,17 +1012,41 @@ rule run_blast_nonzero_features:
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, "blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, "split_fasta")
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
+        taxid = lambda wildcards: int(metadata_table.loc[wildcards.dataset, "taxid"])
     resources:
         # 64 GB of memory
         mem_mb = 128000,
         time = "9:00:00"
-    threads: 32
+    threads: 16
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid}
+    """
+    
+rule run_blastp_nonzero_features:
+    """
+    Run a blast search on the significant sequences to find the closest matches in the NCBI database
+    """
+    input:
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+    params:
+        script = lambda wildcards: config["scripts"]["run_blastp"],
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blastp"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta_blastp"),
+        taxid = lambda wildcards: int(metadata_table.loc[wildcards.dataset, "taxid"]),
+        translation_table = lambda wildcards: metadata_table.loc[wildcards.dataset, "translation_table"]
+    resources:
+        # 64 GB of memory
+         mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 128000),
+         time = "12:00:00"
+    threads: 16
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv")
+    shell:"""
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
 
 rule merge_blast_results:
@@ -980,12 +1068,32 @@ rule merge_blast_results:
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
     
+rule merge_blastp_results:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"]
+    resources:
+        # 8 GB of memory
+        mem_mb = 8000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+    """
+    
 rule plot_blast_features:
     """
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"),
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
@@ -995,7 +1103,8 @@ rule plot_blast_features:
     resources:
         # 128 GB of memory
         mem_mb = 128000,
-        msa = 1
+        msa = 1,
+        time = "4:00:00"
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
     shell:"""
@@ -1014,7 +1123,8 @@ rule plot_blast_heatmaps:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
@@ -1085,17 +1195,41 @@ rule run_blast_nonzero_features_OHE:
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "split_fasta")
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta"),
+        taxid = lambda wildcards: int(metadata_table.loc[wildcards.dataset, "taxid"])
     resources:
         # 128 GB of memory
         mem_mb = 128000,
         time = "9:00:00"
-    threads: 32
+    threads: 16
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid}
+    """
+    
+rule run_blastp_nonzero_features_OHE:
+    """
+    Run a blast search on the significant sequences to find the closest matches in the NCBI database
+    """
+    input:
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+    params:
+        script = lambda wildcards: config["scripts"]["run_blastp"],
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blastp"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta_blastp"),
+        taxid = lambda wildcards: int(metadata_table.loc[wildcards.dataset, "taxid"]),
+        translation_table = lambda wildcards: metadata_table.loc[wildcards.dataset, "translation_table"]
+    resources:
+        # 64 GB of memory
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 128000),
+        time = "9:00:00"
+    threads: 16
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv")
+    shell:"""
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
 
 rule merge_blast_results_OHE:
@@ -1117,12 +1251,32 @@ rule merge_blast_results_OHE:
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
     
+rule merge_blastp_results_OHE:
+    """
+    Merge the blast results with the annotated sequences for OHE features
+    """
+    input:
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"]
+    resources:
+        # 8 GB of memory
+        mem_mb = 8000
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+    """
+    
 rule plot_blast_features_OHE:
     """
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
@@ -1151,7 +1305,8 @@ rule plot_blast_heatmaps_OHE:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: metadata_table.loc[wildcards.dataset, "metadata_file"],
