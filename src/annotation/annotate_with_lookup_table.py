@@ -77,7 +77,7 @@ def main():
     
     # create the temp dir if it doesn't exist
     if not os.path.exists(args.temp_dir):
-        os.mkdir(args.temp_dir)
+        os.makedirs(args.temp_dir)
     
     # create a unique temporary fasta file
     with tempfile.NamedTemporaryFile(dir=args.temp_dir, suffix='.fasta', delete=False) as temp_file:

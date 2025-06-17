@@ -18,9 +18,6 @@ option_list <- list(
 opt_parser <- OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-# opt$coefficients <- "results/eFaecium-CollEtAl/filter1/shiftDist-hamFilter/hyena/normalized/eFaecium-CollEtAl_hyena_adelie_results_top10000_k54_s54_nonzero_coefficients.tsv"
-# opt$blast_annotations <- "/scratch/users/dcotter1/test_blast_scripts/241127_test/merged_eFac_blast_out.tsv"
-
 # Check if all required arguments are provided
 if (is.null(opt$blast_annotations) || is.null(opt$coefficients) || is.null(opt$output)) {
   print_help(opt_parser)
@@ -30,7 +27,14 @@ if (is.null(opt$blast_annotations) || is.null(opt$coefficients) || is.null(opt$o
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE)
 
-annotations <- annotations %>% select(query, identity, features, contains("window")) %>% mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
+if (str_detect(opt$blast_annotations, "blastp")) {
+  annotations <- annotations %>% select(query, evalue, identity, qcovs, qframe, stitle, `NCBI_protein_accession`, UniProt_accession, method, GO) %>% 
+    mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
+} else {
+  annotations <- annotations %>% select(query, evalue, identity, qcovs, features, contains("window")) %>% 
+    mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
+}
+
 
 
 coefficients <- fread(opt$coefficients, header = TRUE)

@@ -56,8 +56,7 @@ if (!opt$noFasta) {
       rowwise() %>% 
       mutate(max_coef=max(abs(as.numeric(
         strsplit(gsub("\\[|\\]", "", coefficients), split=",", fixed=TRUE)[[1]])))) %>% 
-      group_by(metadata_category) %>% 
-      slice_max(max_coef, n=10) %>% ungroup() %>% select(cluster, anno) %>% 
+      group_by(metadata_category) %>% ungroup() %>% select(cluster, anno) %>% 
       distinct(cluster, .keep_all = T) %>% 
       mutate(seqs = sapply(str_extract_all(anno, "[ACTGN]{30,70}"), \(x) toString(unique(x)))) %>% 
       select(-anno) %>% 
