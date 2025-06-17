@@ -1,0 +1,5 @@
+# Need to define the origin of the lookuptables in this directory
+# This one is small and comes from post-processing a single fasta file 
+
+# The artificat lookup is large and I have left it hardcoded to it's location on Sherlock but it would be useful to package it in some way here or generate a script that will download and build it and add that as a rule
+# need to think about this for distribution
