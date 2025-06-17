@@ -14,6 +14,7 @@ import Bio.SeqIO as SeqIO
 from Bio.Seq import Seq
 import random
 from fuzzysearch import find_near_matches
+from math import floor
 
 # define functions
 def parse_args():
@@ -45,7 +46,7 @@ def read_anchors(anchor_file):
                 anchors.append(line[0])
     return anchors
 
-def translate_anchor(anchor, translation_table=1, protein_db=None):
+def translate_anchor(anchor, translation_table=1, protein_db=None, min_translation_length=7):
     """
     Translate the anchor sequence in all 6 reading frames and return the translated sequences.
     If a protein database is provided, filter out the translations that are not found in the database.
@@ -59,8 +60,8 @@ def translate_anchor(anchor, translation_table=1, protein_db=None):
         translated_reverse = str(Seq(anchor.reverse_complement()[frame:]).translate(to_stop=True, table=translation_table, cds=False))
         translations.append(translated)
         translations.append(translated_reverse)
-    # Filter out translations that are less than 7 characters
-    translations = [translated for translated in translations if len(translated) >= 7]
+    # Filter out translations that are less than N characters
+    translations = [translated for translated in translations if len(translated) >= min_translation_length]
     # Filter out translations that are not found in a protein database
     if protein_db:
         out_translations = []
@@ -176,6 +177,8 @@ def main():
     args = parse_args()
     print("Reading anchors...")
     anchors = read_anchors(args.input)
+    anchor_length = len(anchors[1])
+    min_translation_length = floor((anchor_length / 3) * 0.8)
     print("Clustering anchors...")
     if args.protein_db:
         with open(args.protein_db, "rb") as f:

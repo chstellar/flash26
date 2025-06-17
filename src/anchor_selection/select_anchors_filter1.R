@@ -117,6 +117,7 @@ out_lookup_stats <- file.path(temp_dir, "lookup_stats.txt") %>% gsub("//", "/", 
 lookup_cmd <- paste0(file.path(opt$splash_bin, "lookup_table"), 
                      " query --kmer_skip 1 --truncate_paths --stats_fmt with_stats ", 
                      anchors_fasta_file, " ", opt$lookup_table, " ", out_lookup_stats)
+system(paste("rm", out_lookup_stats))
 if (file.exists(out_lookup_stats)) {
   cat("Lookup stats already in tmp directory. Delete tmp directory to force lookup table to run again...\n")
   cat("Filtering anchors for artifacts...\n")
