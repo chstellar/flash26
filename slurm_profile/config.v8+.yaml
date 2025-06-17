@@ -15,6 +15,7 @@ default-resources:
   - partition="horence,owners,normal"
   - mem_mb=4000
   - slurm_extra=""
+  - msa=1
 jobs: 2000
 local-cores: 1
 max-jobs-per-second: 500

@@ -4,3 +4,16 @@ tuberculosis-PZAres,/scratch/groups/horence/dcotter1/runs/Kim_et_al_PZA/0,/oak/s
 aspergillus-PRJNA632561,/scratch/groups/horence/dcotter1/runs/aspergillus_triazole_resistance_PRJNA632561,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/PRJNA632561_aspergillus_merged_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,4,NA,NA
 
 test-data-tracy-SC10X,/scratch/groups/horence/dcotter1/runs/ian_tracy_10X,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/hpv_sc_data_sampleByBarcode_finegrained_cleaned_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,1,NA,NA
+sepsis-PRJNA507824,/scratch/groups/horence/dcotter1/runs/sepsis_PRJNA507824,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/sepsis-PRJNA507824_experiment_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11,NA,NA
+curated-gut-metabalome-YACHIDA-CRC-2019,/scratch/groups/horence/dcotter1/runs/curated_gut_microbiome_metabolome/YACHIDA_CRC_2019,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/temp_test_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11,NA,NA
+prism-metabolomics-SRP129027,/scratch/groups/horence/dcotter1/runs/prism_metabolomics,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/temp_test_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11,NA,NA
+
+eColi-8mer,/scratch/groups/horence/dcotter1/runs/eColi_AMR_resistance_dataset_arcadiaScienceAug2024_8mers/filtered,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/eColi_arcadia_cleaned_resistance_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11,NA,NA
+
+eFac-8mer,/scratch/groups/horence/dcotter1/runs/E_faecium_CollEtAl_8mers/filtered,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/E_faecium_cleaned_resistance_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,11,NA,NA
+
+canAuris-SRP162758-pw,/scratch/groups/horence/dcotter1/mkokot_backup_241129/round10/SRP162758,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/pathogen_watch/SRP162758_pathogenwatch_amr_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifact_lookup.slt,12,NA,NA
+
+influenza-H5N1-all-birds-PRJNA980729,/scratch/groups/horence/dcotter1/runs/influenza_H5N1_in_birds_PRJNA980729,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/influenza_H5N1_in_birds_PRJNA980729_cleaned_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifacts_chicken_cattle/artifact_lookup_chicken_cattle.slt,1,NA,NA
+
+H5N1-cattle,/scratch/groups/horence/dcotter1/runs/H5N1_Nguyen_et_al_2024_PRJNA1102327,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/H5N1_metadata_from_Nguyen_et_al_2024_PRJNA1102327_modified250528.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifacts_chicken_cattle/artifact_lookup_chicken_cattle.slt,1,NA,NA,10239

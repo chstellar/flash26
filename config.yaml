@@ -5,10 +5,11 @@ splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.11.1/
 
 # annotation lookup table
 lookup_table_for_annotation: /oak/stanford/groups/horence/dcotter1/lookup_tables/microbial_lookup/microbial_v2_lookup.slt
-lookup_table_for_annotation_AMR: /oak/stanford/groups/horence/dcotter1/lookup_tables/amr/amr_lookup.slt
+lookup_table_for_annotation_AMR: /oak/stanford/groups/horence/dcotter1/lookup_tables/amr/amr_split_by_class/amr_split.slt
 
 # path to directory with genomes
 genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
+#genomes_dir: /scratch/groups/horence/dcotter1/data/E_faecium_fastas
 
 # set paths to python venvs
 envs:
@@ -73,6 +74,7 @@ scripts:
   annotate_clusters: src/annotation/annotate_with_lookup_table.py
   merge_annotations: src/annotation/merge_coefs_with_annotations.R
   run_blast: src/annotation/blast_code/run_blast.sh
+  run_blastp: src/annotation/blast_code/run_blastp.sh
   merge_blast_results: src/annotation/merge_coefs_with_blast.R
   plot_blast_results: src/annotation/blast_code/plot_blast_annotations_each_feature.R
   plot_blast_heatmaps: src/annotation/blast_code/plot_nonzero_features_heatmap.R
