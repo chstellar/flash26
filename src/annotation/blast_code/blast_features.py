@@ -7,23 +7,88 @@ import os
 from os.path import join, basename
 from concurrent.futures import ThreadPoolExecutor
 from math import floor
+import random
+import pickle
 
 Entrez.email = "dcotter1@stanford.edu"
 MAX_RETRIES = 100
+REQUEST_DELAY = 0.4
+INITIAL_DELAY_RANGE = (0.1, 2)  # Range for initial random delay
+CACHE_FILE = "/scratch/users/dcotter1/blast_db/sequence_cache.pkl"
 
-def fetch_sequence(seq_id):
-    print(f"Fetching sequence {seq_id}")
+def load_cache(cache_file):
+    """Load cached records from a file."""
+    if os.path.exists(cache_file):
+        with open(cache_file, "rb") as f:
+            return pickle.load(f)
+    return {}
+
+def save_cache(cache_file, records):
+    """Save records to a cache file."""
+    with open(cache_file, "wb") as f:
+        pickle.dump(records, f)
+
+def extract_unique_accessions(blast_folder):
+    """Extract unique accession numbers from all BLAST output files."""
+    unique_accessions = set()
+    blast_outs = [join(blast_folder, f) for f in os.listdir(blast_folder) if f.endswith(".blastout.tsv")]
+    
+    for blast_out in blast_outs:
+        try:
+            df = pd.read_csv(blast_out, sep="\t", header=None)
+            df.columns = ["query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
+                      "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
+                      "sacc", "slen", "staxids", "stitle"]
+            unique_accessions.update(df["sacc"].unique())
+        except pd.errors.EmptyDataError:
+            print(f"File {blast_out} is empty. Skipping...")
+    return unique_accessions
+
+def fetch_sequence(seq_id, request_delay, initial_delay_range):
+    # Introduce a small random delay at the start
+    initial_delay = random.uniform(*initial_delay_range)
+    time.sleep(initial_delay)
+
+    print(f"Fetching sequence {seq_id} after initial delay of {initial_delay:.2f} seconds")
     for i in range(MAX_RETRIES):
         try:
             handle = Entrez.efetch(db="nucleotide", id=seq_id, rettype="gb", retmode="text")
             record = SeqIO.read(handle, "genbank")
             handle.close()
-            break
-        except:
-            time.sleep(5)
-    return record
+            time.sleep(request_delay/2)  # Delay between successful requests
+            return record
+        except Exception as e:
+            print(f"Error fetching {seq_id}: {e}. Retrying...")
+            time.sleep(request_delay)  # Exponential backoff for retries
+    return None
 
-def find_overlapping_features(record, window_start, window_end):
+def fetch_all_sequences(unique_accessions, max_workers=4):
+    """Fetch sequences for all unique accession numbers using parallel processing."""
+    # Load existing cache
+    try:
+        sacc_records = load_cache(CACHE_FILE)
+    except Exception as e:
+        print("Error loading sacc records: {e}")
+        sacc_records = {}
+
+    # Calculate delays based on the desired request rate per worker
+    request_delay = (1/3) * max_workers
+    initial_delay_range = (request_delay / 2, request_delay)
+
+    def fetch_and_store(seq_id):
+        if seq_id not in sacc_records:
+            record = fetch_sequence(seq_id, request_delay, initial_delay_range)
+            if record:
+                sacc_records[seq_id] = record
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        executor.map(fetch_and_store, unique_accessions)
+
+    # Save updated cache
+    save_cache(CACHE_FILE, sacc_records)
+    return sacc_records
+
+def find_overlapping_features(record, window_start, window_end, strand):
     overlapping_features = []
     for feature in record.features:
         if feature.type == "source":
@@ -40,40 +105,47 @@ def find_overlapping_features(record, window_start, window_end):
                 "end": str(feature_end),
                 "gene": feature.qualifiers.get("gene"),
                 "product": feature.qualifiers.get("product"),
-                "protein_seq": feature.qualifiers.get("translation")
+                "protein_seq": feature.qualifiers.get("translation"),
+                "protein_id": feature.qualifiers.get("protein_id"),
+                "note": feature.qualifiers.get('note')
             })
-
     return overlapping_features
 
-def featurize_blast_out(blast_out, window=5000):
+def featurize_blast_out(blast_out, window, sacc_records):
     df = pd.read_csv(blast_out, sep="\t", header=None)
-    df.columns = ["query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",\
-                     "q_start", "q_end", "s_start", "s_end", "evalue", "bit_score", "sgi", \
-                        "sacc", "slen", "staxids", "stitle"]
+    df.columns = ["query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
+                  "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
+                  "sacc", "slen", "staxids", "stitle"]
     df["features"] = None
     df[f"features_{window}_window"] = None
-    sacc_records = {}
-    for sacc in df["sacc"].unique():
-        sacc_records[sacc] = fetch_sequence(sacc)
 
     for index, row in df.iterrows():
         record = sacc_records[row["sacc"]]
-        features = find_overlapping_features(record, row["s_start"], row["s_end"])
+        features = find_overlapping_features(record, row["s_start"], row["s_end"], row["sstrand"])
         df.at[index, "features"] = features
         window_start = max(row["s_start"] - window, 0)
         window_end = row["s_end"] + window
-        features = find_overlapping_features(record, window_start, window_end)
+        strand = row["sstrand"]
+        if strand == "plus":
+            strand = 1
+        elif strand == "minus":
+            strand = -1
+        features = find_overlapping_features(record, window_start, window_end, strand)
         df.at[index, f"features_{window}_window"] = features
     
-    return df[["query", "identity", "features", f"features_{window}_window"]]
+    return df[["query", "identity", "evalue", "qcovs", "features", f"features_{window}_window"]]
 
-def process_blast_file(blast_out, blast_feat_out, blast_window):
+def process_blast_file(blast_out, blast_feat_out, blast_window, sacc_records):
     if os.path.exists(blast_feat_out) and os.path.getsize(blast_feat_out) > 0:
         print(f"Output file {blast_feat_out} exists and has data. Skipping.")
         return
-    df_features = featurize_blast_out(blast_out, blast_window)
-    df_features.to_csv(blast_feat_out, index=None, sep="\t")
-    print(f"Featurize blast output complete for {blast_out}. Output file: {blast_feat_out}")
+    if os.path.getsize(blast_out) > 0:
+        df_features = featurize_blast_out(blast_out, blast_window, sacc_records)
+        df_features.to_csv(blast_feat_out, index=None, sep="\t")
+        print(f"Featurize blast output complete for {blast_out}. Output file: {blast_feat_out}")
+    else:
+        print(f"Featurize blast output failed for {blast_out}. File was empty.")
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Featurize BLAST output")
@@ -92,12 +164,19 @@ if __name__ == "__main__":
         print(f"Blast folder {blast_folder} does not exist. Exiting.")
         sys.exit(0)
 
+    # Extract unique accession numbers
+    unique_accessions = extract_unique_accessions(blast_folder)
+    print(f"Total unique accessions: {len(unique_accessions)}")
+
+    # Fetch sequences for all unique accessions using parallel processing
+    sacc_records = fetch_all_sequences(unique_accessions, max_workers=max_workers)
+
     blast_outs = [join(blast_folder, f) for f in os.listdir(blast_folder) if f.endswith(".blastout.tsv")]
     blast_feat_outs = [join(blast_folder, basename(f).split(".")[0] + ".blastfeatout.tsv") for f in blast_outs]
     print(f"Total blast output files: {len(blast_outs)}")
 
-    with ThreadPoolExecutor(max_workers=max(2,floor(max_workers/2))) as executor:
-        futures = [executor.submit(process_blast_file, blast_out, blast_feat_out, blast_window) for blast_out, blast_feat_out in zip(blast_outs, blast_feat_outs)]
+    with ThreadPoolExecutor(max_workers=max(2, floor(max_workers / 2))) as executor:
+        futures = [executor.submit(process_blast_file, blast_out, blast_feat_out, blast_window, sacc_records) for blast_out, blast_feat_out in zip(blast_outs, blast_feat_outs)]
         for future in futures:
             future.result()
 

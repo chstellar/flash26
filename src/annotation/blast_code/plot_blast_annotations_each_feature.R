@@ -1,9 +1,9 @@
-suppressPackageStartupMessages(library(Biostrings))
-suppressPackageStartupMessages(library(stringdist))
+suppressPackageStartupMessages(library(optparse))
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tidyverse))
-suppressPackageStartupMessages(library(optparse))
 suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(Biostrings))
+suppressPackageStartupMessages(library(stringdist))
 suppressPackageStartupMessages(library(msa))
 
 
@@ -41,11 +41,11 @@ known_causes = "NNNNNNNNNNNNNNN"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
-# opt$nonzero_annotations = "results/eFaecium-CollEtAl/filter1/shiftDist-levFilter/hyena/normalized/eFaecium-CollEtAl_hyena_adelie_results_top20000_k54_s54_nonzero_coefficients_blast_annotated.tsv"
-# opt$clusters = "results/eFaecium-CollEtAl/filter1/shiftDist-levFilter/eFaecium-CollEtAl_sequences_per_cluster_top20000-clusters_k54_s54.tsv"
-# opt$feather = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/eFaecium-CollEtAl/eFaecium-CollEtAl_hyena_top_variance_features_for_glmnet_filter1_shiftDist-levFilter_top20000_k54_s54_normalized.feather"
-# opt$sample_seqs = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/eFaecium-CollEtAl/eFaecium-CollEtAl_prepared_sequences_filter1_shiftDist-levFilter_top20000_sample_sequences.tsv"
-# opt$metadata = "/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/E_faecium_cleaned_resistance_metadata.tsv"
+# opt$nonzero_annotations = "results/test-data-tracy-SC10X/filter1/shiftDist-levFilter/hyena/normalized/test-data-tracy-SC10X_hyena_adelie_results_top20000_k54_s54_nonzero_coefficients_blastp_annotated.tsv"
+# opt$clusters = "results/test-data-tracy-SC10X/filter1/shiftDist-levFilter/test-data-tracy-SC10X_sequences_per_cluster_top20000-clusters_k54_s54.tsv"
+# opt$feather = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/test-data-tracy-SC10X/test-data-tracy-SC10X_hyena_top_variance_features_for_glmnet_filter1_shiftDist-levFilter_top20000_k54_s54_normalized.feather"
+# opt$sample_seqs = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/test-data-tracy-SC10X/test-data-tracy-SC10X_prepared_sequences_filter1_shiftDist-levFilter_top20000_sample_sequences.tsv"
+# opt$metadata = "/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/hpv_sc_data_sampleByBarcode_CELLTYPE_DISEASE_ONLY.tsv"
 # opt$output = "/oak/stanford/groups/horence/dcotter1/share/250506/test_eFac_more_blast_hits_out.pdf"
 
 filename = data.frame(path=opt$nonzero_annotations)
@@ -88,6 +88,20 @@ get_first_class <- function(x) {
   })
 }
 
+get_nth_coef <- function(x, n=1) {
+  sapply(x, function(str) {
+    nums <- as.numeric(strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]])
+    nums[n]
+  })
+}
+
+get_nth_class <- function(x,n=1) {
+  sapply(x, function(str) {
+    classes <- strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]]
+    classes[n]
+  })
+}
+
 # function to read the nth cluster out of the sample sequences file 
 read_nth_cluster <- function(file_path, n) {
   # Calculate start and end positions for the nth cluster
@@ -121,16 +135,36 @@ calculate_distance_and_align <- function(sequences) {
   unique_seqs <- names(seq_table)
   
   # Perform MSA on unique sequences
-  msa_result <- msa(DNAStringSet(unique_seqs), method = "ClustalOmega")
+  msa_result <- msa(DNAStringSet(unique_seqs), method = "ClustalOmega", order = "input")
   
   # Convert MSA result to character vectors
   aligned_seqs <- as.character(msa_result)
   
+  # Function to count leading and trailing dashes
+  count_leading_dashes <- function(seq) {
+    nchar(str_extract(seq, "^(\\-+)[ACTGN]", group=1))
+  }
+  
+  count_trailing_dashes <- function(seq) {
+    nchar(str_extract(seq, "[ACTGN]+(\\-+)$", group=1))
+  }
+  
+  # Determine the maximum number of leading and trailing dashes
+  max_leading_dashes <- max(c(count_leading_dashes(aligned_seqs),0), na.rm=T)
+  max_trailing_dashes <- max(c(count_trailing_dashes(aligned_seqs),0), na.rm=T)
+  
+  # Trim the determined number of dashes from each sequence
+  trim_dashes <- function(seq) {
+    substr(seq, max_leading_dashes + 1, nchar(seq) - max_trailing_dashes)
+  }
+  
+  trimmed_aligned_seqs <- sapply(aligned_seqs, trim_dashes)
+  
   # Find the most abundant sequence
-  most_abundant <- aligned_seqs[which.max(seq_table)]
+  most_abundant <- trimmed_aligned_seqs[which.max(seq_table)]
   
   # Calculate distances for unique sequences
-  unique_distances <- stringdist(aligned_seqs, most_abundant, method = "lv")
+  unique_distances <- stringdist(trimmed_aligned_seqs, most_abundant, method = "lv")
   
   # Map distances and aligned sequences back to all valid sequences
   all_valid_distances <- unique_distances[match(valid_sequences, unique_seqs)]
@@ -148,15 +182,24 @@ calculate_distance_and_align <- function(sequences) {
 
 # read in input files
 dt <- fread(opt$nonzero_annotations)
+if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
 all_clusters <- fread(opt$clusters) %>% select(-kmer)
 feather_dt <- feather::read_feather(opt$feather)
 all_metadata <- fread(opt$metadata)
 
 categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
 
+if (str_detect(opt$nonzero_annotations, "adelie-train-only")) {
+  dt <- dt %>% mutate(accuracy=train_accuracy)
+  acc_label = "Train Accuracy:"
+} else {
+  acc_label = "Accuracy:"
+}
+
 #category = "ampicillin_RIS"
 
 pdf(opt$output, width=12, height=8)
+all_features_summary <- data.table()
 
 # write a title page first
 plot(0:10, type = "n", xaxt="n", yaxt="n", bty="n", xlab = "", ylab = "")
@@ -165,35 +208,78 @@ text(5, 7, paramaters['filter'])
 text(5, 6, paramaters['cluster_approach'])
 text(5, 5, paramaters['model'])
 text(5, 4, paste("At most", paramaters['num_clusters'], "clusters"))
+text(5,3, paste(Sys.Date()))
 
 for (category in categories) {
   tryCatch({
-    summ_dt <- dt %>% filter(metadata_category==category) %>%
-      separate_longer_delim(features, delim = "},") %>% 
-      mutate(products=str_extract(features, "'product': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
-      mutate(genes=str_extract(features, "'gene': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
-      select(-features) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>% 
-      arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
+    new_dt <- dt %>% filter(is.na(query)) %>% select(-query) %>% left_join(all_clusters %>% mutate(query = paste0(cluster, "_", seq)) %>% select(-seq), by="cluster", relationship="many-to-many") %>% 
+      filter(!is.na(query))
+    summ_dt <- bind_rows(dt, new_dt) %>% filter(!is.na(query)) %>% filter(metadata_category==category) %>%
+      mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>% 
+      mutate(second_coef = get_nth_coef(coefficients,2), second_class=get_nth_class(classes, 2)) %>%
+      arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>% mutate(annotation = str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
       rowwise() %>%
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
-      select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, products, genes) %>%
+      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient, cluster, feature, query, identity, qcovs, annotation) %>%
       mutate(query = str_remove(query, "cluster_\\d+_")) %>%
-      group_by(cluster) %>%
-      ungroup() %>%
-      distinct(cluster,products,query,genes,.keep_all = T) %>% group_by(cluster) 
+      distinct(cluster,annotation,query,.keep_all = T) %>% group_by(cluster)  
     
-    if (opt$products) {
-      summ_dt <- summ_dt %>% group_by(cluster,query) %>%
-        mutate(label=ifelse(!is_empty(unique(na.omit(products))), paste(unique(na.omit(products)),collapse=","), paste(unique(na.omit(genes)), collapse=","))) %>% 
-        distinct(cluster, query, label, .keep_all=T) %>% ungroup()
-    } else {
-      summ_dt <- summ_dt %>% group_by(cluster,query) %>%
-        mutate(label=ifelse(!is_empty(unique(na.omit(genes))), paste(unique(na.omit(genes)), collapse=","), paste(unique(na.omit(products)),collapse=","))) %>% 
-        distinct(cluster, query, label, .keep_all=T) %>% ungroup()
+
+    summ_dt <- summ_dt %>% group_by(cluster,query) %>%
+      mutate(label=ifelse(!is_empty(unique(na.omit(annotation))), paste(unique(na.omit(annotation)),collapse=";"), NA)) %>%
+      distinct(cluster, query, label, .keep_all=T) %>% ungroup()
+
+    if (TRUE) {
+      summ_dt2 <- dt2 %>% filter(metadata_category==category) %>%
+        separate_longer_delim(features, delim = "},") %>% 
+        mutate(products=str_extract(features, "'product': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
+        mutate(genes=str_extract(features, "'gene': \\['([\\w\\s-]+)'\\]", group=1)) %>% 
+        select(-features) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>% 
+        arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
+        rowwise() %>%
+        mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
+        ungroup() %>%
+        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, products, genes) %>%
+        mutate(query = str_remove(query, "cluster_\\d+_")) %>%
+        group_by(cluster) %>%
+        ungroup() %>%
+        distinct(cluster,products,query,genes,.keep_all = T) %>% group_by(cluster) 
+      
+      if (opt$products) {
+        summ_dt2 <- summ_dt2 %>% group_by(cluster,query) %>%
+          mutate(label=ifelse(!is_empty(unique(na.omit(products))), paste(unique(na.omit(products)),collapse=";"), paste(unique(na.omit(genes)), collapse=","))) %>% 
+          distinct(cluster, query, label, .keep_all=T) %>% ungroup()
+      } else {
+        summ_dt2 <- summ_dt2 %>% group_by(cluster,query) %>%
+          mutate(label=ifelse(!is_empty(unique(na.omit(genes))), paste(unique(na.omit(genes)), collapse=";"), paste(unique(na.omit(products)),collapse=","))) %>% 
+          distinct(cluster, query, label, .keep_all=T) %>% ungroup()
+      }
+      if (!"qcovs" %in% colnames(summ_dt2)) {
+        summ_dt2$qcovs <- NA
+      }
+      summ_dt2 <- summ_dt2 %>% select(cluster, query, identity, qcovs, label) %>% dplyr::rename(label2=label)
+      summ_dt <- summ_dt %>% left_join(summ_dt2 %>% 
+                                         select(cluster, query, identity, qcovs, label2), by=c("cluster", "query")) %>% 
+        dplyr::rename(identity=`identity.x`, qcovs=`qcovs.x`) %>%
+        mutate(identity = ifelse(is.na(label) & !is.na(label2), `identity.y`, identity)) %>%
+        mutate(qcovs = ifelse(is.na(label) & !is.na(label2), `qcovs.y`, qcovs)) %>%
+        mutate(label = ifelse(is.na(label) & !is.na(label2), label2, label)) %>%
+        mutate(label = ifelse(is.na(label) | nchar(label)<2, NA, label))
     }
     
-    plot_dt <- summ_dt %>% 
+    summ_dt <- summ_dt %>% group_by(feature) %>% mutate(label = ifelse(rep(sum(!is.na(label))==0, length(label)) & (is.na(label)) & (!is.na(identity) | !is.na(identity.y)), "NO PROTEIN/GENE HIT", label))
+    
+    summ_dt <- summ_dt %>% group_by(cluster) %>% 
+      mutate(label = ifelse(rep(sum(!is.na(label))==0, length(label)), "NO MATCH", label)) %>% 
+      mutate(hypothetical=length(unique(label))>1 & sum(str_detect(label, "(?i)hypothetical|uncharacterized"))>0) %>%
+      mutate(hypothetical=replace_na(hypothetical, FALSE)) %>% 
+      rowwise() %>%
+      mutate(label = map2_vec(label, hypothetical, \(x,y) if (y) {str_c(str_trim(unlist(str_split(x, ";"))[str_detect(unlist(str_split(x, ";")), "(?i)hypothetical|uncharact", negate=T)]),sep = ",", collapse=",")} else {x})) %>%
+      ungroup()
+    
+    plot_dt <- summ_dt %>%
+      mutate(label=ifelse(label=="",annotation,label)) %>%
       mutate(largest_coef=max(max_coefficient)) %>%
       mutate(coef_mag=max_coefficient/largest_coef) %>% 
       group_by(cluster, coef_mag) %>% 
@@ -204,7 +290,7 @@ for (category in categories) {
       mutate(color=NA) %>%
       mutate(color=ifelse(nchar(label)>1, "blast", color)) %>%
       mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
-      mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 30)) %>% 
+      mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 40)) %>% 
       mutate(label = replace_na(label, ""))
     
     accuracy <- summ_dt$accuracy %>% unique()
@@ -225,7 +311,7 @@ for (category in categories) {
                         labels=c("Known Cause", "Blast hit", NA)) +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
-              subtitle = paste("Accuracy:", scales::label_percent(accuracy = 0.01)(accuracy))) +
+              subtitle = paste(acc_label, scales::label_percent(accuracy = 0.01)(accuracy))) +
       theme_pubr() + 
       theme(legend.position="none")
     
@@ -236,8 +322,7 @@ for (category in categories) {
       arrange(-max_coefficient) %>% head(opt$num_hits)
     
     # filter metadata for only current category
-    my_metadata <- all_metadata %>% select(sample_name, !!category) %>% rename(metadata:=!!category)
-    
+    my_metadata <- as_tibble(all_metadata) %>% select(sample_name, !!category) %>% dplyr::rename(metadata:=!!category)
     for (j in 1:nrow(interesting_clusters)) {
       
       my_cluster = interesting_clusters[j,]$cluster
@@ -270,24 +355,31 @@ for (category in categories) {
         pivot_wider(id_cols=everything(), names_from=metadata, values_from=metadata_count) %>% 
         relocate(aligned_sequence, .after="sequence")
       
-      summ_sub_dt <- summ_sub_dt %>% left_join(dt_sub %>% select(query,accuracy,identity,label) %>% 
-                                                 rename(sequence=query), by="sequence")
+      summ_sub_dt <- summ_sub_dt %>% left_join(dt_sub %>% select(query,accuracy,identity,qcovs,label,label2) %>% 
+                                                 dplyr::rename(sequence=query), by="sequence")
       
       p_sub <- summ_sub_dt %>%
+        mutate(label = ifelse(nchar(label)<3 & nchar(label2)>3, label2, label)) %>%
         mutate(across(all_of(all_classes), \(x) replace_na(x, 0))) %>%  # Replace NA with 0 for all specified columns
         mutate(prop_first_class = !!sym(first_class) / rowSums(across(all_of(all_classes)))) %>%  # Calculate proportion
         mutate(total_samples = rowSums(across(all_of(all_classes)))) %>% 
-        mutate(label = ifelse(is.na(label), "NO BLAST HIT", label)) %>%
-        mutate(label = ifelse(nchar(label) == 0, "MISSING", label)) %>%
+        mutate(label = ifelse(str_detect(sequence, "NNNNNNNN"), "NO TARGET", label)) %>%
         ungroup() %>%
         mutate(label = str_wrap(label, width = 40)) %>%
         mutate(label=gsub(",Pbp5","",label)) %>%
-        rename(`Blast Label` = label) %>%
-        mutate(label_identity = ifelse(identity == 100 | is.na(identity), "", paste0(round(identity,2), "%"))) %>% 
-        mutate(label_identity = replace_na(label_identity, ""))
+        mutate(label=ifelse(is.na(label), "NO MATCH", label)) %>%
+        dplyr::rename(`Blast Label` = label) %>%
+        mutate(label_identity = ifelse(identity == 100 | is.na(identity), "-", paste0(round(identity,2), "%"))) %>% 
+        mutate(label_coverage = ifelse(qcovs == 100 | is.na(qcovs), "-", paste0(round(qcovs,2), "%"))) %>%
+        mutate(label_identity = replace_na(label_identity, "-")) %>%
+        mutate(label_coverage = replace_na(label_coverage, "-")) %>%
+        rowwise() %>%
+        mutate(label_both = ifelse(label_coverage != "-" | label_identity != "-", 
+                                   paste0("I:", str_replace(label_identity, "-", "100%"),
+                                          "; C:", str_replace(label_coverage, "-", "100%")), ""))
       
       if (length(unique(p_sub$`Blast Label`)) <= 6) {
-        p2 <- p_sub %>% 
+        p2 <- p_sub %>%
           ggplot(aes(x=embedding, y=lev_dist, color=prop_first_class, 
                      shape=`Blast Label`, size=total_samples,
                      label=label_identity)) +
@@ -301,7 +393,7 @@ for (category in categories) {
             limits = c(1, 10000), # Set limits for the size scale
             labels = scales::label_log()
           ) +
-          ggrepel::geom_text_repel(aes(label = label_identity),
+          ggrepel::geom_text_repel(aes(label = label_both),
                                    size = 3,        # Adjust the size of the text
                                    hjust = 0,       # Horizontal justification (0 = left, 0.5 = center, 1 = right)
                                    vjust = 0,        # Vertical justification (0 = bottom, 0.5 = center, 1 = top)
@@ -338,6 +430,11 @@ for (category in categories) {
       }
       
       print(p2)
+      summ_sub_dt <- summ_sub_dt %>% select(-label2) %>% ungroup() %>%
+        mutate(across(-all_of(c("sequence", "aligned_sequence", "embedding","lev_dist","accuracy","identity","qcovs","label")), \(x) paste(cur_column(), replace_na(x, 0),sep=":"))) %>% 
+        unite(col=metadata, -c(sequence, aligned_sequence, embedding,lev_dist,accuracy,identity,qcovs,label), sep="/") %>%
+        mutate(metadata_category = category, cluster=my_cluster, feature=my_feature)
+      all_features_summary <- bind_rows(all_features_summary, summ_sub_dt)
     }
     
   }, error = function(e) {
@@ -348,4 +445,5 @@ for (category in categories) {
 }
 
 dev.off()
-# ggsave(filename="/oak/stanford/groups/horence/dcotter1/share/250501/test_plot_eFac_ampicillin_blast_hits.pdf")
+
+all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$output, ".pdf", "_summary.tsv"))
