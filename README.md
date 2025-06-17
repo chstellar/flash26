@@ -119,6 +119,28 @@ The files that the script generates are as follows:
 - Random Forests PDFS: `results/{dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_confusion_matrics.pdf`
 - Random forests important features: `results/{dataset}/{select_type}/{cluster_type}/{model}/{normalize}/{dataset}_{model}_randomForests_results_top4000_k54_s54_important_features.tsv`
 
+## Details on Pipeline steps
+1. Filter anchors from the SPLASH stats file to decide which anchors to include downstream. See below for specific information on what each Filter is doing. This step takes in SPLASH stats and outputs a list of anchors to a text file that matches the filter criteria (and number). 
+2. Cluster and report anchor clusters. These steps take in a set of anchors (From step 1) and output a two column file with cluster id and anchor after filtering and reordering the clusters. 
+  - Cluster anchors using a specified algorithm. Some options we have explored (see cluster for more details):
+    
+    - shiftDist clustering
+    - mmseqs for clusterings
+    - AA-based clustering
+Once clusters are determined, we reorder them by taking the average effect size across all anchors in a cluster and place a cluster first if it has the highest average effect size. 
+Within each cluster, we reorder the anchors so that the most abundant anchor across all samples (as defined by SPLASH is first, and so on). 
+We then take the top (N=20000) clusters to simplify downstream analysis since the tasks can get unwieldy
+We prepare the sequences from all of the samples for downstream analysis by finding each sample’s highest count target(s) for each anchor. This step takes in a set of anchor clusters (From step 2) as well as a set of SATC files from the SPLASH run and dumps only those anchors (and their top count targets). It then formats these into anchor + target concatenated format for output to further steps. The final output is the kmer decomposition of this set of sample sequences that slides across these concatenated sequences and identifies all unique anchors+targets and puts them in a file to embed. 
+The prepare sequences step uses the anchor clusters file and the SATC files to take the first anchor that each sample has (in each cluster) and it’s highest count target and then concatenates these anchor-target pairs into one long fasta entry per sample. If a given sample has NO anchors from a cluster present, then it will instead receive a 54mer composed of the first anchor in the cluster ( the “representative” ) and 27 Ns. 
+The decompose kmers step slides along this sequence and decomposes it back into it’s constituent kmers. It will create a mapping file to identify where each 54mer appears in a given sequence and it will create a fasta file with ALL of the unique 54mers that will need to be embedded
+For ESM only, this step translates the 54mers into an amino acid alphabet and returns a translated fasta prior to embedding.
+Each unique 54mer receives a set of embeddings by processing it through a pre-trained language model. For example, in ESM (the Evolutionary State Model []), we embed each translated 54mer and then average the embeddings to get a vector that is 1xM (where M is the number of dimensions in the model).
+In this way we receive a set of embeddings for each unique 54mer that can then be reassembled to represent each sample’s embeddings for a different anchor-target pair.
+To prepare these embeddings for downstream use, we merge them back with the ordering file (generated from the decompose kmers step) and pivot this matrix to get one long vector of embeddings per sample. The dimension of this matrix is num_samples X num_clusters*num_dimensions. Because num_clusters * num_dimensions is a very large number, we also want to drop some dimensions here to reduce the scale of any downstream modeling. To do this, we keep only the highest K variance columns per cluster so that each cluster has even representation in the downstream models. 
+Finally, we perform prediction on this data structure using glmnet and splitting the embedding matrix from 4 into two sets, train and test. To train, we use cross-validation and then to test we pick the model lambda that resulted in the minimum mean cross-validated error. We test by predicting the metadata directly from the test embeddings and compute accuracy by comparing the predictions to the known results. As a result, for every piece of metadata we have two things: 1) an accuracy for the prediction under this model and parameters, and 2) a set of nonzero coefficients that were determined to drive this prediction. Because these coefficients are for embeddings for specific anchor clusters, we can attribute a model to specific clusters and identify which constituent sequences are therein.
+
+
+
 ## Details on Pipeline paramaters
 
 ### Different filters used for anchor selection
