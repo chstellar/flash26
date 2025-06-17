@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
     parser.add_argument('--train_samples', type=str, required=True)
     parser.add_argument('--test_samples', type=str, required=True)
+    parser.add_argument("--train_prop", type=float, default=0.5, help="Proportion of the data to use for training. Grabs this proportion from the smallest class and then evenly samples that number from all other classes.")
     return parser.parse_args()
 
 def read_feather_data(file_path):
@@ -63,6 +64,8 @@ def merge_and_split_data(data, metadata, metadata_col, train_samples, test_sampl
 
     # Drop rows with missing metadata_col values
     merged_data = merged_data.dropna(subset=[metadata_col])
+    
+    print(merged_data[metadata_col].value_counts())
 
     # Keep only samples provided by the user
     train_data = merged_data[merged_data['sample_name'].isin(train_samples)]
@@ -73,6 +76,7 @@ def merge_and_split_data(data, metadata, metadata_col, train_samples, test_sampl
 
     # Keep only classes with at least min_samples observations
     sufficient_classes = train_class_counts[train_class_counts >= min_samples].index.tolist()
+    sufficient_classes = [i for i in sufficient_classes if i != "nan"]
 
     # Ensure at least two classes meet the min_samples criterion
     if len(sufficient_classes) < 2:
