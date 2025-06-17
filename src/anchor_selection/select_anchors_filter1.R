@@ -8,10 +8,10 @@
 # table hits to artifcats. The output is a list of anchor sequences that can
 # be used in downstream analyses.
 
-# Filter 1: effect size >= 0.6
+# Filter 1: effect size >= 0.5
 # Filter 1: number of nonzero samples > 10th percentile
 # Filter 1: no lookup table hits to artifacts
-# Filter 1: select top 150,000 anchors by number of nonzero samples
+# Filter 1: select top 1,000,000 anchors by number of nonzero samples
 
 ## import packages --------
 suppressPackageStartupMessages(library(data.table))
@@ -27,10 +27,10 @@ option_list <- list(
   make_option(c("-n", "--num_anchors"), "Number of anchors to select",
               type="integer", default = 1000000),
   make_option(c("-e", "--effect_size"), "Effect size threshold",
-              type="numeric", default=0.6),
+              type="numeric", default=0.5),
   make_option(c("-l", "--lookup_table"), "Lookup table file", type="character"),
   make_option(c("--splash_bin"), "Path to SPLASH binary folder",
-              type="character", default="/oak/stanford/groups/horence/dcotter1/splash-2.6.1/"),
+              type="character", default="/oak/stanford/groups/horence/dcotter1/splash-2.11.1/"),
   make_option(c("--temp_dir"), "Temporary directory to store intermediate files", 
               type="character")
 )
