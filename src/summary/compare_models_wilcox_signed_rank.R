@@ -28,24 +28,30 @@ system(paste("mkdir -p", opt$output_folder))
 library(ggpubr)
 
 
-## plot all data in one plot
-load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients.tsv")
-data1 <- fread(cmd=load_cmd1, header=FALSE, sep="\t", 
-               col.names = c("path_metadata", "feature", "accuracy",
-                             "sensitivity", "specificity", "classes", "coefficients"))
+data_files <- list.files("results", recursive = T, "nonzero_coefficients.tsv", full.names = T)
 
-load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
-data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
-               col.names = c("path_metadata", "feature", "accuracy",
-                             "sensitivity", "specificity", "classes", "coefficients"))
+all_data <- map(data_files, \(x) fread(x) %>%mutate(path=x), .progress=T)
+discard(all_data, \(x) nrow(x) == 0) -> all_data
+
+# ## plot all data in one plot
+# load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients.tsv")
+# data1 <- fread(cmd=load_cmd1, header=FALSE, sep="\t", 
+#                col.names = c("path_metadata", "feature", "accuracy",
+#                              "sensitivity", "specificity", "classes", "coefficients"))
+# 
+# load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
+# data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
+#                col.names = c("path_metadata", "feature", "accuracy",
+#                              "sensitivity", "specificity", "classes", "coefficients"))
 
 
-data <- rbind(data1,data2)
+# data <- rbind(data1,data2)
 
+data <- bind_rows(all_data)
 data <- data %>% 
-  distinct(path_metadata, .keep_all = T) %>%
-  separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
-  select(path, metadata, accuracy, sensitivity, specificity) %>%
+  distinct(path, metadata_category, .keep_all = T) %>%
+  dplyr::rename(metadata=metadata_category) %>%
+  select(path, metadata, classes, accuracy, sensitivity, specificity) %>%
   filter(metadata != "metadata_category")
 
 # extract the dataset name from the path
@@ -63,15 +69,28 @@ data <- data %>% mutate(accuracy=as.numeric(accuracy), sensitivity=as.numeric(se
 data <- data %>% mutate(filter = str_extract(paramater_set, "(filter\\d)_",group=1)) %>% 
   mutate(cluster_approach = str_extract(paramater_set, "filter\\d_([A-Za-z-2]+)_", group=1))
 
+data <- data %>% rowwise() %>% 
+  mutate(classes = length(str_split(gsub("\\[|\\]", "", classes), ",") %>% unlist()))
+
 merged_accuracy_data <- data %>% 
+  filter(classes ==2) %>%
   filter(num_clusters=="20000") %>%
   filter(filter=="filter1") %>%
   filter(!(dataset %in% c("prism-metabolomics-SRP129027", "vibrio-cholerae-PRJNA723557", "sepsis-PRJNA507824"))) %>%
-  filter(cluster_approach %in% c("shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered")) %>%
-  filter(model %in% c("ohe", "hyena_normalized", "hyena_unnormalized", "esm_normalized", "esm_unnormalized")) %>%
-  select(dataset, filter, cluster_approach, metadata, model, accuracy, num_clusters) %>% 
+  filter(cluster_approach %in% c("shiftDist-levFilter", "masked-aa-clustered", "masked-nucleotide-clustered", "shiftDist-keepTopES")) %>%
+  filter(model %in% c("ohe", "hyena_normalized", "hyena_unnormalized")) %>%
+  select(dataset, filter, cluster_approach, metadata, model, accuracy, sensitivity, specificity, num_clusters) %>% 
   distinct(filter, cluster_approach, metadata, model, .keep_all=T) %>% select(-num_clusters) 
 
+# filter down for simpler figure
+if (FALSE){
+  merged_accuracy_data <- merged_accuracy_data %>% filter(model %in% c("hyena_normalized", "esm_normalized", "ohe")) %>%
+    filter(cluster_approach %in% c("shiftDist-levFilter", "masked-aa-clustered"))
+}
+
+merged_accuracy_data <- merged_accuracy_data %>% filter(!(dataset %in% c("y1000-genomes-withinOrder")))
+
+merged_accuracy_data <- merged_accuracy_data %>% mutate(dataset=ifelse(str_detect(dataset,"y1000"), "y1000", dataset))
 datasets <- unique(merged_accuracy_data$dataset)
 datasets <- c(datasets, "ALL")
 
@@ -115,7 +134,7 @@ for(ds in datasets) {
                                    paired = TRUE, alternative = "two.sided")
         
         # Calculate median difference and effect size
-        median_diff <- median(paired_data$accuracy_ca1 - paired_data$accuracy_ca2)
+        median_diff <- median(paired_data$accuracy_ca1 - paired_data$accuracy_ca2, na.rm=T)
         
         # Store results
         result_row <- data.frame(
@@ -163,7 +182,7 @@ for(ds in datasets) {
                                    paired = TRUE, alternative = "two.sided")
         
         # Calculate median difference
-        median_diff <- median(paired_data$accuracy_mdl1 - paired_data$accuracy_mdl2)
+        median_diff <- median(paired_data$accuracy_mdl1 - paired_data$accuracy_mdl2, na.rm=T)
         
         # Store results
         result_row <- data.frame(
@@ -224,10 +243,7 @@ create_forest_plot <- function(results_df, title) {
       better_group = ifelse(median_diff > 0, group1, group2),
       comparison = paste0(group1, " vs ", group2),
       # Create a cleaner y-axis label without "vs"
-      plot_label = paste0(substr(group1, 1, min(20, nchar(group1))), 
-                          ifelse(nchar(group1)>20, "...", ""), " / ",
-                          substr(group2, 1, min(20, nchar(group2))),
-                          ifelse(nchar(group2)>20, "...", ""))
+      plot_label = comparison
     )
   
   # Plot
@@ -246,17 +262,16 @@ create_forest_plot <- function(results_df, title) {
     #          hjust = 1, vjust = 1.5, color = "red4", fontface = "bold") +
     # Add group names as text on opposite sides
     geom_text(aes(label = group2), 
-              x = -0.1,
+              x = -0.2,
               hjust = 0, size = 3, color = "blue4") +
     geom_text(aes(label = group1), 
-              x=0.1,
+              x=0.2,
               hjust = 1, size = 3, color = "red4") +
     facet_wrap(~ dataset, scales = "free_y", ncol = 1) +
     scale_color_manual(values = c("ns" = "gray60", "*" = "#0072B2", 
                                   "**" = "#D55E00", "***" = "#CC0000")) +
-    coord_cartesian(xlim=c(-0.1,0.1)) +
+    coord_cartesian(xlim=c(-0.2,0.2)) +
     labs(title = title,
-         subtitle = "Positive values mean Group 1 outperforms Group 2",
          x = "Median accuracy difference",
          y = "",
          color = "Significance") +
@@ -285,6 +300,6 @@ forest_model <- create_forest_plot(model_results,
                                    "Effect Size of Model Comparisons")
 # Save the plots
 ggsave(paste0(opt$output_folder, "/forest_cluster_approaches_comparison.png"), 
-       forest_cluster, width = 8, height = length(datasets)+1)
-ggsave(paste0(opt$output_folder, "/forest_models_comparison.png"), 
-       forest_model, width = 8, height = length(datasets)+1)
+       forest_cluster, width = 8, height = length(datasets)+3)
+ggsave(paste0(opt$output_folder, "/forest_models_comparison_slimmed.png"), 
+       forest_model, width = 8, height = length(datasets)+3)

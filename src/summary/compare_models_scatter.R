@@ -27,26 +27,33 @@ system(paste("mkdir -p", opt$output_folder))
 # strip tailing slash from dataset path if it exists
 library(ggpubr)
 
+data_files <- list.files("results", recursive = T, "nonzero_coefficients.tsv", full.names = T)
 
-## plot all data in one plot
-load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients.tsv")
-data1 <- fread(cmd=load_cmd1, header=FALSE, sep="\t", 
-               col.names = c("path_metadata", "feature", "accuracy",
-                             "sensitivity", "specificity", "classes", "coefficients"))
+all_data <- map(data_files, \(x) fread(x) %>% mutate(path=x), .progress=T)
+discard(all_data, \(x) nrow(x) == 0) -> all_data
 
-load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
-data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
-               col.names = c("path_metadata", "feature", "accuracy",
-                             "sensitivity", "specificity", "classes", "coefficients"))
+# 
+# 
+# ## plot all data in one plot
+# load_cmd1 <- paste0("grep cluster ", "results/*/filter*/*/*/*malized/*adelie*_nonzero_coefficients.tsv")
+# data1 <- fread(cmd=load_cmd1, header=FALSE, sep="\t", 
+#                col.names = c("path_metadata", "feature", "accuracy",
+#                              "sensitivity", "specificity", "classes", "coefficients"))
+# 
+# load_cmd2 <- paste0("grep cluster ", "results/*/filter*/*/*/*_nonzero_coefficients.tsv")
+# data2 <- fread(cmd=load_cmd2, header=FALSE, sep="\t", 
+#                col.names = c("path_metadata", "feature", "accuracy",
+#                              "sensitivity", "specificity", "classes", "coefficients"))
+# 
 
 
-data <- rbind(data1,data2)
-
+data <- bind_rows(all_data)
 data <- data %>% 
-  distinct(path_metadata, .keep_all = T) %>%
-  separate(path_metadata, into=c("path", "metadata"), sep=":") %>%
+  distinct(path, metadata_category, .keep_all = T) %>%
+  rename(metadata=metadata_category) %>%
   select(path, metadata, accuracy, sensitivity, specificity) %>%
   filter(metadata != "metadata_category")
+
 
 # extract the dataset name from the path
 data <- data %>% mutate(num_clusters = str_extract(path, "top(\\d+)", group=1))
@@ -97,6 +104,8 @@ non_amr_metadata_categories <- c("reference", "studyaccession", "species", "viru
                                  "Predicted_PEN_MIC_CLSI", "folA", "folP", "Predicted_Cotrimoxazole_susceptibility", "cat1", "Predicted_Chloramphenicol_susceptibility",
                                  "ermB1", "mef1", "Predicted_Erythromycin_susceptibility", "tet", "Predicted_Tetracycline_susceptibility",
                                  "No_of_nonsusceptible", "MDR")
+
+merged_accuracy_data <- merged_accuracy_data %>% filter(!str_detect(model, "esm_"))
 
 merged_accuracy_data %>% ungroup() %>% 
   filter(cluster_approach=="masked-aa-clustered") %>%
