@@ -4,7 +4,5 @@
 logs/*
 slurm-*
 results/*
-archive/*
 src/*.tar
-old/*
 tempClustalOmega.aln

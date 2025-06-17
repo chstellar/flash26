@@ -4,8 +4,7 @@ temp_dir: tmp/
 splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.11.1/ # SHERLOCK DEPENDENCY
 
 # annotation lookup table
-lookup_table_for_annotation: /oak/stanford/groups/horence/dcotter1/lookup_tables/microbial_lookup/microbial_v2_lookup.slt
-lookup_table_for_annotation_AMR: /oak/stanford/groups/horence/dcotter1/lookup_tables/amr/amr_split_by_class/amr_split.slt
+lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
 
 # path to directory with genomes
 genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes

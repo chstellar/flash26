@@ -29,10 +29,14 @@ DATASETS = list(dataset_table.index)
 SELECT_TYPES = ["filter1"]
 CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered"]
 NUM_CLUSTERS = [5000]
-KMER_WIDTH = [54] # define these based off of flash results so anchor = 27 target = 27 gives 54 kmer_width and kmer_step
-KMER_STEP = [54]
+ANCHOR_LENGTH = 27 # this is the length of the anchor in nucleotides
+TARGET_LENGTH = 27 # this is the length of the target in nucleotides
+KMER_WIDTH = [ANCHOR_LENGTH + TARGET_LENGTH] # this is Anchor Length + Target Length
+KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps be variable, but for now we will use a single value
 MODELS = ["hyena"]
 NORMALIZE=["normalized"]
+TRAIN_PROPORTION = 0.5 # this is the proportion of the data to use for training, the rest will be used for testing
+
 
 ## constrain the wildcards of the pipeline
 # specifically we do not want wildcards to contain underscores or spaces as they are used to 
@@ -55,7 +59,7 @@ rule all:
     """
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
@@ -64,6 +68,7 @@ rule all:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
+               train_proportion=TRAIN_PROPORTION,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf",
                        "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]) # , 
 
@@ -98,13 +103,14 @@ rule all_genomes:
 rule all_ohe:
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
+               train_proportion=TRAIN_PROPORTION,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", 
                "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"])
 
@@ -123,6 +129,7 @@ rule choose_anchors:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
         lookup_table = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "lookup_table"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
+        splash_bin = config["splash_bin"],
         num_anchors = 1000000,
         effect_size = 0.5 # only select anchors with an effect size greater than this value
     output:
@@ -131,7 +138,7 @@ rule choose_anchors:
         ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} \
         --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors} \
-        --effect_size {params.effect_size}
+        --effect_size {params.effect_size} --splash_bin {params.splash_bin}
     """
 
 
@@ -314,14 +321,14 @@ rule run_adelie:
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
         python_env = Path(config["envs"]["adelie"])
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
     shell:"""
         ml python/3.9.0
         source {params.python_env}
         python {params.script} --data {input.embeddings} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
-        --n_threads {threads} --train_prop 0.5
+        --n_threads {threads} --train_prop {wildcards.train_proportion}
     """
 
 
@@ -349,14 +356,14 @@ rule run_adelie_ohe:
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
         python_env = Path(config["envs"]["adelie"])
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
     shell:"""
                 ml python/3.9.0
         source {params.python_env}
         python {params.script} --data {input.features} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
-        --n_threads {threads} --train_prop 0.6
+        --n_threads {threads} --train_prop {wildcards.train_proportion}
     """
 
 
@@ -505,12 +512,12 @@ rule merge_annotations:
     """
     input:
         annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
     output:
-        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv"),
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     shell:"""
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
@@ -522,14 +529,14 @@ rule run_blast_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"])
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid}
     """
@@ -540,7 +547,7 @@ rule run_blastp_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blastp"),
@@ -548,7 +555,7 @@ rule run_blastp_nonzero_features:
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
@@ -559,12 +566,12 @@ rule merge_blast_results:
     Merge the blast results with the annotated sequences
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
@@ -576,12 +583,12 @@ rule merge_blastp_results:
     Merge the blast results with the annotated sequences
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
@@ -594,12 +601,12 @@ rule merge_annotations_OHE:
     """
     input:
         annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
     output:
-        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv"),
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     shell:"""
     ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
@@ -611,14 +618,14 @@ rule run_blast_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database for OHE features
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"])
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid}
     """
@@ -629,7 +636,7 @@ rule run_blastp_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blastp"),
@@ -637,7 +644,7 @@ rule run_blastp_nonzero_features_OHE:
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
@@ -648,12 +655,12 @@ rule merge_blast_results_OHE:
     Merge the blast results with the annotated sequences for OHE features
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blast.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
@@ -665,12 +672,12 @@ rule merge_blastp_results_OHE:
     Merge the blast results with the annotated sequences for OHE features
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_significant_sequences_blastp.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
@@ -702,8 +709,8 @@ rule plot_blast_features:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"),
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"),
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
@@ -711,7 +718,7 @@ rule plot_blast_features:
     params:
         script = config["scripts"]["plot_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} \
@@ -729,8 +736,8 @@ rule plot_blast_heatmaps:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"), 
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
@@ -738,7 +745,7 @@ rule plot_blast_heatmaps:
     params:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_heatmaps.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} \
@@ -756,8 +763,8 @@ rule plot_blast_features_OHE:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"), 
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"),
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
@@ -765,7 +772,7 @@ rule plot_blast_features_OHE:
     params:
         script = config["scripts"]["plot_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated_plots.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} \
@@ -783,8 +790,8 @@ rule plot_blast_heatmaps_OHE:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blastp_annotated.tsv"), 
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_blast_annotated.tsv"), 
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
@@ -792,7 +799,7 @@ rule plot_blast_heatmaps_OHE:
     params:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_heatmaps.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
     shell:"""
         ml R/4.3.2
         Rscript --vanilla {params.script} \
