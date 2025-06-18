@@ -10,11 +10,9 @@ from math import floor
 import random
 import pickle
 
-Entrez.email = "dcotter1@stanford.edu"
 MAX_RETRIES = 100
-REQUEST_DELAY = 0.4
-INITIAL_DELAY_RANGE = (0.1, 2)  # Range for initial random delay
-CACHE_FILE = "/scratch/users/dcotter1/blast_db/sequence_cache.pkl"
+REQUEST_DELAY = 4  # Delay in seconds between requests
+INITIAL_DELAY_RANGE = (0.1, 8)  # Range for initial random delay
 
 def load_cache(cache_file):
     """Load cached records from a file."""
@@ -44,7 +42,8 @@ def extract_unique_accessions(blast_folder):
             print(f"File {blast_out} is empty. Skipping...")
     return unique_accessions
 
-def fetch_sequence(seq_id, request_delay, initial_delay_range):
+def fetch_sequence(seq_id, request_delay, initial_delay_range, entrez_email=None):
+    Entrez.email = entrez_email
     # Introduce a small random delay at the start
     initial_delay = random.uniform(*initial_delay_range)
     time.sleep(initial_delay)
@@ -62,11 +61,11 @@ def fetch_sequence(seq_id, request_delay, initial_delay_range):
             time.sleep(request_delay)  # Exponential backoff for retries
     return None
 
-def fetch_all_sequences(unique_accessions, max_workers=4):
+def fetch_all_sequences(unique_accessions, cache_file, max_workers=4, entrez_email=None):
     """Fetch sequences for all unique accession numbers using parallel processing."""
     # Load existing cache
     try:
-        sacc_records = load_cache(CACHE_FILE)
+        sacc_records = load_cache(cache_file)
     except Exception as e:
         print("Error loading sacc records: {e}")
         sacc_records = {}
@@ -77,7 +76,7 @@ def fetch_all_sequences(unique_accessions, max_workers=4):
 
     def fetch_and_store(seq_id):
         if seq_id not in sacc_records:
-            record = fetch_sequence(seq_id, request_delay, initial_delay_range)
+            record = fetch_sequence(seq_id, request_delay, initial_delay_range, entrez_email)
             if record:
                 sacc_records[seq_id] = record
 
@@ -85,7 +84,7 @@ def fetch_all_sequences(unique_accessions, max_workers=4):
         executor.map(fetch_and_store, unique_accessions)
 
     # Save updated cache
-    save_cache(CACHE_FILE, sacc_records)
+    save_cache(cache_file, sacc_records)
     return sacc_records
 
 def find_overlapping_features(record, window_start, window_end, strand):
@@ -153,8 +152,11 @@ if __name__ == "__main__":
     parser.add_argument("--blast_window", type=int, default=10000, help="Window size for feature extraction")
     parser.add_argument("--output_file", required=True, help="Path to the output file for concatenated results")
     parser.add_argument("--max_workers", type=int, default=4, help="Maximum number of workers for parallel processing")
+    parser.add_argument("--entrez_email", required=True, help="Email for NCBI Entrez requests")
+    parser.add_argument("--temp_dir", default="tmp/", help="Path to the temporary directory for storing cached sequence records")
     args = parser.parse_args()
 
+    CACHE_FILE = os.path.join(args.temp_dir, "sacc_records.pkl")
     blast_folder = args.blast_folder
     blast_window = args.blast_window
     output_file = args.output_file
@@ -169,7 +171,7 @@ if __name__ == "__main__":
     print(f"Total unique accessions: {len(unique_accessions)}")
 
     # Fetch sequences for all unique accessions using parallel processing
-    sacc_records = fetch_all_sequences(unique_accessions, max_workers=max_workers)
+    sacc_records = fetch_all_sequences(unique_accessions, CACHE_FILE, max_workers=max_workers, entrez_email=args.entrez_email)
 
     blast_outs = [join(blast_folder, f) for f in os.listdir(blast_folder) if f.endswith(".blastout.tsv")]
     blast_feat_outs = [join(blast_folder, basename(f).split(".")[0] + ".blastfeatout.tsv") for f in blast_outs]

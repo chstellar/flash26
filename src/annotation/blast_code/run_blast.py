@@ -57,7 +57,7 @@ def split_fasta(fasta_file, output_dir, num_seq=1):
                     f.write(">" + record.description + "\n")
                     f.write(str(record.seq) + "\n")
 
-def run_blast(splitted_fasta, blast_folder, max_workers, taxid, blast_db):
+def run_blast(splitted_fasta, blast_folder, max_workers, taxid):
     fmt="6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send sstrand evalue qcovs sgi sacc slen staxids stitle"
     taxid = f"-taxids {str(taxid)}" if taxid != 0 else ""
     def run_single_blast(f):
@@ -67,7 +67,8 @@ def run_blast(splitted_fasta, blast_folder, max_workers, taxid, blast_db):
         if os.path.exists(blast_out) and os.path.getsize(blast_out) > 0:
             print(f"Skipping {f} as blast output already exists")
             return
-        cmd = f"export BLASTDB='{blast_db}' && blastn -outfmt '{fmt}' -query {f} {taxid} -db core_nt -out {blast_out} -evalue 0.1 -task blastn -dust no -word_size 24 -reward 1 -penalty -3  -max_target_seqs 5" # -dust no -word_size 24 -reward 1 -penalty -3 
+        # cannot use -remote with taxids, so we skip taxid
+        cmd = f"blastn -outfmt '{fmt}' -query {f} -remote -db core_nt -out {blast_out} -evalue 0.1 -task blastn -dust no -word_size 24 -reward 1 -penalty -3  -max_target_seqs 5" # -dust no -word_size 24 -reward 1 -penalty -3 
         subprocess.run(cmd, shell=True, check=True)
         print(f"Blast complete for {f}")
 
@@ -83,7 +84,6 @@ def parse_args():
     parser.add_argument('--blast_folder', required=True, help='Path to the folder to store BLAST output')
     parser.add_argument('--max_workers', type=int, default=4, help='Number of concurrent BLAST commands')
     parser.add_argument('--taxid', type=int, default=0, help='What tax id to restrict to when searching BLAST')
-    parser.add_argument('--blast_db', type=str, default="/scratch/users/dcotter1/blast_db", help='Path to the folder with blast db')
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -96,4 +96,4 @@ if __name__ == "__main__":
     else:
         shutil.copy(args.input_file, args.split_folder)
     splitted_fasta = [join(args.split_folder, f) for f in os.listdir(args.split_folder) if f.endswith(".fasta")]
-    run_blast(splitted_fasta, args.blast_folder, args.max_workers, args.taxid, args.blast_db)
+    run_blast(splitted_fasta, args.blast_folder, args.max_workers, args.taxid)
