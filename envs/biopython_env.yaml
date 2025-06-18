@@ -7,16 +7,15 @@ channels:
     - R
 dependencies:
     # R dependencies
-    - r-base=4.3.2
+    - r-base==4
     - r-tidyverse
     - r-data.table
     - r-furrr
     - r-stringdist
     - r-optparse
     # Python dependencies for Biopython tasks
-    - python=3.9.0
+    - python==3.9
     - biopython
-    - adelie=1.1.50
     - dill
     - ipython
     - matplotlib
@@ -28,8 +27,10 @@ dependencies:
     - pipx
     - pyarrow
     - pyparsing
-    - scikit-learn=1.5.2
-    - scipy=1.13.1
+    - scikit-learn==1.5.2
+    - scipy==1.13.1
     - six
     - threadpoolctl
-    - bioconda::blast=2.16
+    - bioconda::blast==2.16
+    - networkx
+    - fuzzysearch

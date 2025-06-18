@@ -1,12 +1,12 @@
 name: default-R_env
 # This environment is used for R-based data analysis and visualization tasks.
 channels:
-  - R
   - conda-forge
   - defaults
   - bioconda
+  - R
 dependencies:
-  - r-base=4.3.2
+  - r-base==4.3.2
   - r-ggplot2
   - r-dplyr
   - r-tidyverse
@@ -15,12 +15,12 @@ dependencies:
   - r-ggthemes
   - r-data.table
   - r-furrr
-  - r-Biostrings
+  - bioconda::bioconductor-biostrings
   - r-stringdist
   - r-feather
   - r-mltools
-  - r-msa
+  - bioconda::bioconductor-msa
   - r-resample
   - r-optparse
   - r-RColorBrewer
-  - r-ComplexHeatmap
+  - bioconda::bioconductor-complexheatmap
