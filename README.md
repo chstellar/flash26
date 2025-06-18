@@ -8,7 +8,7 @@ The following pipeline uses `Snakemake` to run metadata-driven prediction and at
 
 This pipeline has been modified to run entirely removed from Sherlock (unless using the `--profile` command). The only thing that needs to be fixed are some of the paths to SLASH repos and some of the paths to the hyena embedding objects. Need to figure out how to wrap this into a more packageable format.
 
-Also the large artifact README is too big to add to github. May need to provide code to build it locally for the user.
+Also the large artifact lookup table is too big to add to github. May need to provide code to build it locally for the user.
 
 Also the SPLASH output directory is currently hard-coded to the location on sherlock. This will need to be fixed.
 
@@ -22,7 +22,7 @@ You must have conda installed with the `mamba` package manager. See [here](https
 mamba create -c conda-forge -c bioconda -n snakemake snakemake
 ```
 
-### 3. Ensure the correct datasets are in the `dataset_table.csv` file
+### 2. Ensure the correct datasets are in the `dataset_table.csv` file
 
 This file contains all of the datasets on which we want to run the FLASH Snakemake pipeline. Replace the current datasets with ones you would like to run. To run on a new dataset, add a new row with a **short name**, a path to the **SPLASH run folder** (where you have run SPLASH with the option to dump SATC files), a path to the **metadata file**, a path to a **lookup table for artifact filtering** (you don't need to change this from the other rows), and a **translation table** (this is an integer corresponding to the correct genetic code to use for translation).
 
@@ -37,7 +37,7 @@ This file contains all of the datasets on which we want to run the FLASH Snakema
 1. Column 1 contains the same sample ids as were used to run `SPLASH` and is named `sample_name` (the script will attempt to assign the first column as `sample_name` otherwise)
 2. The other columns contain a simple column name describing the metadata as well as the observations of the metadata.
 
-### 4. Ensure that the wildcards you want to use are specified at the top of the Snakefile
+### 3. Ensure that the wildcards you want to use are specified at the top of the Snakefile
 
 The current wildcards are defined as follows:
 
@@ -68,10 +68,13 @@ You can run the workflow by typing the following in an interactive node:
 
 ```{bash}
 export NUM_CORES=1
-snakemake -j $NUM_CORES all
+snakemake --sdm conda -j $NUM_CORES all_ohe
 ```
+`--sdm conda` is important because it will tell snakemake to build the required conda environments
 
-This will then submit and watch all the jobs along the way until the pipeline is complete. For running on a cluster you can use a profile using --profile slurm_profile/config.v8+.yaml
+If you want to run FLASH using the embedding mode or genomes mode, you will need a GPU in the environment in which you submit snakemake or you will need to use a profile and submission script that submits the embedding job to a node with a GPU resource.
+
+For running on a cluster you can use a profile using --profile slurm_profile/config.v8+.yaml. **NOTE THIS IS UNTESTED IN THE CURRENT ITERATION**
 
 ## Input Files
 

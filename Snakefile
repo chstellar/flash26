@@ -37,6 +37,14 @@ MODELS = ["hyena"]
 NORMALIZE=["normalized"]
 TRAIN_PROPORTION = 0.5 # this is the proportion of the data to use for training, the rest will be used for testing
 
+# whether to generate plots or to stop at the output of the prediction task
+GENERATE_PLOTS = False
+if GENERATE_PLOTS:
+    FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf",
+                       "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]
+else:
+    FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]
+
 
 ## constrain the wildcards of the pipeline
 # specifically we do not want wildcards to contain underscores or spaces as they are used to 
@@ -69,8 +77,7 @@ rule all:
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
                train_proportion=TRAIN_PROPORTION,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf",
-                       "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]) # , 
+               FILE = FILE_SUFFIXES) # , 
 
 
 rule all_genomes:
@@ -111,8 +118,7 @@ rule all_ohe:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                train_proportion=TRAIN_PROPORTION,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf", 
-               "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"])
+               FILE = FILE_SUFFIXES)
 
 
 ## STANDARD PIPLELINE RULES -------------------------------
