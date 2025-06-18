@@ -18,8 +18,14 @@ Also the SPLASH output directory is currently hard-coded to the location on sher
 
 You must have conda installed with the `mamba` package manager. See [here](https://github.com/conda-forge/miniforge) for info on how to install mamba. After that, create a snakemake environment using the following command:
 
-```{python}
+```{bash}
 mamba create -c conda-forge -c bioconda -n snakemake snakemake
+```
+
+To use the executor profile for slurm you also must run the following while the snakemake environment is active:
+
+```{bash}
+mamba install snakemake-executor-plugin-cluster-generic
 ```
 
 ### 2. Ensure the correct datasets are in the `dataset_table.csv` file
