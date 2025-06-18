@@ -129,7 +129,7 @@ rule choose_anchors:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
         lookup_table = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "lookup_table"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
-        splash_bin = config["splash_bin"],
+        splash_bin = "/oak/stanford/groups/horence/dcotter1/splash-2.6.1/", # this is because the current artifact lookup is not updated. needs to be fixed to 2.11.1
         num_anchors = 1000000,
         effect_size = 0.5 # only select anchors with an effect size greater than this value
     output:
@@ -325,7 +325,7 @@ rule run_adelie:
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}")
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -359,8 +359,7 @@ rule run_adelie_ohe:
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
-        python_env = Path(config["envs"]["adelie"])
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}")
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -505,13 +504,12 @@ rule annotate_clusters:
         lookup_table = config["lookup_table_for_annotation"]
     params:
         script = config["scripts"]["annotate_clusters"],
-        python_env = config["envs"]["default_python"],
         temp_dir = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}"),
         splash_bin = config["splash_bin"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
     conda:
-        config["envs"]["default_python"]
+        config["envs"]["biopython_env"]
     shell:"""
         python {params.script} --cluster_seqs {input.cluster_seqs} --lookup_table {input.lookup_table} \
         --output {output} --temp_dir {params.temp_dir} --splash_bin {params.splash_bin} 
