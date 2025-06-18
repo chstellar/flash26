@@ -11,9 +11,9 @@ genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
 
 # set paths to python venvs
 envs:
-  default_python: /oak/stanford/groups/horence/dcotter1/envs/biopython/bin/activate
-  esm_env: /oak/stanford/groups/horence/dcotter1/envs/esm_venv/bin/activate
-  adelie: /oak/stanford/groups/horence/dcotter1/envs/adelie_venv/bin/activate
+  default_r: src/envs/default-R.yaml
+  biopython_env: src/envs/biopython_env.yaml
+  adelie_env: src/envs/adelie_env.yaml
 
 # define all scripts
 scripts:

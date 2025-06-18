@@ -134,8 +134,9 @@ rule choose_anchors:
         effect_size = 0.5 # only select anchors with an effect size greater than this value
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} \
         --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors} \
         --effect_size {params.effect_size} --splash_bin {params.splash_bin}
@@ -153,15 +154,13 @@ rule cluster_anchors:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     params:
         script = lambda wildcards: Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
-        python_env = Path(config["envs"]["default_python"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
         translation_table = lambda wildcards: f"--translation_table {dataset_table.loc[wildcards.dataset, "translation_table"]}"  if wildcards.cluster_type == "masked-aa-clustered" else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
-        ml R/4.3.2
-        ml python/3.9.0
-        source {params.python_env}
         {params.script} --input {input} --output {output} --temp_dir {params.tmp_dir} {params.translation_table}
     """
 
@@ -181,8 +180,9 @@ rule reorder_clusters:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --input_anchor_clusters {input.clusters} \
         --splash_stats {input.splash_results} --output {output} --temp_dir {params.tmp_dir} \
         --num_cores {threads}
@@ -223,8 +223,9 @@ rule prepare_sequences:
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --anchor_file {input.anchor_file} \
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         --satc_files {params.satc_dir} --output_prefix {params.output_prefix} \
@@ -244,14 +245,13 @@ rule decompose_kmers:
         script = Path(config["scripts"]["decompose_kmers"]),
         output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
         kmer_width = lambda wildcards: wildcards.kmer_width,
-        kmer_step = lambda wildcards: wildcards.kmer_step,
-        python_env = Path(config["envs"]["default_python"])
+        kmer_step = lambda wildcards: wildcards.kmer_step
     output:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
-        ml python/3.9.0
-        source {params.python_env}
         python {params.script} -k {wildcards.kmer_width} -s {wildcards.kmer_step} \
         {input} {params.output_prefix}
     """
@@ -269,13 +269,19 @@ rule match_kmers_to_clusters:
         script = Path(config["scripts"]["match_kmers_to_clusters"])
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-    ml R/4.3.2
     Rscript --vanilla {params.script} --ordering {input.order} --kmers {input.unique_kmers} --output {output}
     """
 
 
 rule embed_kmers_hyena:
+    """
+    Embeds the unique kmers using the Hyena model we have pretrained.
+    TODO: Make this rule replaceable with other embedding models in the future
+    TODO: Make this rule use a downloaded version of the Hyena model and not dependent on the config file
+    """
     input:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
     params:
@@ -302,8 +308,9 @@ rule prepare_data_for_prediction_top_variance:
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 100 {params.normalized_flag}
     """
@@ -318,14 +325,13 @@ rule run_adelie:
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
-        python_env = Path(config["envs"]["adelie"])
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
+    conda:
+        config["envs"]["adelie_env"]
     shell:"""
-        ml python/3.9.0
-        source {params.python_env}
         python {params.script} --data {input.embeddings} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
         --n_threads {threads} --train_prop {wildcards.train_proportion}
@@ -358,9 +364,9 @@ rule run_adelie_ohe:
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
+    conda:
+        config["envs"]["adelie_env"]
     shell:"""
-                ml python/3.9.0
-        source {params.python_env}
         python {params.script} --data {input.features} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
         --n_threads {threads} --train_prop {wildcards.train_proportion}
@@ -385,6 +391,8 @@ rule process_genome_to_sample_sequences:
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --cluster_file {input.cluster_file} \
         --genome_list {input.genome_list} --genome_files {input.genome_files} \
@@ -405,20 +413,24 @@ rule decompose_kmers_genomes:
         script = Path(config["scripts"]["decompose_kmers"]),
         output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_genomes_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
         kmer_width = lambda wildcards: wildcards.kmer_width,
-        kmer_step = lambda wildcards: wildcards.kmer_step,
-        python_env = Path(config["envs"]["default_python"])
+        kmer_step = lambda wildcards: wildcards.kmer_step
     output:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
-        ml python/3.9.0
-        source {params.python_env}
         python {params.script} -k {wildcards.kmer_width} -s {wildcards.kmer_step} \
         {input} {params.output_prefix}
     """
 
 
 rule embed_kmers_hyena_genomes:
+    """
+    Embeds the unique kmers using the Hyena model we have pretrained.
+    TODO: Make this rule replaceable with other embedding models in the future
+    TODO: Make this rule use a downloaded version of the Hyena model and not dependent on the config file
+    """
     input:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
     params:
@@ -446,8 +458,9 @@ rule prepare_data_for_prediction_genomes:
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} --original_feather {input.original_embeddings_feather} \
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} {params.normalized_flag} 
     """
@@ -465,14 +478,13 @@ rule run_adelie_genomes:
         test_metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "genome_metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_genomes_script"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
-        python_env = Path(config["envs"]["adelie"])
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+    conda:
+        config["envs"]["adelie_env"]
     shell:"""
-        ml python/3.9.0
-        source {params.python_env}
         python {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
         --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
         --n_threads {threads}
@@ -498,9 +510,9 @@ rule annotate_clusters:
         splash_bin = config["splash_bin"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
+    conda:
+        config["envs"]["default_python"]
     shell:"""
-        ml python/3.9.0
-        source {params.python_env}
         python {params.script} --cluster_seqs {input.cluster_seqs} --lookup_table {input.lookup_table} \
         --output {output} --temp_dir {params.temp_dir} --splash_bin {params.splash_bin} 
     """
@@ -518,8 +530,9 @@ rule merge_annotations:
     output:
         coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-    ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
     """
 
@@ -534,11 +547,15 @@ rule run_blast_nonzero_features:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
-        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"])
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
+        entrez_email = config["entrez_email"],
+        temp_dir = config["temp_dir"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir}
     """
 
 
@@ -556,6 +573,8 @@ rule run_blastp_nonzero_features:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
@@ -572,8 +591,9 @@ rule merge_blast_results:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
 
@@ -589,8 +609,9 @@ rule merge_blastp_results:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
 
@@ -607,8 +628,9 @@ rule merge_annotations_OHE:
     output:
         coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-    ml R/4.3.2
     Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
     """
 
@@ -623,11 +645,15 @@ rule run_blast_nonzero_features_OHE:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta"),
-        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"])
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
+        entrez_email = config["entrez_email"],
+        temp_dir = config["temp_dir"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir}
     """
 
 
@@ -645,6 +671,8 @@ rule run_blastp_nonzero_features_OHE:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+    conda:
+        config["envs"]["biopython_env"]
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
@@ -661,8 +689,9 @@ rule merge_blast_results_OHE:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
 
@@ -678,8 +707,9 @@ rule merge_blastp_results_OHE:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
     """
 
@@ -695,9 +725,10 @@ rule merge_annotations_genomes:
         script = config["scripts"]["merge_annotations"]
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-    ml R/4.3.2
-    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
+        Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output}
     """
 
 
@@ -719,8 +750,9 @@ rule plot_blast_features:
         script = config["scripts"]["plot_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} \
         --nonzero_annotations {input.nonzero_features}\
         --clusters {input.clusters} \
@@ -746,8 +778,9 @@ rule plot_blast_heatmaps:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} \
         --nonzero_annotations {input.nonzero_features}\
         --clusters {input.clusters} \
@@ -773,8 +806,9 @@ rule plot_blast_features_OHE:
         script = config["scripts"]["plot_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} \
         --nonzero_annotations {input.nonzero_features}\
         --clusters {input.clusters} \
@@ -800,8 +834,9 @@ rule plot_blast_heatmaps_OHE:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} \
         --nonzero_annotations {input.nonzero_features}\
         --clusters {input.clusters} \
