@@ -4,6 +4,10 @@
 
 The following pipeline uses `Snakemake` to run metadata-driven prediction and attribution on SPLASH results.
 
+### IMPORTANT NOTE
+
+This pipeline has been modified to run entirely removed from Sherlock (unless using the `--profile` command). The only thing that needs to be fixed are some of the paths to SLASH repos and some of the paths to the hyena embedding objects. Need to figure out how to wrap this into a more packageable format.
+
 ## Running the workflow
 
 ### 1. Install `mamba` and `snakemake`
