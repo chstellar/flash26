@@ -6,14 +6,17 @@ splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.11.1/ # SHERLOCK DEPE
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
 
+# entrez email
+entrez_email: dcotter1@stanford.edu
+
 # path to directory with genomes
 genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
 
 # set paths to python venvs
 envs:
-  default_r: src/envs/default-R.yaml
-  biopython_env: src/envs/biopython_env.yaml
-  adelie_env: src/envs/adelie_env.yaml
+  default_r: envs/default-R.yaml
+  biopython_env: envs/biopython_env.yaml
+  adelie_env: envs/adelie_env.yaml
 
 # define all scripts
 scripts:
