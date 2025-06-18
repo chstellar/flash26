@@ -6,3 +6,5 @@ slurm-*
 results/*
 src/*.tar
 tempClustalOmega.aln
+tmp
+tmp/*
