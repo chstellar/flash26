@@ -16,25 +16,20 @@ dependencies:
     # Python dependencies for Biopython tasks
     - python=3.9.0
     - biopython
-    - adelie=1.1.49
-    - dill=0.3.9
-    - importlib_resources=6.4.5
-    - ipython=8.18.1
-    - jedi=0.19.1
-    - joblib=1.4.2
-    - kiwisolver=1.4.7
-    - matplotlib=3.9.2
-    - more-itertools=10.2.0
+    - adelie=1.1.50
+    - dill
+    - ipython
+    - matplotlib
+    - more-itertools
     - numpy=1.26.4
-    - packaging=21.3
+    - packaging
     - pandas=2.2.3
-    - pillow=11.0.0
-    - pipx=1.1.0
-    - pyarrow=18.0.0
-    - pyparsing=3.0.9
+    - pillow
+    - pipx
+    - pyarrow
+    - pyparsing
     - scikit-learn=1.5.2
     - scipy=1.13.1
-    - six=1.16.0
-    - threadpoolctl=3.5.0
+    - six
+    - threadpoolctl
     - bioconda::blast=2.16
-    - logging
