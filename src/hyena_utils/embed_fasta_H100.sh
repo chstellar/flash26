@@ -14,8 +14,8 @@ MODEL_CKPT="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/aws
 SINGULARITY_IMG="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/singularity/hyena_modified_H100/hyena_modified_H100.sif"
 
 # Assign command line arguments to variables
-input_file=$1
-output_file=$2
+input_file=$(realpath $1)
+output_file=$(realpath $2)
 
 # Call the Python script with the provided arguments
 cd ${HYENA_WDR}
