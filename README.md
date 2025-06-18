@@ -8,6 +8,10 @@ The following pipeline uses `Snakemake` to run metadata-driven prediction and at
 
 This pipeline has been modified to run entirely removed from Sherlock (unless using the `--profile` command). The only thing that needs to be fixed are some of the paths to SLASH repos and some of the paths to the hyena embedding objects. Need to figure out how to wrap this into a more packageable format.
 
+Also the large artifact README is too big to add to github. May need to provide code to build it locally for the user.
+
+Also the SPLASH output directory is currently hard-coded to the location on sherlock. This will need to be fixed.
+
 ## Running the workflow
 
 ### 1. Install `mamba` and `snakemake`

@@ -1,2 +1,2 @@
 dataset_short_name,SPLASH_results,metadata_file,lookup_table,translation_table,genome_list,genome_metadata_file,taxid
-H5N1-cattle,/scratch/groups/horence/dcotter1/runs/H5N1_Nguyen_et_al_2024_PRJNA1102327,/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/H5N1_metadata_from_Nguyen_et_al_2024_PRJNA1102327_modified250528.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifacts_chicken_cattle/artifact_lookup_chicken_cattle.slt,1,NA,NA,0
+H5N1-cattle,/scratch/groups/horence/dcotter1/runs/H5N1_Nguyen_et_al_2024_PRJNA1102327,resources/metadata/resources/metadata/H5N1_example_metadata.tsv,/oak/stanford/groups/horence/dcotter1/lookup_tables/artifacts/artifacts_chicken_cattle/artifact_lookup_chicken_cattle.slt,1,NA,NA,0
