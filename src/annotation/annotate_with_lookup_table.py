@@ -32,7 +32,7 @@ def parse_args():
     )
     parser.add_argument(
         "--splash_bin",
-        default="/oak/stanford/groups/horence/dcotter1/splash-2.6.1/",
+        default="",
         type=str,
         help="Path to splash bin",
     )

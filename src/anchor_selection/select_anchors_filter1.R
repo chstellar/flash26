@@ -30,7 +30,7 @@ option_list <- list(
               type="numeric", default=0.5),
   make_option(c("-l", "--lookup_table"), "Lookup table file", type="character"),
   make_option(c("--splash_bin"), "Path to SPLASH binary folder",
-              type="character", default="/oak/stanford/groups/horence/dcotter1/splash-2.11.1/"),
+              type="character", default=""),
   make_option(c("--temp_dir"), "Temporary directory to store intermediate files", 
               type="character")
 )
