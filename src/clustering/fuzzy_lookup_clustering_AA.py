@@ -1,4 +1,4 @@
-# add new anchors to existing clusters 
+# add new anchors to existing clusters
 # usage: update_anchors.py <cluster_file> <anchor_file> <output_clusters> --threads <num_threads>
 # cluster_file: the clusters file to be updated
 # anchor_file: the new anchors to be added
@@ -6,15 +6,16 @@
 # num_threads: the number of threads to use
 
 # usage: python <fuzzy_lookup_clustering_AA.py> <anchor_file> <output_clusters> --translation_table <translation_table> --protein_db <protein_db>
+# --m <m> --N <N> --j <j>
 
 # import modules
 import argparse
-from multiprocessing import Pool
 import Bio.SeqIO as SeqIO
 from Bio.Seq import Seq
 import random
 from fuzzysearch import find_near_matches
 from math import floor
+
 
 # define functions
 def parse_args():
@@ -24,10 +25,41 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Add new anchors to existing clusters")
     parser.add_argument("--input", type=str, help="the new anchors to be added")
     parser.add_argument("--output", type=str, help="the updated clusters file")
-    parser.add_argument("--translation_table", type=int, default=1, help="the translation table to use")
-    parser.add_argument("--protein_db", type=str, help="a protein database to filter the translations", default=None)
-    parser.add_argument("--temp_dir", type=str, help="redundant path to temp_dir. necessary for snakemake execution", default=None)
+    parser.add_argument(
+        "--translation_table", type=int, default=1, help="the translation table to use"
+    )
+    parser.add_argument(
+        "--protein_db",
+        type=str,
+        help="a protein database to filter the translations",
+        default=None,
+    )
+    parser.add_argument(
+        "--temp_dir",
+        type=str,
+        help="redundant path to temp_dir. necessary for snakemake execution",
+        default=None,
+    )
+    parser.add_argument(
+        "--m",
+        type=int,
+        default=3,
+        help="the number of characters to mask in the anchor sequence",
+    )
+    parser.add_argument(
+        "--N",
+        type=int,
+        default=300,
+        help="the number of masked anchors to generate for each anchor",
+    )
+    parser.add_argument(
+        "--j",
+        type=int,
+        default=2,
+        help="the number of characters to drop from the beginning and end of each anchor",
+    )
     return parser.parse_args()
+
 
 def read_anchors(anchor_file):
     """
@@ -46,7 +78,10 @@ def read_anchors(anchor_file):
                 anchors.append(line[0])
     return anchors
 
-def translate_anchor(anchor, translation_table=1, protein_db=None, min_translation_length=7):
+
+def translate_anchor(
+    anchor, translation_table=1, protein_db=None, min_translation_length=7
+):
     """
     Translate the anchor sequence in all 6 reading frames and return the translated sequences.
     If a protein database is provided, filter out the translations that are not found in the database.
@@ -55,13 +90,25 @@ def translate_anchor(anchor, translation_table=1, protein_db=None, min_translati
     anchor = Seq(anchor)
     for frame in range(3):
         # Translate in forward direction
-        translated = str(Seq(anchor[frame:]).translate(to_stop=True, table=translation_table, cds=False))
+        translated = str(
+            Seq(anchor[frame:]).translate(
+                to_stop=True, table=translation_table, cds=False
+            )
+        )
         # Translate in reverse direction
-        translated_reverse = str(Seq(anchor.reverse_complement()[frame:]).translate(to_stop=True, table=translation_table, cds=False))
+        translated_reverse = str(
+            Seq(anchor.reverse_complement()[frame:]).translate(
+                to_stop=True, table=translation_table, cds=False
+            )
+        )
         translations.append(translated)
         translations.append(translated_reverse)
     # Filter out translations that are less than N characters
-    translations = [translated for translated in translations if len(translated) >= min_translation_length]
+    translations = [
+        translated
+        for translated in translations
+        if len(translated) >= min_translation_length
+    ]
     # Filter out translations that are not found in a protein database
     if protein_db:
         out_translations = []
@@ -73,10 +120,19 @@ def translate_anchor(anchor, translation_table=1, protein_db=None, min_translati
         out_translations = translations
     return out_translations
 
-def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=None):
+
+def cluster_anchors(
+    anchors,
+    m=3,
+    N=300,
+    j=2,
+    translation_table=1,
+    protein_db=None,
+    min_translation_length=7,
+):
     """
     Create a dictionary of clusters, then shuffle the input list of anchors and assign them to clusters.
-    For each anchor, mask m random characters as N and check to see if the masked anchor is in the cluster 
+    For each anchor, mask m random characters as N and check to see if the masked anchor is in the cluster
     dictionary. If it is, add the anchor to the cluster. If it is not, assign the anchor to a new cluster.
     Additionally drop the first and last 1:j characters from each anchor and check that those are in the cluster dictionary.
     This can account for shifts in the anchor sequences.
@@ -90,9 +146,14 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     for id, anchor in enumerate(anchors):
         if id % 5000 == 0:
             print(f"Processing anchor {id}/{len(anchors)}")
-        translations = translate_anchor(anchor, translation_table=translation_table, protein_db=None)
+        translations = translate_anchor(
+            anchor,
+            translation_table=translation_table,
+            protein_db=None,
+            min_translation_length=min_translation_length,
+        )
         if not translations:
-            #print(f"No translations found for anchor {anchor}")
+            # print(f"No translations found for anchor {anchor}")
             continue
         found_cluster = False
         for tran_anch in translations:
@@ -119,8 +180,8 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                     break
                 for i in range(j):
                     i = i + 1
-                    front_trimmed = tran_anch[i:len(tran_anch)]
-                    back_trimmed = tran_anch[0:len(tran_anch)-i]
+                    front_trimmed = tran_anch[i : len(tran_anch)]
+                    back_trimmed = tran_anch[0 : len(tran_anch) - i]
                     if front_trimmed in lookup_dict:
                         cluster_id = lookup_dict[front_trimmed]
                         clusters[cluster_id].append(anchor)
@@ -144,7 +205,12 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                     masked_anchors.append(front_trimmed)
                     masked_anchors.append(back_trimmed)
         if not found_cluster:
-            translations = translate_anchor(anchor, translation_table=translation_table, protein_db=protein_db)
+            translations = translate_anchor(
+                anchor,
+                translation_table=translation_table,
+                protein_db=protein_db,
+                min_translation_length=min_translation_length,
+            )
             if not translations:
                 # if there are no translations that pass the db, skip the anchor
                 continue
@@ -158,8 +224,8 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
                 new_masked_anchors.append(masked_anchor)
             for i in range(j):
                 i = i + 1
-                front_trimmed = translations[0][i:len(translations[0])]
-                back_trimmed = translations[0][0:len(translations[0])-i]
+                front_trimmed = translations[0][i : len(translations[0])]
+                back_trimmed = translations[0][0 : len(translations[0]) - i]
                 new_masked_anchors.append(front_trimmed)
                 new_masked_anchors.append(back_trimmed)
             for masked_anchor in new_masked_anchors:
@@ -170,24 +236,43 @@ def cluster_anchors(anchors, m=3, N=300, j=2, translation_table=1, protein_db=No
     # Return the clusters dictionary with the cluster id as the key and the list of anchors as the value
     return clusters, aa_matches
 
+
 def main():
-    m = 2
-    N = 300
-    j = 2
     args = parse_args()
     print("Reading anchors...")
     anchors = read_anchors(args.input)
     anchor_length = len(anchors[1])
     min_translation_length = floor((anchor_length / 3) * 0.8)
     print("Clustering anchors...")
+    # Set default values for m, N, j
+    m = args.m  # Number of characters to mask
+    N = args.N  # Number of masked anchors to generate
+    j = args.j  # Number of characters to drop from the beginning and end of each anchor
+
     if args.protein_db:
         with open(args.protein_db, "rb") as f:
             database = f.read()
             # remove newline characters
             database = database.replace(b"\n", b"")
-        clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table, protein_db=database)
+        clusters, aa_matches = cluster_anchors(
+            anchors,
+            m,
+            N,
+            j,
+            translation_table=args.translation_table,
+            protein_db=database,
+            min_translation_length=min_translation_length,
+        )
     else:
-        clusters, aa_matches = cluster_anchors(anchors, m, N, j, translation_table=args.translation_table)
+        clusters, aa_matches = cluster_anchors(
+            anchors,
+            m,
+            N,
+            j,
+            translation_table=args.translation_table,
+            protein_db=None,
+            min_translation_length=min_translation_length,
+        )
     print("Writing clusters...")
     with open(args.output, "w") as f:
         for cluster_id, cluster in clusters.items():
@@ -199,6 +284,7 @@ def main():
         for cluster_id, matches in aa_matches.items():
             for match in matches:
                 f.write(f"{cluster_id}\t{match[0]}\t{match[1]}\n")
+
 
 if __name__ == "__main__":
     main()

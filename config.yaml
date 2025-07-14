@@ -1,7 +1,7 @@
 # main files
 data_table: dataset_table.csv
 temp_dir: tmp/
-splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.11.1/ # SHERLOCK DEPENDENCY
+splash_bin: splash-2.11.6/
 
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
@@ -27,6 +27,9 @@ scripts:
     shiftDist-levFilter: 'python src/clustering/shiftDist_clustering.py'
     masked-aa-clustered: 'python src/clustering/fuzzy_lookup_clustering_AA.py'
     masked-nucleotide-clustered: 'python src/clustering/fuzzy_lookup_clustering.py'
+  clustering_params:
+    fuzzy_nt_clustering_params: "--m 5 --N 1000 --j 5"
+    fuzzy_aa_clustering_params: "--m 3 --N 300 --j 2"
   reorder_script:
     shiftDist-levFilter: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     masked-aa-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
@@ -50,3 +53,4 @@ scripts:
   merge_blast_results: src/annotation/merge_coefs_with_blast.R
   plot_blast_results: src/annotation/blast_code/plot_blast_annotations_each_feature.R
   plot_blast_heatmaps: src/annotation/blast_code/plot_nonzero_features_heatmap.R
+  plot_embeddings_umap: src/umap/plot_embeddings_umap.R

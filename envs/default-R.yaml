@@ -24,3 +24,6 @@ dependencies:
   - r-optparse
   - r-RColorBrewer
   - bioconda::bioconductor-complexheatmap
+  - r-dbscan
+  - r-umap
+  - r-fossil

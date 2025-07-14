@@ -81,6 +81,9 @@ rule all:
 
 
 rule all_genomes:
+    """
+    Generate prediction for genome sequences provided for a given dataset.
+    """
     input:
             # all genome coefficients files
             expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
@@ -93,21 +96,16 @@ rule all_genomes:
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]),
-            expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               model=MODELS,
-               num_clusters=NUM_CLUSTERS,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
-               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"])
+               FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]) 
+               # no need to plot genomes blast results as they
+               # will be the same as the non-genome results which generated the model for the prediction.
 
 
 rule all_ohe:
+    """
+    Generate all one-hot encoded files for the datasets defined in the dataset table and perform
+    prediction on the metadata.
+    """
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
                     "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
@@ -119,6 +117,24 @@ rule all_ohe:
                kmer_step=KMER_STEP,
                train_proportion=TRAIN_PROPORTION,
                FILE = FILE_SUFFIXES)
+
+
+rule all_umap:
+    """
+    Generate UMAP plots for the datasets defined in the dataset table. Assumes no metadata is available and colors plots by HDBSCAN cluster ID.
+    The script can be modified slightly to color by metadata if available.
+    """
+    input: 
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
+                    "{dataset}_{model}_umap_results_top{num_clusters}_k{kmer_width}_s{kmer_step}.pdf"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE)
 
 
 ## STANDARD PIPLELINE RULES -------------------------------
@@ -161,13 +177,22 @@ rule cluster_anchors:
     params:
         script = lambda wildcards: Path(config["scripts"]["cluster_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
-        translation_table = lambda wildcards: f"--translation_table {dataset_table.loc[wildcards.dataset, "translation_table"]}"  if wildcards.cluster_type == "masked-aa-clustered" else ""
+        translation_table = lambda wildcards: f"--translation_table {dataset_table.loc[wildcards.dataset, "translation_table"]}"  if wildcards.cluster_type == "masked-aa-clustered" else "",
+        fuzzy_params = lambda wildcards: (
+            config["scripts"]["clustering_params"]["fuzzy_nt_clustering_params"]
+            if wildcards.cluster_type == "masked-nucleotide-clustered"
+            else (
+            config["scripts"]["clustering_params"]["fuzzy_aa_clustering_params"]
+            if wildcards.cluster_type == "masked-aa-clustered"
+            else ""
+            )
+        ),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
-        {params.script} --input {input} --output {output} --temp_dir {params.tmp_dir} {params.translation_table}
+        {params.script} --input {input} --output {output} --temp_dir {params.tmp_dir} {params.translation_table} {params.fuzzy_params}
     """
 
 
@@ -322,6 +347,34 @@ rule prepare_data_for_prediction_top_variance:
     """
 
 
+rule prepare_data_for_umap_top_variance:
+    """
+    This rule processes the embeddings to fit into a glmnet model by grabbing the top variance embeddings per cluster
+    and then saves the resulting data frame as a feather object to be used in the glmnet model.
+    """
+    input:
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv"),
+        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    params:
+        script = Path(config["scripts"]["format_embeddings_variance"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_umap_embeddings", wildcards.normalize),
+        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
+    threads: 32
+    #benchmark: benchmarks/prepare_data_for_umap_top_variance/"{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.txt"
+    resources:
+        # dynamically allocate memory based on the attempt
+        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 256000),
+        time = "6:00:00"
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    shell:"""
+        ml R/4.3.2
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 1 {params.normalized_flag}
+    """
+
+
 rule run_adelie:
     """
     This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
@@ -387,8 +440,8 @@ rule process_genome_to_sample_sequences:
     """
     input:
         cluster_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
-        genome_list = lambda wildcards: dataset_table.loc[wildcards.dataset, "genome_list"],
-        genome_files = config["genomes_dir"]
+        genome_list = lambda wildcards: dataset_table.loc[wildcards.dataset, "genome_list"], # path to the file containing the list of genomes to process
+        genome_files = lambda wildcards: dataset_table.loc[wildcards.dataset, "genomes_folder"] # path to the folder containing the genome files
     params:
         script = Path(config["scripts"]["genome_to_sample_sequences"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "genomes"),
@@ -849,3 +902,23 @@ rule plot_blast_heatmaps_OHE:
         --metadata {input.metadata} \
         --output {output}
     """
+
+
+rule plot_embeddings_umap:
+    """
+    Plot UMAP of the top variance embedding per cluster for the given dataset.
+    This rule is used to visualize the embeddings of the clusters.
+    """
+    input:
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
+    params:
+        script = config["scripts"]["plot_embeddings_umap"],
+        num_PCs = 10
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.pdf")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} --metadata {input.metadata} \
+        --output {output} --num_PCs {params.num_PCs}

@@ -1,4 +1,4 @@
-# add new anchors to existing clusters 
+# add new anchors to existing clusters
 # usage: update_anchors.py <cluster_file> <anchor_file> <output_clusters> --threads <num_threads>
 # cluster_file: the clusters file to be updated
 # anchor_file: the new anchors to be added
@@ -19,8 +19,26 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Add new anchors to existing clusters")
     parser.add_argument("--input", type=str, help="the new anchors to be added")
     parser.add_argument("--output", type=str, help="the updated clusters file")
-    parser.add_argument("--temp_dir", type=str, help="redundant path to temp_dir. necessary for snakemake execution", default=None)
+    parser.add_argument(
+        "--temp_dir",
+        type=str,
+        help="redundant path to temp_dir. necessary for snakemake execution",
+        default=None,
+    )
+    parser.add_argument(
+        "--m", type=int, default=4, help="the number of characters to mask"
+    )
+    parser.add_argument(
+        "--N", type=int, default=1000, help="the number of masked anchors to generate"
+    )
+    parser.add_argument(
+        "--j",
+        type=int,
+        default=5,
+        help="the number of characters to drop up to from the beginning and end of each anchor",
+    )
     return parser.parse_args()
+
 
 def read_anchors(anchor_file):
     """
@@ -37,10 +55,11 @@ def read_anchors(anchor_file):
                 anchors.append(line[0])
     return anchors
 
+
 def cluster_anchors(anchors, m=4, N=300, j=5):
     """
     Create a dictionary of clusters, then shuffle the input list of anchors and assign them to clusters.
-    Fore each anchor, mask m random characters as N and check to see if the masked anchor is in the cluster 
+    Fore each anchor, mask m random characters as N and check to see if the masked anchor is in the cluster
     dictionary. If it is, add the anchor to the cluster. If it is not, assign the anchor to a new cluster.
     Additionally drop the first and last 1:j charaters from each anchor and check that those are in the cluster dictionary.
     This can account for shifts in the anchor sequences.
@@ -74,8 +93,8 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
             continue
         for i in range(j):
             i = i + 1
-            front_trimmed = anchor[i:len(anchor)]
-            back_trimmed = anchor[0:len(anchor)-i]
+            front_trimmed = anchor[i : len(anchor)]
+            back_trimmed = anchor[0 : len(anchor) - i]
             if front_trimmed in lookup_dict:
                 cluster_id = lookup_dict[front_trimmed]
                 clusters[cluster_id].append(anchor)
@@ -108,13 +127,13 @@ def cluster_anchors(anchors, m=4, N=300, j=5):
 
 
 def main():
-    m = 5
-    N = 1000
-    j = 5
     args = parse_args()
     print("Reading anchors...")
     anchors = read_anchors(args.input)
     random.shuffle(anchors)
+    m = args.m
+    N = args.N
+    j = args.j
     print("Clustering anchors...")
     clusters = cluster_anchors(anchors, m, N, j)
     print("Writing clusters...")
