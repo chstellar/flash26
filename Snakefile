@@ -369,7 +369,6 @@ rule prepare_data_for_umap_top_variance:
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 1 {params.normalized_flag}
     """
@@ -407,7 +406,6 @@ rule prepare_data_for_prediction_ohe:
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
     shell:"""
-        ml R/4.3.2
         Rscript --vanilla {params.script} --input {input} --output {output} --kmer_width {params.kmer_width}
     """
 
@@ -922,3 +920,4 @@ rule plot_embeddings_umap:
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --metadata {input.metadata} \
         --output {output} --num_PCs {params.num_PCs}
+        """

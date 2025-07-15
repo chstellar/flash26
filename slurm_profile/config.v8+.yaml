@@ -182,3 +182,13 @@ set-resources: # set specific resources for each rule
         threads: 1
         resources:
             mem_mb: 128000
+    prepare_data_for_umap_top_variance:
+        threads: 32
+        resources:
+            mem_mb: lambda _, attempt: 256000 + ((attempt - 1) * 256000)
+            time: "6:00:00"
+    plot_embeddings_umap:
+        threads: 16
+        resources:
+            mem_mb: lambda _, attempt: 128000 + ((attempt - 1) * 128000)
+            time: "2:00:00"
