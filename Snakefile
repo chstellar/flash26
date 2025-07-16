@@ -361,11 +361,8 @@ rule prepare_data_for_umap_top_variance:
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_umap_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     threads: 32
-    #benchmark: benchmarks/prepare_data_for_umap_top_variance/"{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.txt"
-    resources:
-        # dynamically allocate memory based on the attempt
-        mem_mb = lambda _, attempt: 256000 + ((attempt - 1) * 256000),
-        time = "6:00:00"
+    conda:
+        config["envs"]["default_r"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     shell:"""
@@ -403,6 +400,8 @@ rule prepare_data_for_prediction_ohe:
         script = Path(config["scripts"]["format_sequences_ohe"]),
         kmer_width = lambda wildcards: wildcards.kmer_width,
         kmer_step = lambda wildcards: wildcards.kmer_step
+    conda:
+        config["envs"]["default_r"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
     shell:"""
@@ -920,4 +919,4 @@ rule plot_embeddings_umap:
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --metadata {input.metadata} \
         --output {output} --num_PCs {params.num_PCs}
-        """
+    """
