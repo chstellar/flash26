@@ -123,6 +123,8 @@ if (!file.exists(all_satc_filtered_dump)) {
 satc_dt <- fread(all_satc_filtered_dump, header=F,
                  col.names=c("sample", "anchor", "target", "count"))
 
+target_length <- unique(nchar(satc_dt$target))
+
 # grab the top anchor per cluster as a representative anchor
 representative_anchors <- anchor_clusters %>% group_by(cluster_id) %>% 
   distinct(cluster_id, .keep_all=T) %>% ungroup() %>% pull(anchor)
@@ -159,7 +161,7 @@ wide_satc <- as.data.frame(wide_satc)
 wide_satc <- cbind(wide_satc[1],
                    map2_df(wide_satc[,2:ncol(wide_satc)], 
                            1:length(representative_anchors), 
-                           \(x,y) ifelse(is.na(x), str_c(representative_anchors[y], strrep("N", 27), sep = ""), x)))
+                           \(x,y) ifelse(is.na(x), str_c(representative_anchors[y], strrep("N", target_length), sep = ""), x)))
 wide_satc <- wide_satc %>% ungroup()
 
 # join the columns together into one sequence and write to a tsv
