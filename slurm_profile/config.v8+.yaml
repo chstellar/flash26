@@ -67,8 +67,9 @@ set-resources: # set specific resources for each rule
         mem_mb: 128000
         time: "4:00:00"
     cluster_anchors:
-        meb_mb: '512000 + ((attempt - 1) * 128000) if (wildcards.cluster_type == "masked-aa-clustered" or wildcards.cluster_type == "masked-nucleotide-clustered") else 64000 + ((attempt - 1) * 128000)'
-        time:'"12:00:00" if (wildcards.cluster_type == "masked-aa-clustered" or wildcards.cluster_type == "masked-nucleotide-clustered") else "3:00:00"'
+    # increase time for larger datasets or more complex clustering
+        mem_mb: 256000 + ((attempt - 1) * 256000)
+        time: "10:00:00" 
     reorder_clusters:
         mem_mb: 64000 + ((attempt - 1) * 64000)
         time: "5:00:00"
