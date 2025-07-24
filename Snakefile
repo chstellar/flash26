@@ -149,9 +149,9 @@ rule choose_anchors:
                                "result.after_correction.scores.tsv") # this is the path to the default SPLASH results file
     params:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
-        lookup_table = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "lookup_table"]),
+        lookup_table = config["lookup_table_for_arifact_filtering"]
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
-        splash_bin = "/oak/stanford/groups/horence/dcotter1/splash-2.6.1/", # this is because the current artifact lookup is not updated. needs to be fixed to 2.11.1
+        splash_bin = config["splash_bin"],
         num_anchors = 1000000,
         effect_size = 0.5 # only select anchors with an effect size greater than this value
     output:
@@ -208,7 +208,8 @@ rule reorder_clusters:
                                                 "result.after_correction.scores.tsv")
     params:
         script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type)
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
+        distance_threshold = config["scripts"]["reorder_parameters"]["distance_threshold"],
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     conda:

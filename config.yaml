@@ -5,24 +5,24 @@ splash_bin: splash-2.11.6/
 
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
+lookup_table_for_arifact_filtering: resourcs/lookup_tables/artifacts.slt
 
 # entrez email
 entrez_email: dcotter1@stanford.edu
 
 # path to directory with genomes
-genomes_dir: /scratch/groups/horence/dcotter1/data/Hyun_etAl_2023_AMR_genomes
+genomes_dir: "" # provide with path to genomes downloaded from 
 
-# set paths to python venvs
+# set paths to conda env definitions
 envs:
   default_r: envs/default-R.yaml
   biopython_env: envs/biopython_env.yaml
   adelie_env: envs/adelie_env.yaml
 
-# define all scripts
+# define all scripts and parameters used in the pipeline
 scripts:
   anchor_select_script: 
     filter1: src/anchor_selection/select_anchors_filter1.R # arrange by nonzero samples then head
-
   cluster_script: 
     shiftDist-levFilter: 'python src/clustering/shiftDist_clustering.py'
     masked-aa-clustered: 'python src/clustering/fuzzy_lookup_clustering_AA.py'
@@ -36,6 +36,8 @@ scripts:
     masked-aa-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     masked-nucleotide-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     noCluster: "src/clustering/filter_clusters_by_distance.R --distance_metric noCluster" # used for short anchors
+  reorder_parameters:
+    distance_threshold: 5 # this is the distance threshold for filtering anchors
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
   prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py

@@ -24,7 +24,9 @@ option_list <- list(
   make_option(c("--distance_metric"), "Distance metric to use for filtering", 
               type="character", default="lev"),
   make_option(c("--num_cores"), "Number of cores to use for parallel processing"
-              , type="integer", default=1)
+              , type="integer", default=1),
+  make_option(c("--distance_threshold"), "Distance threshold for filtering anchors",
+              type="integer", default=5)
 )
 
 # parse command line arguments
@@ -185,7 +187,7 @@ representative_anchors <- representative_anchors[1:max_anchor_clusters]
 
 filtered_anchor_sets <- future_map2(all_anchor_sets, representative_anchors, 
                                     \(x, y) distance_filter(x, y, opt$distance_metric, 
-                                                            distance_threshold=5))
+                                                            distance_threshold=opt$distance_threshold))
 
 # combine the filtered anchor sets into a single df
 filtered_anchor_clusters <- bind_rows(filtered_anchor_sets) %>% 
