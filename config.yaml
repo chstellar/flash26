@@ -27,6 +27,7 @@ scripts:
     shiftDist-levFilter: 'python src/clustering/shiftDist_clustering.py'
     masked-aa-clustered: 'python src/clustering/fuzzy_lookup_clustering_AA.py'
     masked-nucleotide-clustered: 'python src/clustering/fuzzy_lookup_clustering.py'
+    noCluster: 'python src/clustering/noClustering.py' # used for short anchors
   clustering_params:
     fuzzy_nt_clustering_params: "--m 5 --N 1000 --j 5"
     fuzzy_aa_clustering_params: "--m 3 --N 300 --j 2"
@@ -34,6 +35,7 @@ scripts:
     shiftDist-levFilter: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     masked-aa-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     masked-nucleotide-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
+    noCluster: "src/clustering/filter_clusters_by_distance.R --distance_metric noCluster" # used for short anchors
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
   prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py

@@ -69,6 +69,7 @@ cat("Reading in the anchor clusters file\n")
 anchor_clusters <- fread(opt$input_anchor_clusters, 
                     header = F, col.names = c("cluster_id", "anchor"))
 
+
 # read in the splash stats file (grepping for the anchors in the anchor file)
 cat("Reading in the splash stats file\n")
 ## load the data
@@ -103,6 +104,15 @@ anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   ungroup() %>% group_by(new_cluster_id) %>%
   arrange(new_cluster_id, desc(effect_size_bin)) %>% 
   ungroup() %>% select(new_cluster_id, anchor)
+
+# if we have --distance_metric noCluster, write out the
+# anchor clusters file with the new cluster ids and exit
+if (opt$distance_metric == "noCluster") {
+  cat("Writing out the anchor clusters file with the new cluster ids\n")
+  write_tsv(anchor_clusters_with_stats, opt$output, col_names = F, quote="none")
+  cat("Done!\n")
+  quit(status = 0)
+}
 
 # keep only one anchor per cluster (the one with the highest effect size)
 one_anchor_per_cluster <- anchor_clusters_with_stats %>%
