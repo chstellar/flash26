@@ -5,7 +5,7 @@ splash_bin: splash-2.11.6/
 
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
-lookup_table_for_arifact_filtering: resourcs/lookup_tables/artifacts.slt
+lookup_table_for_arifact_filtering: resources/lookup_tables/mini_artifact_lookup.slt
 
 # entrez email
 entrez_email: dcotter1@stanford.edu

@@ -1,8 +1,10 @@
-# Files located in lookup tables
+# Files located in lookup tables composed of the following files
 
-## artifact filtering
+## mini_artifact filtering
 
-- text
+- $OAK/george/reference_fastas/illumina_adapters.fasta
+- $OAK/george/reference_fastas/SRA_synthetic_barcodes.fasta
+- $OAK/SPLASH_reference_fastas/artifacts/UniVec.fasta
 
 ## AMR split
 
