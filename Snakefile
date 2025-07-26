@@ -149,7 +149,7 @@ rule choose_anchors:
                                "result.after_correction.scores.tsv") # this is the path to the default SPLASH results file
     params:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
-        lookup_table = config["lookup_table_for_arifact_filtering"]
+        lookup_table = config["lookup_table_for_arifact_filtering"],
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
         splash_bin = config["splash_bin"],
         num_anchors = 1000000,
