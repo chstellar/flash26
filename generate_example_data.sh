@@ -38,7 +38,7 @@ echo "All accessions processed."
 # create a sample sheet from the processed FASTQ files
 echo "Creating sample sheet for dataset: $DATASET_NAME"
 SAMPLE_SHEET="$EXAMPLE_DATA_DIR/sample_sheet.tsv"
-awk 'BEGIN {FS=OFS="\t"} {print $1,$1"_1.fastq"}' resources/metadata/H5N1_example_accessions.txt > $SAMPLE_SHEET
+awk 'BEGIN {FS=OFS="\t"} {print $1,$1"_1.fastq"}' resources/metadata/H5N1_accessions.txt > $SAMPLE_SHEET
 
 echo "Sample sheet created at: $SAMPLE_SHEET"
 
