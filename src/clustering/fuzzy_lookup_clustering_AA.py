@@ -157,7 +157,9 @@ def cluster_anchors(
             continue
         found_cluster = False
         for tran_anch in translations:
-            if not found_cluster:
+            if len(tran_anch) < m:  
+                continue
+            if not found_cluster:   
                 masked_anchors = []
                 for i in range(N):
                     masked_anchor = list(tran_anch)
@@ -211,7 +213,7 @@ def cluster_anchors(
                 protein_db=protein_db,
                 min_translation_length=min_translation_length,
             )
-            if not translations:
+            if not translations or len(translations[0]) < m:
                 # if there are no translations that pass the db, skip the anchor
                 continue
             new_masked_anchors = []
