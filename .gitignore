@@ -9,3 +9,5 @@ tempClustalOmega.aln
 tmp
 tmp/*
 splash-*/
+benchmarks
+benchmarks/*
