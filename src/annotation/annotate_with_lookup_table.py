@@ -63,7 +63,7 @@ def run_lookup(anchor_fasta, lookup_file, output_file, splash_bin):
 def merge_results(cluster_file, lookup_table_file, output_file):
     # paste the two files together using bash but first add a header to the lookup table file
     os.system(
-        f"echo -e 'query\\nstats' | cat - {lookup_table_file} > {lookup_table_file}.tmp && mv {lookup_table_file}.tmp {lookup_table_file}"
+        f"echo -e 'query\\tstats' | cat - {lookup_table_file} > {lookup_table_file}.tmp && mv {lookup_table_file}.tmp {lookup_table_file}"
     )
     os.system(f"paste {cluster_file} {lookup_table_file} > {output_file}")
     return None
