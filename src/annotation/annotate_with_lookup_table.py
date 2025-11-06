@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-from Bio import SeqIO
 import argparse
 from pathlib import Path
 import tempfile  # Import tempfile module
@@ -13,7 +12,7 @@ def parse_args():
     parser.add_argument(
         "--cluster_seqs",
         type=str,
-        help="Input cluster file.",
+        help="Input cluster file (Tsv file with cluster and sequence and any additional information).",
     )
     parser.add_argument(
         "--lookup_table",
@@ -40,12 +39,13 @@ def parse_args():
 
 
 def create_temp_fasta(cluster_file, fasta_file):
-    df = pd.read_csv(cluster_file, sep='\t')
-    seqs = df['seq'].unique()
-    
-    with open(fasta_file, 'w') as f:
+    df = pd.read_csv(cluster_file, sep="\t")
+    seqs = df["seq"].unique()
+
+    with open(fasta_file, "w") as f:
         for seq in seqs:
             f.write(f">{seq}\n{seq}\n")
+
 
 def run_lookup(anchor_fasta, lookup_file, output_file, splash_bin):
     # run the lookup command
@@ -59,12 +59,15 @@ def run_lookup(anchor_fasta, lookup_file, output_file, splash_bin):
     os.system(lookup_cmd)
     return None
 
+
 def merge_results(cluster_file, lookup_table_file, output_file):
-    df_cluster = pd.read_csv(cluster_file, sep='\t')
-    df_lookup = pd.read_csv(lookup_table_file, sep='\t', names=["query", "stats"])
-    # there is no common key but the order is the same
-    df_merged = pd.merge(df_cluster, df_lookup, left_index=True, right_index=True)
-    df_merged.to_csv(output_file, sep='\t', index=False)
+    # paste the two files together using bash but first add a header to the lookup table file
+    os.system(
+        f"echo -e 'query\\nstats' | cat - {lookup_table_file} > {lookup_table_file}.tmp && mv {lookup_table_file}.tmp {lookup_table_file}"
+    )
+    os.system(f"paste {cluster_file} {lookup_table_file} > {output_file}")
+    return None
+
 
 def main():
     # parse arguments
@@ -72,15 +75,17 @@ def main():
     cluster_file = args.cluster_seqs
     lookup_table = args.lookup_table
     final_output_file = args.output
-    lookup_table_output = os.path.join(args.temp_dir, 'lookup_table_output.txt')
+    lookup_table_output = os.path.join(args.temp_dir, "lookup_table_output.txt")
     splash_bin = args.splash_bin
-    
+
     # create the temp dir if it doesn't exist
     if not os.path.exists(args.temp_dir):
         os.makedirs(args.temp_dir)
-    
+
     # create a unique temporary fasta file
-    with tempfile.NamedTemporaryFile(dir=args.temp_dir, suffix='.fasta', delete=False) as temp_file:
+    with tempfile.NamedTemporaryFile(
+        dir=args.temp_dir, suffix=".fasta", delete=False
+    ) as temp_file:
         temp_fasta_file = temp_file.name
         create_temp_fasta(cluster_file, temp_fasta_file)
 
@@ -89,10 +94,11 @@ def main():
 
     # merge the original cluster file with the output of the lookup table
     merge_results(cluster_file, lookup_table_output, final_output_file)
-    
+
     # Clean up temporary files
     os.remove(temp_fasta_file)
     os.remove(lookup_table_output)
+
 
 if __name__ == "__main__":
     main()
