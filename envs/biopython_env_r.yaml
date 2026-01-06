@@ -1,12 +1,20 @@
-name: biopython_env
+name: biopython_env_r
 # This environment is used for tasks involving Biopython and related libraries.
 channels:
     - conda-forge
     - defaults
     - bioconda
+    - R
 dependencies:
+    # R dependencies
+    - r-base==4.3.*
+    - r-tidyverse
+    - r-data.table
+    - r-furrr
+    - r-stringdist
+    - r-optparse
     # Python dependencies for Biopython tasks
-    - python==3.9
+    - python>=3.9
     - biopython
     - dill
     - ipython
