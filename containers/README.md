@@ -1,4 +1,4 @@
-## Singularity Containers
+# Singularity Container for Hyena Embedding Methods
 
 In order to run this workflow with the embedding methods you must download the pre-compiled singularity image containing the model and modified code base.
 

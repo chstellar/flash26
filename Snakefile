@@ -156,6 +156,7 @@ rule choose_anchors:
         effect_size = 0.5 # only select anchors with an effect size greater than this value
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
+    benchmark: Path("benchmarks", "choose_anchors", "{dataset}_{select_type}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -189,6 +190,7 @@ rule cluster_anchors:
         ),
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_clustered_anchors_{select_type}_{cluster_type}.txt")
+    benchmark: Path("benchmarks", "cluster_anchors", "{dataset}_{select_type}_{cluster_type}.txt")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
@@ -212,6 +214,7 @@ rule reorder_clusters:
         distance_threshold = config["scripts"]["reorder_parameters"]["distance_threshold"],
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
+    benchmark: Path("benchmarks", "reorder_clusters", "{dataset}_{select_type}_{cluster_type}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -230,6 +233,7 @@ rule select_N_clusters:
     output:
         clusters = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
         anchors = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt")
+    benchmark: Path("benchmarks", "select_N_clusters", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}.txt")
     shell:"""
         awk '$1 <= {wildcards.num_clusters}' {input} > {output.clusters}
         cut -f2 {output.clusters} > {output.anchors}
@@ -255,6 +259,7 @@ rule prepare_sequences:
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv")
+    benchmark: Path("benchmarks", "prepare_sequences", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -281,6 +286,7 @@ rule decompose_kmers:
     output:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    benchmark: Path("benchmarks", "decompose_kmers", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.txt")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
@@ -301,6 +307,7 @@ rule match_kmers_to_clusters:
         script = Path(config["scripts"]["match_kmers_to_clusters"])
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
+    benchmark: Path("benchmarks", "match_kmers_to_clusters", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -321,6 +328,7 @@ rule embed_kmers_hyena:
         python_embedder = config["scripts"]["hyena_kmer_embedder"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    benchmark: Path("benchmarks", "embed_kmers_hyena", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.txt")
     shell:"""
         bash {params.wrapper_script} {params.python_embedder} {input.singularity_image} {input.kmers} {output}
     """
@@ -341,6 +349,7 @@ rule prepare_data_for_prediction_top_variance:
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    benchmark: Path("benchmarks", "prepare_data_for_prediction_top_variance", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -363,10 +372,11 @@ rule prepare_data_for_umap_top_variance:
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_umap_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     threads: 32
-    conda:
-        config["envs"]["default_r"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    benchmark: Path("benchmarks", "prepare_data_for_umap_top_variance", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.txt")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 1 {params.normalized_flag}
@@ -386,6 +396,7 @@ rule run_adelie:
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
+    benchmark: Path("benchmarks", "run_adelie", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["adelie_env"]
     shell:"""
@@ -402,10 +413,11 @@ rule prepare_data_for_prediction_ohe:
         script = Path(config["scripts"]["format_sequences_ohe"]),
         kmer_width = lambda wildcards: wildcards.kmer_width,
         kmer_step = lambda wildcards: wildcards.kmer_step
-    conda:
-        config["envs"]["default_r"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+    benchmark: Path("benchmarks", "prepare_data_for_prediction_ohe", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.txt")
+    conda:
+        config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --input {input} --output {output} --kmer_width {params.kmer_width}
     """
@@ -421,6 +433,7 @@ rule run_adelie_ohe:
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
+    benchmark: Path("benchmarks", "run_adelie_ohe", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["adelie_env"]
     shell:"""
@@ -448,6 +461,7 @@ rule process_genome_to_sample_sequences:
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.tsv")
+    benchmark: Path("benchmarks", "process_genome_to_sample_sequences", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_genomes.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -474,6 +488,7 @@ rule decompose_kmers_genomes:
     output:
         unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
         order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    benchmark: Path("benchmarks", "decompose_kmers_genomes", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_genomes.txt")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
@@ -495,6 +510,7 @@ rule embed_kmers_hyena_genomes:
         python_embedder = config["scripts"]["hyena_kmer_embedder"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+    benchmark: Path("benchmarks", "embed_kmers_hyena_genomes", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_genomes.txt")
     shell:"""
         bash {params.wrapper_script} {params.python_embedder} {input.singularity_image} {input.kmers} {output}
     """
@@ -516,6 +532,7 @@ rule prepare_data_for_prediction_genomes:
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    benchmark: Path("benchmarks", "prepare_data_for_prediction_genomes", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}_genomes.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -540,6 +557,7 @@ rule run_adelie_genomes:
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+    benchmark: Path("benchmarks", "run_adelie_genomes", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}_genomes.txt")
     conda:
         config["envs"]["adelie_env"]
     shell:"""
@@ -567,6 +585,7 @@ rule annotate_clusters:
         splash_bin = config["splash_bin"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
+    benchmark: Path("benchmarks", "annotate_clusters", "{dataset}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.txt")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
@@ -587,6 +606,7 @@ rule merge_annotations:
     output:
         coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+    benchmark: Path("benchmarks", "merge_annotations", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -610,6 +630,7 @@ rule run_blast_nonzero_features:
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+    benchmark: Path("benchmarks", "run_blast_nonzero_features", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -632,6 +653,7 @@ rule run_blastp_nonzero_features:
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+    benchmark: Path("benchmarks", "run_blastp_nonzero_features", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -650,6 +672,7 @@ rule merge_blast_results:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
+    benchmark: Path("benchmarks", "merge_blast_results", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -668,6 +691,7 @@ rule merge_blastp_results:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+    benchmark: Path("benchmarks", "merge_blastp_results", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -687,10 +711,11 @@ rule merge_annotations_OHE:
     output:
         coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+    benchmark: Path("benchmarks", "merge_annotations_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
-    Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
+        Rscript --vanilla {params.script} --annotations {input.annotations} --coefficients {input.coefficients} --output {output.coefs}
     """
 
 
@@ -710,6 +735,7 @@ rule run_blast_nonzero_features_OHE:
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+    benchmark: Path("benchmarks", "run_blast_nonzero_features_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -732,6 +758,7 @@ rule run_blastp_nonzero_features_OHE:
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+    benchmark: Path("benchmarks", "run_blastp_nonzero_features_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -750,6 +777,7 @@ rule merge_blast_results_OHE:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
+    benchmark: Path("benchmarks", "merge_blast_results_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -768,6 +796,7 @@ rule merge_blastp_results_OHE:
         script = config["scripts"]["merge_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+    benchmark: Path("benchmarks", "merge_blastp_results_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -786,6 +815,7 @@ rule merge_annotations_genomes:
         script = config["scripts"]["merge_annotations"]
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+    benchmark: Path("benchmarks", "merge_annotations_genomes", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_genomes.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -811,6 +841,7 @@ rule plot_blast_features:
         script = config["scripts"]["plot_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
+    benchmark: Path("benchmarks", "plot_blast_features", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -839,6 +870,7 @@ rule plot_blast_heatmaps:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
+    benchmark: Path("benchmarks", "plot_blast_heatmaps", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -867,6 +899,7 @@ rule plot_blast_features_OHE:
         script = config["scripts"]["plot_blast_results"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
+    benchmark: Path("benchmarks", "plot_blast_features_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -895,6 +928,7 @@ rule plot_blast_heatmaps_OHE:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
+    benchmark: Path("benchmarks", "plot_blast_heatmaps_OHE", "{dataset}_ohe_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -921,6 +955,7 @@ rule plot_embeddings_umap:
         num_PCs = 10
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.pdf")
+    benchmark: Path("benchmarks", "plot_embeddings_umap", "{dataset}_{model}_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.txt")
     conda:
         config["envs"]["default_r"]
     shell:"""
