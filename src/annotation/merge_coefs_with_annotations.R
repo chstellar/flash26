@@ -33,7 +33,7 @@ flat_annotations <- annotations %>%
   mutate(summary = paste0("[[", kmer, ": ", seq, " : ", str_trunc(query,width=200,side="right",), " : ", stats, " ]]")) %>% 
   group_by(cluster) %>% summarise(anno = str_c(summary, sep=";", collapse=";"))
 coefficients <- fread(opt$coefficients, header = TRUE)
-coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(cluster_\\d+)_", group = 1))
+coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 
 # Merge the data on the 'cluster' column 
 # there may be multiple entries in annotations that match

@@ -53,7 +53,7 @@ if (!is.null(opt$temp_dir)) {
 # define future plans
 setDTthreads(opt$num_threads)
 plan(multicore, workers=opt$num_threads)
-options(future.globals.maxSize=4000*1024^2)
+options(future.globals.maxSize=8000*1024^2)
 
 ## print a summary of the arguments
 cat("\n####################\n")
@@ -70,9 +70,7 @@ cat("####################\n\n")
 cat("\nLoading embeddings...\n")
 # copy the embeddings file to the temp directory to speed up I/O
 embeddings_temp <- file.path(temp_dir, "raw_embeddings_temp.tsv")
-if (!file.exists(embeddings_temp)) {
-  system(paste("cp", opt$embeddings, embeddings_temp))
-}
+system(paste("cp", opt$embeddings, embeddings_temp))
 embeddings <- fread(embeddings_temp, header = F)
 colnames(embeddings) <- c("kmer", paste0("embedding_", 1:(ncol(embeddings)-1)))
 
@@ -80,9 +78,7 @@ colnames(embeddings) <- c("kmer", paste0("embedding_", 1:(ncol(embeddings)-1)))
 cat("Loading the ordering file...\n")
 # copy the ordering file to the temp directory to speed up I/O
 ordering_temp <- file.path(temp_dir, "ordering_temp.tsv")
-if (!file.exists(ordering_temp)) {
-  system(paste("cp", opt$ordering, ordering_temp))
-}
+system(paste("cp", opt$ordering, ordering_temp))
 ordering <- fread(ordering_temp, header=F, sep="\t", 
                   col.names = c("sample_name", "seq", "kmer", "start", "end")) 
 ordering <- ordering %>% select(sample_name, kmer)
@@ -97,14 +93,17 @@ join_and_write_clusters <- function(cluster_df, filename, all_embeddings) {
     select(-kmer) %>% fwrite(file=filename,nThread = 1,col.names = T)
 }
 
+
 temp_embeddings_dir <- file.path(temp_dir, "embeddings_per_cluster/")
+system(paste0("rm -r ", temp_embeddings_dir))
 system(paste("mkdir -p", temp_embeddings_dir))
 cluster_files <- paste0(temp_embeddings_dir, "embeddings_cluster_", 0:(length(clusters)-1), ".csv")
 
+# Cleaning up temp directory
 cat("Writing all clusters and their embeddings out to file in: ", temp_embeddings_dir)
 
-# Cleaning up temp directory
-system(paste0("rm ", temp_embeddings_dir, "/*"))
+
+
 
 if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
   future_walk2(clusters, cluster_files, \(x,y) join_and_write_clusters(x, y, all_embeddings = embeddings))
@@ -155,4 +154,4 @@ cat("Writing top variance embeddings to ", embeddings_feather, "\n")
 feather::write_feather(top_var_dt, embeddings_feather)
 
 # Cleaning up temp directory
-system(paste0("rm ", temp_embeddings_dir, "/*"))
+system(paste0("rm -r", temp_embeddings_dir))

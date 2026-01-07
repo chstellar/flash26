@@ -11,7 +11,7 @@
 # Filter 1: effect size >= 0.6
 # Filter 1: number of nonzero samples > 10th percentile
 # Filter 1: no lookup table hits to artifacts
-# Filter 1: select top 1,000,000 anchors by number of nonzero samples (set smaller if necessary)
+# Filter 1: select top 1,000,000 anchors by number of nonzero samples
 
 ## import packages --------
 suppressPackageStartupMessages(library(data.table))
@@ -82,10 +82,15 @@ cat("###################################################################\n\n")
 
 ## load the data
 # read in the headers of the input file to identify the effect_size_bin column
-headers <- fread(opt$input, nrows = 1, header=T)
+headers <- fread(opt$input, nrows = 2, header=T)
 effect_size_bin_col <- grep("effect_size_bin", names(headers))
 
+if (nchar(headers$anchor[1]) < 12) {
+  opt$effect_size <- 0.1 # change if using short anchors
+}
+
 # load the input file using awk to filter out rows with effect size < 0.6
+
 load_cmd <- paste0("cat ", opt$input, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", opt$effect_size, ") print $0}'")
 if (grepl(".gz$", opt$input)) {
   load_cmd = paste0("z", load_cmd)

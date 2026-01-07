@@ -29,16 +29,16 @@ annotations <- fread(opt$blast_annotations, header = TRUE)
 
 if (str_detect(opt$blast_annotations, "blastp")) {
   annotations <- annotations %>% select(query, evalue, identity, qcovs, qframe, stitle, `NCBI_protein_accession`, UniProt_accession, method, GO) %>% 
-    mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
+    mutate(cluster=str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 } else {
   annotations <- annotations %>% select(query, evalue, identity, qcovs, features, contains("window")) %>% 
-    mutate(cluster=str_extract(query, "(cluster_\\d+)_", group = 1))
+    mutate(cluster=str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 }
 
 
 
 coefficients <- fread(opt$coefficients, header = TRUE)
-coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(cluster_\\d+)_", group = 1))
+coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 
 merged_data <- coefficients %>% full_join(annotations, by ="cluster", relationship="many-to-many")
 

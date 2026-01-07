@@ -36,8 +36,12 @@ def read_metadata(file_path):
 
 def get_metadata_columns(metadata, min_samples=50):
     filtered_metadata = metadata.loc[:, metadata.columns != "sample_name"]
-    filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: len(x.unique()) > 2, axis=0)]
-    filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() > min_samples) > 1, axis=0)]
+    if min_samples > 0:
+        filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: len(x.unique()) >= 2, axis=0)]
+        filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() >= min_samples) > 1, axis=0)]
+    else:
+        filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: len(x.unique()) >= 1, axis=0)]
+        filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() >= min_samples) >= 1, axis=0)]
     return filtered_metadata.columns
 
 def merge_data(data, metadata, metadata_col, min_samples=50, even_samples=False):
@@ -48,7 +52,7 @@ def merge_data(data, metadata, metadata_col, min_samples=50, even_samples=False)
     class_counts = merged_data[metadata_col].value_counts()
     class_counts = class_counts[class_counts >= min_samples]
     classes_to_keep = class_counts.index
-    if len(classes_to_keep) < 2:
+    if len(classes_to_keep) < 2 and min_samples !=0:
         return None, None, None
     merged_data = merged_data[merged_data[metadata_col].isin(classes_to_keep)]
 
@@ -111,16 +115,23 @@ def main():
                 continue
 
             yhat = model.predict(X_test.astype(np.float64))
-            st.contingency.crosstab(y_test, yhat).count
+            #st.contingency.crosstab(y_test, yhat).count
             if len(np.unique(yhat)) < 2:
-                print(f"Skipping {metadata_col} as there are not enough unique predictions...")
-                continue
-            yhat_2d = np.zeros((yhat.size, yhat.max() + 1))
-            yhat_2d[np.arange(yhat.size), yhat] = 1
-            yhat = yhat_2d
+                    print(f"Predictions for {metadata_col} are all of one class.")
+                    unique_class = np.unique(yhat)[0]
+                    yhat_2d = np.zeros((y_test.size, len(oh.categories_[0])))
+                    yhat_2d[:, unique_class] = 1
+                    y_pred = oh.inverse_transform(yhat_2d).flatten()
+            else:
+                yhat_2d = np.zeros((yhat.size, len(oh.categories_[0])))
+                yhat_2d[np.arange(yhat.size), yhat] = 1
+                yhat = yhat_2d
+                y_pred = oh.inverse_transform(yhat).flatten()
             
-            y_pred = oh.inverse_transform(yhat).flatten()
-            cm = confusion_matrix(y_test, y_pred)
+            
+            
+           
+            cm = confusion_matrix(y_test, y_pred, labels = oh.categories_[0])
             print(f"Confusion matrix for {metadata_col}")
             print(cm)
 

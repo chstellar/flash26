@@ -160,41 +160,73 @@ def main():
             else:
                 # add a check to make sure there are more than 2 unique values in the predictions
                 # an error can be thrown if inverse_transform gets the wrong number of columns
+                # Handle cases where predictions are all of one class
                 yhat = model.predict(X_test.astype(np.float64))
                 if len(np.unique(yhat)) < 2:
-                    print(f"Skipping {metadata_col} as there are not enough unique predictions...")
-                    continue
-                yhat_2d = np.zeros((yhat.size, yhat.max() + 1))
-                yhat_2d[np.arange(yhat.size), yhat] = 1
-                yhat = yhat_2d
-                
-                try:
-                    y_pred = oh.inverse_transform(yhat).flatten()
+                    print(f"Predictions for {metadata_col} are all of one class.")
+                    unique_class = np.unique(yhat)[0]
+                    yhat_2d = np.zeros((y_test.size, len(oh.categories_[0])))
+                    yhat_2d[:, unique_class] = 1
+                    y_pred = oh.inverse_transform(yhat_2d).flatten()
                     cm = confusion_matrix(y_test, y_pred)
+                    accuracy = np.trace(cm) / np.sum(cm)
                     print(f"Test confusion matrix for {metadata_col}")
                     print(cm)
-                except Exception as e:
-                    print(f"Failed to transform predictions for {metadata_col}: {e}")
-                    continue
+                    print(f"Accuracy: {accuracy:.2f}")
+                else:
+                    yhat_2d = np.zeros((yhat.size, len(oh.categories_[0])))
+                    yhat_2d[np.arange(yhat.size), yhat] = 1
+                    yhat = yhat_2d
+
+                    try:
+                        y_pred = oh.inverse_transform(yhat).flatten()
+                        cm = confusion_matrix(y_test, y_pred, labels=oh.categories_[0])
+                        print(f"Test confusion matrix for {metadata_col}")
+                        print(cm)
+                        accuracy = np.trace(cm) / np.sum(cm)
+                        print(f"Accuracy: {accuracy:.2f}")
+                    except Exception as e:
+                        print(
+                            f"Failed to transform predictions for {metadata_col}: {e}"
+                        )
+                        continue
+
             
             yhat_train = model.predict(X_train.astype(np.float64))
-            if len(np.unique(yhat_train)) >= 2:
-                yhat_train_2d = np.zeros((yhat_train.size, yhat_train.max() + 1))
+            if len(np.unique(yhat_train)) < 2:
+                print(f"Train predictions for {metadata_col} are all of one class.")
+                unique_class_train = np.unique(yhat_train)[0]
+                yhat_train_2d = np.zeros((y_train.size, len(oh.categories_[0])))
+                yhat_train_2d[:, unique_class_train] = 1
+                y_train_pred = oh.inverse_transform(yhat_train_2d).flatten()
+                cm_train = confusion_matrix(y_train, y_train_pred, labels=oh.categories_[0])
+                train_accuracy = np.trace(cm_train) / np.sum(cm_train)
+                print(
+                    f"Train confusion matrix for {metadata_col}"
+                )
+                print(cm_train)
+                print(f"Train accuracy: {train_accuracy:.2f}\n")
+            else:
+                yhat_train_2d = np.zeros((yhat_train.size, len(oh.categories_[0])))
                 yhat_train_2d[np.arange(yhat_train.size), yhat_train] = 1
                 yhat_train = yhat_train_2d
-            
-            try:
-                y_train_pred = oh.inverse_transform(yhat_train).flatten()
-                cm_train = confusion_matrix(y_train, y_train_pred)
-                print(f"train confusion matrix for {metadata_col}")
-                print(cm_train)
-                train_accuracy = np.trace(cm_train) / np.sum(cm_train)
-                print(f"Train accuracy: {train_accuracy:.2f}\n")
-            except Exception as e:
-                cm_train =[]
-                print(f"Failed to transform train predictions for {metadata_col}: {e}")
-                train_accuracy = 0
-                continue
+
+                try:
+                    y_train_pred = oh.inverse_transform(yhat_train).flatten()
+                    cm_train = confusion_matrix(y_train, y_train_pred)
+                    print(
+                        f"Train confusion matrix for {metadata_col}"
+                    )
+                    print(cm_train)
+                    train_accuracy = np.trace(cm_train) / np.sum(cm_train)
+                    print(f"Train accuracy: {train_accuracy:.2f}\n")
+                except Exception as e:
+                    cm_train = []
+                    print(
+                        f"Failed to transform train predictions for {metadata_col}: {e}"
+                    )
+                    train_accuracy = 0
+                    continue
 
             # extract the nonzero coefficients
             coef = model.coef_
