@@ -8,7 +8,10 @@ lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
 lookup_table_for_arifact_filtering: resources/lookup_tables/mini_artifact_lookup.slt
 
 # entrez email
-entrez_email: "" # YOUR_EMAIL 
+entrez_email: "" # YOUR_EMAIL
+
+# blast database path (if using local databases)
+blast_db_path: "" # provide with path to local blast databases if available
 
 # path to directory with genomes
 genomes_dir: "" # provide with path to genomes downloaded from 

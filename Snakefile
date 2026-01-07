@@ -606,13 +606,14 @@ rule run_blast_nonzero_features:
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"],
-        temp_dir = config["temp_dir"]
+        temp_dir = config["temp_dir"],
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path}
     """
 
 
@@ -627,13 +628,14 @@ rule run_blastp_nonzero_features:
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blastp"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta_blastp"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
-        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path}
     """
 
 
@@ -704,13 +706,14 @@ rule run_blast_nonzero_features_OHE:
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"],
-        temp_dir = config["temp_dir"]
+        temp_dir = config["temp_dir"],
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path}
     """
 
 
@@ -725,13 +728,14 @@ rule run_blastp_nonzero_features_OHE:
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blastp"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta_blastp"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
-        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path}
     """
 
 
