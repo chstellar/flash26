@@ -25,6 +25,7 @@ latency-wait: 60
 keep-going: True
 rerun-incomplete: True
 printshellcmds: True
+benchmark-extended: True
 cluster-generic-cancel-cmd: scancel
 scheduler: greedy
 set-threads: # set specific threads for each rule
