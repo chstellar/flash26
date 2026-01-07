@@ -41,11 +41,11 @@ known_causes = "NNNNNNNNNNNNNNN"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
-# opt$nonzero_annotations = "results/test-data-tracy-SC10X/filter1/shiftDist-levFilter/hyena/normalized/test-data-tracy-SC10X_hyena_adelie_results_top20000_k54_s54_nonzero_coefficients_blastp_annotated.tsv"
-# opt$clusters = "results/test-data-tracy-SC10X/filter1/shiftDist-levFilter/test-data-tracy-SC10X_sequences_per_cluster_top20000-clusters_k54_s54.tsv"
-# opt$feather = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/test-data-tracy-SC10X/test-data-tracy-SC10X_hyena_top_variance_features_for_glmnet_filter1_shiftDist-levFilter_top20000_k54_s54_normalized.feather"
-# opt$sample_seqs = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/test-data-tracy-SC10X/test-data-tracy-SC10X_prepared_sequences_filter1_shiftDist-levFilter_top20000_sample_sequences.tsv"
-# opt$metadata = "/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/hpv_sc_data_sampleByBarcode_CELLTYPE_DISEASE_ONLY.tsv"
+# opt$nonzero_annotations = "results/tuberculosis-PZAres//filter1/shiftDist-levFilter/hyena/normalized/tuberculosis-PZAres_hyena_adelie_results_top20000_k54_s54_nonzero_coefficients_blastp_annotated.tsv"
+# opt$clusters = "results/tuberculosis-PZAres/filter1/shiftDist-levFilter/tuberculosis-PZAres_sequences_per_cluster_top20000-clusters_k54_s54.tsv"
+# opt$feather = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/tuberculosis-PZAres/tuberculosis-PZAres_hyena_top_variance_features_for_glmnet_filter1_shiftDist-levFilter_top20000_k54_s54_normalized.feather"
+# opt$sample_seqs = "/scratch/users/dcotter1/metaSPLASH_workflows_v2/tuberculosis-PZAres/tuberculosis-PZAres_prepared_sequences_filter1_shiftDist-levFilter_top20000_sample_sequences.tsv"
+# opt$metadata = "/oak/stanford/groups/horence/dcotter1/utility_files/metadata/metaSPLASH_metadata/tb_kim_et_al_cleaned_metadata.tsv"
 # opt$output = "/oak/stanford/groups/horence/dcotter1/share/250506/test_eFac_more_blast_hits_out.pdf"
 
 filename = data.frame(path=opt$nonzero_annotations)
@@ -189,6 +189,10 @@ all_metadata <- fread(opt$metadata)
 
 categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
 
+cols_to_keep <- which(names(all_metadata) %in% c("sample_name", categories))
+
+all_metadata <- all_metadata[, ..cols_to_keep]
+
 if (str_detect(opt$nonzero_annotations, "adelie-train-only")) {
   dt <- dt %>% mutate(accuracy=train_accuracy)
   acc_label = "Train Accuracy:"
@@ -227,7 +231,7 @@ for (category in categories) {
     
 
     summ_dt <- summ_dt %>% group_by(cluster,query) %>%
-      mutate(label=ifelse(!is_empty(unique(na.omit(annotation))), paste(unique(na.omit(annotation)),collapse=";"), NA)) %>%
+      mutate(label=ifelse(!is_empty(unique(na.omit(annotation))), paste0(unique(na.omit(annotation)),collapse=";"), NA)) %>%
       distinct(cluster, query, label, .keep_all=T) %>% ungroup()
 
     if (TRUE) {
@@ -248,11 +252,11 @@ for (category in categories) {
       
       if (opt$products) {
         summ_dt2 <- summ_dt2 %>% group_by(cluster,query) %>%
-          mutate(label=ifelse(!is_empty(unique(na.omit(products))), paste(unique(na.omit(products)),collapse=";"), paste(unique(na.omit(genes)), collapse=","))) %>% 
+          mutate(label=ifelse(!is_empty(unique(na.omit(products))), paste0(unique(na.omit(products)),collapse=";"), paste(unique(na.omit(genes)), collapse=","))) %>% 
           distinct(cluster, query, label, .keep_all=T) %>% ungroup()
       } else {
         summ_dt2 <- summ_dt2 %>% group_by(cluster,query) %>%
-          mutate(label=ifelse(!is_empty(unique(na.omit(genes))), paste(unique(na.omit(genes)), collapse=";"), paste(unique(na.omit(products)),collapse=","))) %>% 
+          mutate(label=ifelse(!is_empty(unique(na.omit(genes))), paste0(unique(na.omit(genes)), collapse=";"), paste(unique(na.omit(products)),collapse=","))) %>% 
           distinct(cluster, query, label, .keep_all=T) %>% ungroup()
       }
       if (!"qcovs" %in% colnames(summ_dt2)) {
@@ -275,6 +279,7 @@ for (category in categories) {
       mutate(hypothetical=length(unique(label))>1 & sum(str_detect(label, "(?i)hypothetical|uncharacterized"))>0) %>%
       mutate(hypothetical=replace_na(hypothetical, FALSE)) %>% 
       rowwise() %>%
+      mutate(label = str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")) %>%
       mutate(label = map2_vec(label, hypothetical, \(x,y) if (y) {str_c(str_trim(unlist(str_split(x, ";"))[str_detect(unlist(str_split(x, ";")), "(?i)hypothetical|uncharact", negate=T)]),sep = ",", collapse=",")} else {x})) %>%
       ungroup()
     
@@ -284,13 +289,14 @@ for (category in categories) {
       mutate(coef_mag=max_coefficient/largest_coef) %>% 
       group_by(cluster, coef_mag) %>% 
       summarise(label=paste(unique(label), collapse=",")) %>%
+      mutate(label = str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")) %>%
       ungroup() %>%
       arrange(-coef_mag) %>%
       mutate(rank=row_number()) %>%
       mutate(color=NA) %>%
       mutate(color=ifelse(nchar(label)>1, "blast", color)) %>%
       mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
-      mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 40)) %>% 
+      mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 25)) %>% 
       mutate(label = replace_na(label, ""))
     
     accuracy <- summ_dt$accuracy %>% unique()
@@ -301,7 +307,7 @@ for (category in categories) {
     p <- plot_dt %>% head(opt$num_hits) %>%
       ggplot(aes(x=rank, y=coef_mag, fill=color, label=label)) +
       geom_col() + 
-      geom_text(aes(y=coef_mag + 0.05,hjust=0),angle=45) +
+      geom_text(aes(y=coef_mag + 0.05,hjust=0),angle=45,size=3) +
       scale_y_continuous("Magnitude relative to\nlargest nonzero coefficient", 
                          limits = c(0,1.5), 
                          labels=scales::label_percent(), breaks=seq(0,1,0.25),
