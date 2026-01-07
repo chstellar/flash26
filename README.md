@@ -32,7 +32,8 @@ To use the executor profile for cluster job submission (with sbatch) you also mu
 mamba install snakemake-executor-plugin-cluster-generic
 ```
 
-To install `SPLASH`, download the relase here: [github.com/refresh-bio/SPLASH/releases/tag/v2.11.6](https://github.com/refresh-bio/SPLASH/releases/tag/v2.11.6). Unzip it into a folder in the project root and change the `splash_bin` paramater in `config.yaml` to match. You can also run the script `get_splash.sh` inside the `splash` folder if you are using x64 linux.
+#### Installing SPLASH
+To install `SPLASH`, download the relase here: [github.com/refresh-bio/SPLASH/releases/tag/v2.11.6](https://github.com/refresh-bio/SPLASH/releases/tag/v2.11.6). Unzip it into a folder in the project root and change the `splash_bin` parameter in `config.yaml` to match. You can also run the script `get_splash.sh` inside the `splash` folder if you are using x64 linux.
 
 ### 2. Ensure `dataset_table.csv` is filled out correctly
 
@@ -56,7 +57,7 @@ There is an example script for running SPLASH in the `resources/utility_scripts`
 The current wildcards are defined as follows:
 
 ```{python}
-## Define the wildcards on which the pipeline will be run
+## Define the wildcards on which the pipeline will be run, for example:
 DATASETS = list(dataset_table.index)
 SELECT_TYPES = ["filter1"]
 CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered"]
@@ -70,28 +71,35 @@ NORMALIZE=["normalized"]
 TRAIN_PROPORTION = 0.5 # this is the proportion of the data to use for training, the rest will be used for testing.
 ```
 
-You can change these by specifying new values for the paramaters.In order to change the `SELECT_TYPES` or the `CLUSTER_TYPES`, you must also provide new scripts on which to perform the desired steps.
+You can change these by specifying new values for the parameters.
+In order to use your own `SELECT_TYPES` or `CLUSTER_TYPES`, you must also provide new scripts on which to perform the desired steps.
 
 ### 4. Change out any necessary file paths in the `config.yaml` file
 
-In the config file, you should change the path to the temp directory and point it at a temporary folder where the pipeline will create all necessary intermediate files. Depending on the size of the input data, these intermediate files can be quite large.
+The `config.yml` file is used by the Snakemake workflow to specify the correct locations of all paths and some paramaters. 
+It is necessary to change some of the fields in this config file to match your setup.
+
+1. Change the `entrez_email` entry if you intend to run the pipeline with blast plots enabled. 
+2. Change the `temp_dir` entry to point to a location that has a large amount of storage and fast I/O speeds. I set this to the temporary SCRATCH storage on our file systems. Depending on the size of the input data, these intermediate files can be quite large.
+3. Change `splash_bin` to point to the installed location of SPLASH. See note above on how to install SPLASH.  
+
 
 ### 5. Run `snakemake`
 
-You can run the workflow by typing the following in an interactive node:
+You can run the workflow using One Hot Encoding by typing the following in an interactive node:
 
 ```{bash}
 export NUM_CORES=1
 snakemake --sdm conda -j $NUM_CORES all_ohe
 ```
 
-This will execute `snakemake` to run jobs using up to `$NUM_CORES` maximum in parralel and will produce the files specifice by the rule `all_ohe`..
+This will execute `snakemake` to run jobs using up to `$NUM_CORES` maximum in parallel and will produce the files specified by the rule `all_ohe`..
 
 The flag `--sdm conda` is important because it will tell snakemake to build and use the required conda environments specified in the `envs/` directory. *Note: This can be quite slow whenever the environment is installed for the first time or is changed.*
 
-If you want to run FLASH using the embedding mode or genomes mode, you will need a GPU in the environment where you run `snakemake` or you will need to use a profile.
+If you want to run FLASH using the embedding mode or genomes mode, you will need a GPU in the environment where you run `snakemake` or you will need to use a profile (like the one provided in `slurm_profile/`).
 
-The included example submission script (`resources/utility_scripts/run_snakemake.sbatch`) and profile (`slurm_profile/config.v8+.yaml`) submit the pipeline and request the required resources including GPU resources. For running on a cluster you can use a profile using --profile slurm_profile/config.v8+.yaml. **NOTE: This is untested outside of some specific cases. You will probably need to change the general resources specified in the profile as well as the rule-specific resources.**
+The included example submission script (`resources/utility_scripts/run_snakemake.sbatch`) and profile (`slurm_profile/config.v8+.yaml`) submit the pipeline and request the required resources including GPU resources. For running on a cluster you can use a profile using --profile slurm_profile/config.v8+.yaml. **NOTE: For this step you will need to download the container image indicated in the `containers/` folder. You will also need to modify the profile to the correct partitions and constraints necessary for your cluster. This can be adapted to other clusters but will require changing around the resource specifications and the cluster submission script.**
 
 ## Input Files
 
@@ -111,7 +119,7 @@ Input files and paths are detailed in `dataset_table.csv` and the columns are de
 
 Output files are available in the `results/` folder with the dataset name as a subfolder and subsequent subfolders defining different branching points along the way. The flag `GENERATE_PLOTS` can be changed to `True` to force the script to perform the annotation and plotting steps.
 
-- The target rule **`rule_all_embeddings`** genarates all embedding-based predictions and summary fules using the nucleotide language model.
+- The target rule **`rule_all_embeddings`** genarates all embedding-based predictions and summary files using the nucleotide language model.
 - The target rule **`rule_all_genomes`** generates models based on embeddings data and then predicts on these data using test data supplied in the genome directory as specified in the `dataset_table.csv` file.
 - The target rule **`rule_all_ohe`** formats the data using One Hot Encoding and predicts on the data this way. This does not require setting up the gpu-based embedding pipeline.
 - The target rule **`rule_all_umap`** generates the unsupervised umap clusters using the top variance embedding per cluster in the formatted data.

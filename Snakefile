@@ -28,17 +28,17 @@ dataset_table = pd.read_csv(dataset_table_path, index_col = "dataset_short_name"
 DATASETS = list(dataset_table.index)
 SELECT_TYPES = ["filter1"]
 CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered"]
-NUM_CLUSTERS = [5000]
+NUM_CLUSTERS = [20000]
 ANCHOR_LENGTH = 27 # this is the length of the anchor in nucleotides
 TARGET_LENGTH = 27 # this is the length of the target in nucleotides
 KMER_WIDTH = [ANCHOR_LENGTH + TARGET_LENGTH] # this is Anchor Length + Target Length
 KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps be variable, but for now we will use a single value
 MODELS = ["hyena"]
 NORMALIZE=["normalized"]
-TRAIN_PROPORTION = 0.5 # this is the proportion of the data to use for training, the rest will be used for testing
+TRAIN_PROPORTION = 0.8 # this is the proportion of the data to use for training, the rest will be used for testing
 
 # whether to generate plots or to stop at the output of the prediction task
-GENERATE_PLOTS = False
+GENERATE_PLOTS = True
 if GENERATE_PLOTS:
     FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf",
                        "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]
@@ -61,7 +61,7 @@ wildcard_constraints:
 
 ## TARGET RULES --------------------------------
 ## Define Rule all for the target of the pipeline
-rule all:
+rule all_embeddings:
     """
     Generate all summary files for the datasets defined in the dataset table
     """
@@ -312,16 +312,17 @@ rule embed_kmers_hyena:
     """
     Embeds the unique kmers using the Hyena model we have pretrained.
     TODO: Make this rule replaceable with other embedding models in the future
-    TODO: Make this rule use a downloaded version of the Hyena model and not dependent on the config file
     """
     input:
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        singularity_image = config["containers"]["hyena_embedder"]
     params:
-        script = config["scripts"]["embed_kmers_hyena"]
+        wrapper_script = config["scripts"]["embed_kmers_hyena"],
+        python_embedder = config["scripts"]["hyena_kmer_embedder"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
-        bash {params.script} {input.unique_kmers} {output}
+        bash {params.wrapper_script} {params.python_embedder} {input.singularity_image} {input.kmers} {output}
     """
 
 
@@ -485,16 +486,17 @@ rule embed_kmers_hyena_genomes:
     """
     Embeds the unique kmers using the Hyena model we have pretrained.
     TODO: Make this rule replaceable with other embedding models in the future
-    TODO: Make this rule use a downloaded version of the Hyena model and not dependent on the config file
     """
     input:
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        singularity_image = config["containers"]["hyena_embedder"]
     params:
-        script = config["scripts"]["embed_kmers_hyena"]
+        wrapper_script = config["scripts"]["embed_kmers_hyena"],
+        python_embedder = config["scripts"]["hyena_kmer_embedder"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
-        bash {params.script} {input.unique_kmers} {output}
+        bash {params.wrapper_script} {params.python_embedder} {input.singularity_image} {input.kmers} {output}
     """
 
 
@@ -608,7 +610,7 @@ rule run_blast_nonzero_features:
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
-        config["envs"]["biopython_env"]
+        config["envs"]["biopython_env_r"]
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir}
     """
@@ -629,7 +631,7 @@ rule run_blastp_nonzero_features:
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
-        config["envs"]["biopython_env"]
+        config["envs"]["biopython_env_r"]
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """
@@ -706,7 +708,7 @@ rule run_blast_nonzero_features_OHE:
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
-        config["envs"]["biopython_env"]
+        config["envs"]["biopython_env_r"]
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir}
     """
@@ -727,7 +729,7 @@ rule run_blastp_nonzero_features_OHE:
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
-        config["envs"]["biopython_env"]
+        config["envs"]["biopython_env_r"]
     shell:"""
         bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table}
     """

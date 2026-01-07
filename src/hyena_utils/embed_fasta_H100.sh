@@ -1,22 +1,26 @@
 #!/bin/bash
 
-# Check if the correct number of arguments are provided
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 input_file output_file"
-    exit 1
-fi
+# This script is called by Snakemake
 
-# Define the constants
-HYENA_WDR="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/hyena_wdr/"
-PYTHON_SCRIPT="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/dev_embedder.py"
-MODEL_CFG="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/aws_topES_multi_target/hg38_256dim_config.yml"
-MODEL_CKPT="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/aws_topES_multi_target/weights.ckpt"
-SINGULARITY_IMG="/oak/stanford/groups/horence/dcotter1/utility_files/hyena_models/singularity/hyena_modified_H100/hyena_modified_H100.sif"
+# Arguments: dev_embedder.py input_file output_file
+PYTHON_SCRIPT=$1
+SINGULARITY_IMG=$2
+INPUT_FILE=$3
+OUTPUT_FILE=$4
 
-# Assign command line arguments to variables
-input_file=$(realpath $1)
-output_file=$(realpath $2)
+# Internal paths (now baked into the container)
+export MODEL_CFG="/wdr/models/bacterial_128dim_config.yml"
+export MODEL_CKPT="/wdr/models/weights.ckpt"
 
-# Call the Python script with the provided arguments
-cd ${HYENA_WDR}
-singularity run --nv --writable-tmpfs -B ${HYENA_WDR} ${SINGULARITY_IMG} python ${PYTHON_SCRIPT} --model_cfg ${MODEL_CFG} --ckpt_path ${MODEL_CKPT} --seq_file ${input_file} --output_file ${output_file} --max_seqlen 160000 --nlayers 8 --batch_size 100
+export PYTHON_SCRIPT=$(realpath $1)
+export SINGULARITY_IMG=$(realpath $2)
+export INPUT_FILE=$(realpath $3)
+export OUTPUT_FILE=$(realpath $4)
+
+
+# Run the Python script with the singularity image
+singularity run --nv --writable-tmpfs \
+    ${SINGULARITY_IMG} bash -c 'cd /wdr/hyena_wdr && python ${PYTHON_SCRIPT} \
+    --model_cfg ${MODEL_CFG} --ckpt_path ${MODEL_CKPT} \
+    --seq_file ${INPUT_FILE} --output_file ${OUTPUT_FILE} \
+    --max_seqlen 128000 --nlayers 4 --batch_size 100'
