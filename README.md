@@ -83,6 +83,8 @@ To point at the folder containing the local blast databases, modify the config f
 
 For instructions on downloading local copies of these databases, see <https://www.ncbi.nlm.nih.gov/books/NBK569850/>.
 
+To enable taxonomic filtering of the blast features, using the `taxid` field in the file `dataset_table.csv`, you must be using local blast databases as remote blast does not support taxonomic filtering. You also must additionally download and decompress the file `taxdb.tar.gz` from <https://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz> in the local blast database folder. Follow the instructions in the *Taxonomic filtering for BLAST databases* section of <https://www.ncbi.nlm.nih.gov/books/NBK569839/> for further details.
+
 ### 4. Change out any necessary file paths in the `config.yaml` file
 
 The `config.yml` file is used by the Snakemake workflow to specify the correct locations of all paths and some paramaters.
