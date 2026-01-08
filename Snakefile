@@ -605,7 +605,7 @@ rule run_blast_nonzero_features:
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
-        entrez_email = config["entrez_email"],
+        entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
@@ -705,7 +705,7 @@ rule run_blast_nonzero_features_OHE:
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
-        entrez_email = config["entrez_email"],
+        entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:

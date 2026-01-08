@@ -20,6 +20,13 @@ else
   LOCAL_BLAST_DB="--local_blast_db $LOCAL_BLAST_DB"
 fi
 
+# if there is no entrez email provided, it will be passed as 0
+# throw error if email not provided
+if [[ $ENTREZ_EMAIL == "0" ]] ; then
+  echo "Error: Entrez email must be set in config.yml to run BLAST."
+  exit 1
+fi
+
 mkdir -p $SPLIT_TEMP_FOLDER
 mkdir -p $BLAST_OUTPUT_FOLDER
 
