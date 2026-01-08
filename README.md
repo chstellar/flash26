@@ -81,7 +81,7 @@ To generate annotations and plots you can set the flag `GENERATE_PLOTS = True` i
 
 To point at the folder containing the local blast databases, modify the config file `config.yaml` and change the field `blast_db_path` to point to the folder containing the local blast databases.
 
-For instructions on downloading local copies of these databases, see <https://www.ncbi.nlm.nih.gov/books/NBK569850/>.
+These can be downloaded with `blast+` installed using `update_blastdb.pl --decompress core_nt refseq_protein`. For further instructions on downloading local copies of these databases, see <https://www.ncbi.nlm.nih.gov/books/NBK569850/>.
 
 To enable taxonomic filtering of the blast features, using the `taxid` field in the file `dataset_table.csv`, you must be using local blast databases as remote blast does not support taxonomic filtering. You also must additionally download and decompress the file `taxdb.tar.gz` from <https://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz> in the local blast database folder. Follow the instructions in the *Taxonomic filtering for BLAST databases* section of <https://www.ncbi.nlm.nih.gov/books/NBK569839/> for further details.
 
