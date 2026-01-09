@@ -46,7 +46,8 @@ scripts:
   reorder_parameters:
     distance_threshold: 5 # this is the distance threshold for filtering anchors
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
-  prepare_sequences: src/process_seqs/process_splash_data_for_embedding.R
+  prepare_sequences: src/process_seqs/process_fastqs_for_embedding_and_ohe.R
+  prepare_sequences_single_cell: src/process_seqs/process_splash_data_for_embedding.R
   decompose_kmers: src/process_seqs/kmer_decomposition.py
   translate_script: src/process_seqs/translate_kmers_by_cluster.R
   extract_embeddings: src/esm_utils/extract_embeddings_from_torch_objects.py

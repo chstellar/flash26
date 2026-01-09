@@ -245,22 +245,43 @@ rule prepare_sequences:
     input:
         cluster_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
         anchor_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
-        id_mapping = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "sample_name_to_id.mapping.txt")
+        id_mapping = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "sample_name_to_id.mapping.txt"),
+        sample_sheet = lambda wildcards: dataset_table.loc[wildcards.dataset, "sample_sheet.txt"]
     params:
-        script = Path(config["scripts"]["prepare_sequences"]),
-        satc_dir = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "result_satc"),
-        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters"),
-        single_cell = lambda wildcards: "--single_cell" if "SC10X" in wildcards.dataset else ""
+        script = lambda wildcards: (
+            Path(config["scripts"]["prepare_sequences"])
+            if "SC10X" not in wildcards.dataset
+            else Path(config["scripts"]["prepare_sequences_single_cell"])
+        ),
+        input_samples = lambda wildcards: (
+            f"--satc_files {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'result_satc')}"
+            if "SC10X" in wildcards.dataset
+            else f"--sample_sheet {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'result_satc')}"
+        ),
+        output_prefix = lambda wildcards: Path(
+            TEMP_DIR,
+            f"{wildcards.dataset}",
+            f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_k{kmer_width}_s{kmer_step}"
+        ),
+        tmp_dir = lambda wildcards: Path(
+            TEMP_DIR,
+            wildcards.dataset,
+            wildcards.select_type,
+            wildcards.cluster_type,
+            wildcards.num_clusters + "-clusters"
+        ),
+        single_cell = lambda wildcards: (
+            "--single_cell" if "SC10X" in wildcards.dataset else ""
+        )
     output:
-        fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
-        tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv")
+        fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
+        tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --anchor_file {input.anchor_file} \
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
-        --satc_files {params.satc_dir} --output_prefix {params.output_prefix} \
+        {params.input_samples} --output_prefix {params.output_prefix} \
         --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell}
     """
 
