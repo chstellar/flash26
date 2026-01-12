@@ -246,7 +246,7 @@ rule prepare_sequences:
         cluster_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_clusters_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
         anchor_file = Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}_{cluster_type}_top{num_clusters}-clusters.txt"),
         id_mapping = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "sample_name_to_id.mapping.txt"),
-        sample_sheet = lambda wildcards: dataset_table.loc[wildcards.dataset, "sample_sheet.txt"]
+        sample_sheet = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "sample_sheet.txt")
     params:
         script = lambda wildcards: (
             Path(config["scripts"]["prepare_sequences"])
@@ -256,12 +256,12 @@ rule prepare_sequences:
         input_samples = lambda wildcards: (
             f"--satc_files {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'result_satc')}"
             if "SC10X" in wildcards.dataset
-            else f"--sample_sheet {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'result_satc')}"
+            else f"--sample_sheet {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'sample_sheet.txt')}"
         ),
         output_prefix = lambda wildcards: Path(
             TEMP_DIR,
             f"{wildcards.dataset}",
-            f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_k{kmer_width}_s{kmer_step}"
+            f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"
         ),
         tmp_dir = lambda wildcards: Path(
             TEMP_DIR,
@@ -293,7 +293,7 @@ rule decompose_kmers:
     for each sample
     """
     input:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["decompose_kmers"]),
         output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
@@ -418,7 +418,7 @@ rule run_adelie:
 
 rule prepare_data_for_prediction_ohe:
     input:
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta")
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["format_sequences_ohe"]),
         kmer_width = lambda wildcards: wildcards.kmer_width,
@@ -824,7 +824,7 @@ rule plot_blast_features:
     input:
         nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
         feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
@@ -852,7 +852,7 @@ rule plot_blast_heatmaps:
     input:
         nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
         feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
@@ -880,7 +880,7 @@ rule plot_blast_features_OHE:
     input:
         nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.tsv"),
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
         feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
@@ -908,7 +908,7 @@ rule plot_blast_heatmaps_OHE:
     input:
         nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_sample_sequences.fasta"),
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
         feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")

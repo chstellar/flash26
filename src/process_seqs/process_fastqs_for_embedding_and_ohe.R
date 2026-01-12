@@ -90,7 +90,7 @@ target_len <- kmer_len - anchor_len
 if (!file.exists(all_satc_file)) {
   # create the individual satc files for each sample using fafq filter and 
   # the provided anchor list
-  future_walk2(satc_filesfastq_file, satc_files$satc_file, \(x,y) system(
+  future_walk2(satc_files$fastq_file, satc_files$satc_file, \(x,y) system(
     paste0(file.path(opt$satc_util_bin, "fafq_filter"), 
            " -d ", opt$anchor_file, 
            " -i ", x, 
