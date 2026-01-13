@@ -54,8 +54,8 @@ if (!is.null(opt$temp_dir)) {
   system(paste("mkdir -p", temp_dir))
 }
 
+system(paste0("rm ", temp_dir, "/*/*"))
 system(paste0("rm ", temp_dir, "/*"))
-system(paste0("rm ", temp_dir, "/dumped/*"))
 
 # read in the anchor cluster file
 anchor_clusters <- fread(opt$cluster_file, 
@@ -95,6 +95,7 @@ if (!file.exists(all_satc_file)) {
            " -d ", opt$anchor_file, 
            " -i ", x, 
            " -o ", y,
+           " -n 10 ",
            " --anchor_len ", anchor_len,
            " --target_len ", target_len)))
   
@@ -103,9 +104,10 @@ if (!file.exists(all_satc_file)) {
     paste0(file.path(opt$satc_util_bin, "satc_dump"), " --anchor_list ", opt$anchor_file,
            " ", x, " ", y)))
   
+  system(paste("rm", all_satc_file))
   # when merging them into one file keep columns 2-3 and use sample_id as the sample name
   walk2(satc_files$satc_dump, satc_files$sample_id,
-        \(x) system(paste("awk 'BEGIN {OFS=\"\\t\"} {print \"", y, "\", $2, $3, $4}'", x, ">>", all_satc_file)))
+        \(x,y) system(paste0("awk 'BEGIN {OFS=\"\\t\"} {print \"", y, "\", $2, $3, $4}' ", x, " >> ", all_satc_file)))
   
   # remove any lines that start or end in [ACTG]
   system(paste("grep -v '^[ACTG]{3}' ", all_satc_file, " | grep -v '[ACTG]$' > ", 

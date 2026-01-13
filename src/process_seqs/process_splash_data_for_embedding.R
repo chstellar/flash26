@@ -65,7 +65,7 @@ anchor_clusters <- fread(opt$cluster_file,
   ungroup()
 
 # list all of the .satc files in the result_satc folder
-satc_files <- list.files(opt$satc_files, pattern = ".satc", full.names = T)
+satc_files <- list.files(opt$satc_files, pattern = "bin\\d+.satc", full.names = T)
 satc_files <- data.frame(satc_file=satc_files) %>% 
   mutate(satc_dump = gsub(".satc", ".satc.dump", 
                           file.path(opt$temp_dir, 'dumped', basename(satc_file))))
