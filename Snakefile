@@ -24,6 +24,10 @@ TEMP_DIR = Path(config["temp_dir"])
 ## NOTE: If a dataset is the result of a scSPLASH run on 10X data, it should contain "SC10X" in its short name
 dataset_table = pd.read_csv(dataset_table_path, index_col = "dataset_short_name")
 
+## set default resources for msa package
+resources:
+    msa=1
+
 ## Define the wildcards on which the pipeline will be run
 DATASETS = list(dataset_table.index)
 SELECT_TYPES = config["options"]["filters"]
@@ -838,6 +842,8 @@ rule plot_blast_features:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     conda:
         config["envs"]["default_r"]
+    resources:
+        msa=1 # one downside of the msa package is that it creates a temp file that cannot be redirected, so we limit to one at a time
     shell:"""
         Rscript --vanilla {params.script} \
         --nonzero_annotations {input.nonzero_features}\
@@ -894,6 +900,8 @@ rule plot_blast_features_OHE:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     conda:
         config["envs"]["default_r"]
+    resources:
+        msa=1 # one downside of the msa package is that it creates a temp file that cannot be redirected, so we limit to one at a time
     shell:"""
         Rscript --vanilla {params.script} \
         --nonzero_annotations {input.nonzero_features}\
