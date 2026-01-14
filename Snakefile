@@ -252,9 +252,9 @@ rule prepare_sequences:
         sample_sheet = lambda wildcards: Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "sample_sheet.txt")
     params:
         script = lambda wildcards: (
-            Path(config["scripts"]["prepare_sequences"])
-            if ("SC10X" not in wildcards.dataset or config["options"]["seqs_from_raw_data"] == True)
-            else Path(config["scripts"]["prepare_sequences_single_cell"])
+            Path(config["scripts"]["prepare_sequences_single_cell"])
+            if ("SC10X" in wildcards.dataset or config["options"]["seqs_from_raw_data"] == False)
+            else Path(config["scripts"]["prepare_sequences"])
         ),
         input_samples = lambda wildcards: (
             f"--satc_files {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'result_satc')}"
