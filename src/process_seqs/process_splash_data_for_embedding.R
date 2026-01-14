@@ -29,7 +29,8 @@ option_list <- list(
               type="character", default="/oak/stanford/groups/horence/dcotter1/satc_utils/"),
   make_option(c("--num_cores"), "Number of cores to use", type="integer", default = 8),
   make_option(c("--single_cell"), help="Whether to merge the first two columns of the SATC file to create sample barcode pairs",
-              type= "logical", default=FALSE, action="store_true")
+              type= "logical", default=FALSE, action="store_true"),
+  make_option(c("--target_rank"), "Rank of the target to use when assembling anchor-target pairs", type="integer", default=1)
 )
 
 # parse command line arguments
