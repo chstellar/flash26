@@ -101,7 +101,9 @@ splash_stats <- splash_stats %>% filter(anchor %in% anchor_clusters$anchor)
 # join the splash stats file with the anchor clusters file
 cat("Joining the splash stats file with the anchor clusters file\n")
 anchor_clusters_with_stats <- anchor_clusters %>%
-  left_join(splash_stats, by = "anchor") %>% select(cluster_id, anchor, effect_size_bin, number_nonzero_samples)
+  left_join(splash_stats, by = "anchor") %>% select(cluster_id, anchor, effect_size_bin, number_nonzero_samples) %>%
+  mutate(effect_size_bin = as.numeric(effect_size_bin),
+         number_nonzero_samples = as.numeric(number_nonzero_samples))
 
 # reorder the cluster ids based on the mean effect size and number of nonzero samples
 cat("Reordering the cluster ids based on the mean effect size and number of nonzero samples\n")

@@ -111,7 +111,9 @@ cat(paste("Reading in anchors from",
           opt$effect_size))
 cat("\n\n")
 dt <- fread(cmd = load_cmd, header = FALSE,
-            col.names = names(headers)[1:max_col_to_read])
+            col.names = names(headers)[1:max_col_to_read]) %>%
+  mutate(effect_size_bin = as.numeric(effect_size_bin),
+         number_nonzero_samples = as.numeric(number_nonzero_samples))
 
 # filter out the bottom 10% of anchors by number nonzero samples
 sample_cutoff <- quantile(dt$number_nonzero_samples, 0.1)
