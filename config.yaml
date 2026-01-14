@@ -1,7 +1,7 @@
 # main files
 data_table: dataset_table.csv
-temp_dir: /scratch/users/dcotter1/test_FLASH-smk_mab_jan2026/
-splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.11.1/
+temp_dir: tmp/
+splash_bin: splash-2.11.6/
 
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
@@ -36,6 +36,7 @@ options:
   train_proportion: 0.8 # proportion of samples to use for training GLMnet models
   anchor_length: 27 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
   target_length: 27 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
+  target_rank: 1 # this is the rank of the target to use when assembling the anchor-target pairs, change as needed
 
 # you should not need to change anything below this line but you can alter them if needed
 extended_options:
