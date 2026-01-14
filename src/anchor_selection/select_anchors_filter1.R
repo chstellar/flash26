@@ -82,24 +82,36 @@ cat("###################################################################\n\n")
 
 ## load the data
 # read in the headers of the input file to identify the effect_size_bin column
-headers <- fread(opt$input, nrows = 2, header=T)
-effect_size_bin_col <- grep("effect_size_bin", names(headers))
+## load the data
+# read in the headers of the input file to identify the effect_size_bin column
+headers <- fread(opt$input, nrows = 2, header = TRUE)
 
 if (nchar(headers$anchor[1]) < 12) {
   opt$effect_size <- 0.1 # change if using short anchors
 }
 
-# load the input file using awk to filter out rows with effect size < 0.6
+effect_size_bin_col <- grep("effect_size_bin", names(headers))
+nonzero_samples_col <- grep("number_nonzero_samples", names(headers))
+max_col_to_read <- max(effect_size_bin_col, nonzero_samples_col) + 1
 
-load_cmd <- paste0("cat ", opt$input, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", opt$effect_size, ") print $0}'")
+# load the input file using awk to filter out rows with effect size < 0.7
+EFFECT_SIZE_CUTOFF = opt$effect_size
+
+load_cmd <- paste0("cut -f1-", max_col_to_read, " ",
+                   opt$input, " | awk '{OFS=\"\t\"}{if ($",
+                   effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF,
+                   ") print $0}'")
 if (grepl(".gz$", opt$input)) {
-  load_cmd = paste0("z", load_cmd)
+  load_cmd <- paste0("z", load_cmd)
 }
 
-# only select the first 18 columns
-cat(paste("Reading in anchors from", opt$input, "with effect size >=", opt$effect_size))
+# only select the columns up to number_nonzero_samples
+cat(paste("Reading in anchors from",
+          opt$input, "with effect size >=",
+          opt$effect_size))
 cat("\n\n")
-dt <- fread(cmd=load_cmd, header=TRUE, select = 1:18)
+dt <- fread(cmd = load_cmd, header = FALSE,
+            col.names = names(headers)[1:max_col_to_read])
 
 # filter out the bottom 10% of anchors by number nonzero samples
 sample_cutoff <- quantile(dt$number_nonzero_samples, 0.1)

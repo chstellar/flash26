@@ -82,14 +82,20 @@ cat("Reading in the splash stats file\n")
 # read in the headers of the input file to identify the effect_size_bin column
 headers <- fread(opt$splash_stats, nrows = 1, header=T)
 effect_size_bin_col <- grep("effect_size_bin", names(headers))
+nonzero_samples_col <- grep("number_nonzero_samples", names(headers))
+max_col_to_read <- max(effect_size_bin_col, nonzero_samples_col) + 1
 
 # load the input file using awk to filter out rows with effect size < 0.7
 EFFECT_SIZE_CUTOFF = opt$effect_size_cutoff
-load_cmd <- paste0("cat ", opt$splash_stats, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF, ") print $0}'")
-if (grepl(".gz$", opt$input)) {
-  load_cmd = paste0("z", load_cmd)
+load_cmd <- paste0("cut -f1-", max_col_to_read, " ",
+                   opt$splash_stats, " | awk '{OFS=\"\t\"}{if ($",
+                   effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF,
+                   ") print $0}'")
+if (grepl(".gz$", opt$splash_stats)) {
+  load_cmd <- paste0("z", load_cmd)
 }
-splash_stats <- fread(cmd=load_cmd, header = T, select = 1:18)
+splash_stats <- fread(cmd = load_cmd, header = FALSE,
+                      col.names = names(headers)[1:max_col_to_read])
 splash_stats <- splash_stats %>% filter(anchor %in% anchor_clusters$anchor)
 
 # join the splash stats file with the anchor clusters file
