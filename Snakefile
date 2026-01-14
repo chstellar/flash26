@@ -24,10 +24,6 @@ TEMP_DIR = Path(config["temp_dir"])
 ## NOTE: If a dataset is the result of a scSPLASH run on 10X data, it should contain "SC10X" in its short name
 dataset_table = pd.read_csv(dataset_table_path, index_col = "dataset_short_name")
 
-## set default resources for msa package
-resources:
-    msa=1
-
 ## Define the wildcards on which the pipeline will be run
 DATASETS = list(dataset_table.index)
 SELECT_TYPES = config["options"]["filters"]
