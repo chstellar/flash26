@@ -14,7 +14,8 @@ import pandas as pd
 import csv
 
 ## Define the config files for the pipeline
-configfile: "config.yaml"
+# you can define different config files for different runs of the pipeline
+configfile: "config.yaml" 
 dataset_table_path = Path(config["data_table"])
 TEMP_DIR = Path(config["temp_dir"])
 
@@ -24,24 +25,23 @@ TEMP_DIR = Path(config["temp_dir"])
 dataset_table = pd.read_csv(dataset_table_path, index_col = "dataset_short_name")
 
 ## Define the wildcards on which the pipeline will be run
-# TODO: Define the other wildcards based on the config file
 DATASETS = list(dataset_table.index)
-SELECT_TYPES = ["filter1"]
-CLUSTER_TYPES = ["shiftDist-levFilter", "masked-aa-clustered"]
-NUM_CLUSTERS = [20000]
-ANCHOR_LENGTH = 27 # this is the length of the anchor in nucleotides
-TARGET_LENGTH = 27 # this is the length of the target in nucleotides
+SELECT_TYPES = config["options"]["filters"]
+CLUSTER_TYPES = config["options"]["cluster_types"]
+NUM_CLUSTERS = [config["options"]["num_clusters"]]
+ANCHOR_LENGTH = config["options"]["anchor_length"] # this is the length of the anchor in nucleotides
+TARGET_LENGTH = config["options"]["target_length"] # this is the length of the target in nucleotides
 KMER_WIDTH = [ANCHOR_LENGTH + TARGET_LENGTH] # this is Anchor Length + Target Length
 KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps be variable, but for now we will use a single value
-MODELS = ["hyena"]
-NORMALIZE=["normalized"]
-TRAIN_PROPORTION = 0.8 # this is the proportion of the data to use for training, the rest will be used for testing
+MODELS = config["options"]["models"]
+NORMALIZE = config["options"]["normalize_embeddings"]
+TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
 
 # whether to generate plots or to stop at the output of the prediction task
-GENERATE_PLOTS = True
+GENERATE_PLOTS = config["options"]["generate_plots"]
 if GENERATE_PLOTS:
     FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf",
-                       "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]
+                    "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]
 else:
     FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]
 
@@ -77,7 +77,7 @@ rule all_embeddings:
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
                train_proportion=TRAIN_PROPORTION,
-               FILE = FILE_SUFFIXES) # , 
+               FILE = FILE_SUFFIXES)
 
 
 rule all_genomes:
@@ -149,11 +149,11 @@ rule choose_anchors:
                                "result.after_correction.scores.tsv") # this is the path to the default SPLASH results file
     params:
         script = lambda wildcards: Path(config["scripts"]["anchor_select_script"][wildcards.select_type]),
-        lookup_table = config["lookup_table_for_arifact_filtering"],
+        lookup_table = config["lookup_table_for_artifact_filtering"],
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
         splash_bin = config["splash_bin"],
-        num_anchors = 1000000,
-        effect_size = 0.5 # only select anchors with an effect size greater than this value
+        num_anchors = config["extended_options"]["num_anchors_to_select"],
+        effect_size = config["extended_options"]["effect_size_cutoff"] # only select anchors with an effect size greater than this value
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     conda:
@@ -209,7 +209,9 @@ rule reorder_clusters:
     params:
         script = lambda wildcards: Path(config["scripts"]["reorder_script"][wildcards.cluster_type]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
-        distance_threshold = config["scripts"]["reorder_parameters"]["distance_threshold"],
+        effect_size_threshold = config["extended_options"]["effect_size_cutoff"],
+        distance_threshold = config["extended_options"]["distance_threshold"],
+        max_clusters_to_process = config["options"]["num_clusters"] * 1.5 # process 1.5x the number of clusters to select from
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     conda:
@@ -217,7 +219,8 @@ rule reorder_clusters:
     shell:"""
         Rscript --vanilla {params.script} --input_anchor_clusters {input.clusters} \
         --splash_stats {input.splash_results} --output {output} --temp_dir {params.tmp_dir} \
-        --num_cores {threads}
+        --effect_size_cutoff {params.effect_size_threshold} --distance_threshold {params.distance_threshold} \
+        --max_clusters_to_process {params.max_clusters_to_process} --num_cores {threads}
     """
 
 
@@ -250,12 +253,12 @@ rule prepare_sequences:
     params:
         script = lambda wildcards: (
             Path(config["scripts"]["prepare_sequences"])
-            if "SC10X" not in wildcards.dataset
+            if ("SC10X" not in wildcards.dataset or config["options"]["seqs_from_raw_data"] == True)
             else Path(config["scripts"]["prepare_sequences_single_cell"])
         ),
         input_samples = lambda wildcards: (
             f"--satc_files {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'result_satc')}"
-            if "SC10X" in wildcards.dataset
+            if ("SC10X" in wildcards.dataset or config["options"]["seqs_from_raw_data"] == False)
             else f"--sample_sheet {Path(dataset_table.loc[wildcards.dataset, 'SPLASH_results'], 'sample_sheet.txt')}"
         ),
         output_prefix = lambda wildcards: Path(
@@ -359,14 +362,15 @@ rule prepare_data_for_prediction_top_variance:
         script = Path(config["scripts"]["format_embeddings_variance"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
-        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
+        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
+        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["glmnet"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
-        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 100 {params.normalized_flag}
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} {params.normalized_flag}
     """
 
 
@@ -382,15 +386,15 @@ rule prepare_data_for_umap_top_variance:
         script = Path(config["scripts"]["format_embeddings_variance"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_umap_embeddings", wildcards.normalize),
-        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
-    threads: 32
+        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
+        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["umap"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
-        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep 1 {params.normalized_flag}
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} {params.normalized_flag}
     """
 
 
@@ -939,7 +943,7 @@ rule plot_embeddings_umap:
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = config["scripts"]["plot_embeddings_umap"],
-        num_PCs = 10
+        num_PCs = config["extended_options"]["num_PCs_umap"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.pdf")
     conda:

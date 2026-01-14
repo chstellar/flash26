@@ -5,7 +5,7 @@ splash_bin: /oak/stanford/groups/horence/dcotter1/splash-2.11.1/
 
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
-lookup_table_for_arifact_filtering: resources/lookup_tables/mini_artifact_lookup.slt
+lookup_table_for_artifact_filtering: resources/lookup_tables/mini_artifact_lookup.slt
 
 # entrez email
 entrez_email: "" # YOUR_EMAIL
@@ -13,18 +13,40 @@ entrez_email: "" # YOUR_EMAIL
 # blast database path (if using local databases)
 blast_db_path: "" # provide with path to local blast databases if available
 
-# path to directory with genomes
-genomes_dir: "" # provide with path to genomes downloaded from 
-
 # set paths to conda env definitions
 envs:
   default_r: envs/default-R.yaml
   biopython_env: envs/biopython_env.yaml
   biopython_env_r: envs/biopython_env_r.yaml
   adelie_env: envs/adelie_env.yaml
-  
+
+# paths to singularity containers
 containers:
   hyena_embedder: containers/hyena_embedder.sif
+
+# boolean and paramater options
+options:
+  seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
+  generate_plots: false # set to true to generate plots after model training
+  num_clusters: 20000 # number of clusters to use for clustering anchors
+  filters: ["filter1"] # define which anchor selection filters to use
+  cluster_types: ["shiftDist-levFilter", "masked-nucleotide-clustered"] # define which clustering methods to use
+  models: ["hyena"] # currently only 'hyena' is supported
+  normalize_embeddings: ['normalized', 'unnormalized'] # define whether to use normalized or unnormalized embeddings, this will do both
+  train_proportion: 0.8 # proportion of samples to use for training GLMnet models
+  anchor_length: 27 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
+  target_length: 27 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
+
+# you should not need to change anything below this line but you can alter them if needed
+extended_options:
+  num_anchors_to_select: 3000000 # number of anchors to select from each dataset for clustering
+  effect_size_cutoff: 0.6 # this is the cutoff for selecting an anchor from the SPLASH results
+  distance_threshold: 5 # distance threshold for filtering anchors after clustering
+  num_embedding_features_to_keep:
+    glmnet: 100 # number of top variance embedding features to keep for GLMnet
+    umap: 1 # number of top variance embedding features to keep for UMAP
+  num_PCs_umap: 10 # number of principal components to use for UMAP plotting
+
 
 # define all scripts and parameters used in the pipeline
 scripts:
@@ -43,8 +65,6 @@ scripts:
     masked-aa-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     masked-nucleotide-clustered: "src/clustering/filter_clusters_by_distance.R --distance_metric lev"
     noCluster: "src/clustering/filter_clusters_by_distance.R --distance_metric noCluster" # used for short anchors
-  reorder_parameters:
-    distance_threshold: 5 # this is the distance threshold for filtering anchors
   match_kmers_to_clusters: src/process_seqs/id_kmers_per_cluster.R
   prepare_sequences: src/process_seqs/process_fastqs_for_embedding_and_ohe.R
   prepare_sequences_single_cell: src/process_seqs/process_splash_data_for_embedding.R

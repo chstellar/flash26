@@ -18,6 +18,8 @@ suppressPackageStartupMessages(library(furrr))
 option_list <- list(
   make_option(c("-i", "--input_anchor_clusters"), "Input anchor clusters", type="character"),
   make_option(c("-s", "--splash_stats"), "SPLASH stats file", type="character"),
+  make_option(c("--effect_size_cutoff"), "Effect size cutoff for filtering anchors from the SPLASH stats file",
+              type="double", default=0.5),
   make_option(c("-o", "--output"), "Output file", type="character"),
   make_option(c("--temp_dir"), "Temporary directory to store intermediate files", 
               type="character"),
@@ -26,7 +28,9 @@ option_list <- list(
   make_option(c("--num_cores"), "Number of cores to use for parallel processing"
               , type="integer", default=1),
   make_option(c("--distance_threshold"), "Distance threshold for filtering anchors",
-              type="integer", default=5)
+              type="integer", default=5),
+  make_option(c("--max_clusters_to_process"), "Maximum number of clusters to process",
+              type="integer", default=100000)
 )
 
 # parse command line arguments
@@ -80,7 +84,7 @@ headers <- fread(opt$splash_stats, nrows = 1, header=T)
 effect_size_bin_col <- grep("effect_size_bin", names(headers))
 
 # load the input file using awk to filter out rows with effect size < 0.7
-EFFECT_SIZE_CUTOFF = 0.6
+EFFECT_SIZE_CUTOFF = opt$effect_size_cutoff
 load_cmd <- paste0("cat ", opt$splash_stats, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF, ") print $0}'")
 if (grepl(".gz$", opt$input)) {
   load_cmd = paste0("z", load_cmd)
@@ -179,14 +183,14 @@ cat("Using the ", opt$distance_metric, " distance metric\n")
 
 # only apply the distance filter to the first 100000 clusters
 # this is to speed up the process
-max_anchor_clusters <- 100000
+max_anchor_clusters <- opt$max_clusters_to_process
 max_anchor_clusters <- min(max_anchor_clusters, length(all_anchor_sets)) # make sure we don't go over the number of clusters
 all_anchor_sets <- all_anchor_sets[1:max_anchor_clusters]
 representative_anchors <- representative_anchors[1:max_anchor_clusters]
 
 
 filtered_anchor_sets <- future_map2(all_anchor_sets, representative_anchors, 
-                                    \(x, y) distance_filter(x, y, opt$distance_metric, 
+                                    \(x, y) distance_filter(x, y, distance_metric=opt$distance_metric, 
                                                             distance_threshold=opt$distance_threshold))
 
 # combine the filtered anchor sets into a single df
