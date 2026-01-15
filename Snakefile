@@ -960,7 +960,7 @@ rule plot_embeddings_umap:
         script = config["scripts"]["plot_embeddings_umap"],
         num_PCs = config["extended_options"]["num_PCs_umap"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.pdf")
     conda:
         config["envs"]["default_r"]
     shell:"""
