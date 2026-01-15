@@ -36,6 +36,7 @@ KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps 
 MODELS = config["options"]["models"]
 NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
+TARGET_RANK = config["options"]["target_rank"] # this is the rank of the target to use for prediction (1 = top target, 2 = second target, etc.)
 
 # whether to generate plots or to stop at the output of the prediction task
 GENERATE_PLOTS = config["options"]["generate_plots"]
@@ -67,12 +68,13 @@ rule all_embeddings:
     """
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
                model=MODELS,
                num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE,
@@ -108,11 +110,12 @@ rule all_ohe:
     """
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", 
-                    "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
+                    "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
                num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                train_proportion=TRAIN_PROPORTION,
@@ -126,12 +129,13 @@ rule all_umap:
     """
     input: 
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", 
-                    "{dataset}_{model}_umap_results_top{num_clusters}_k{kmer_width}_s{kmer_step}.pdf"),
+                    "{dataset}_{model}_umap_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.pdf"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
                model=MODELS,
                num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
                normalize=NORMALIZE)
@@ -264,28 +268,31 @@ rule prepare_sequences:
         output_prefix = lambda wildcards: Path(
             TEMP_DIR,
             f"{wildcards.dataset}",
-            f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"
+            f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"
         ),
         tmp_dir = lambda wildcards: Path(
             TEMP_DIR,
             wildcards.dataset,
             wildcards.select_type,
             wildcards.cluster_type,
+            "target" + wildcards.target_rank,
             wildcards.num_clusters + "-clusters"
         ),
         single_cell = lambda wildcards: (
             "--single_cell" if "SC10X" in wildcards.dataset else ""
-        )
+        ),
+        target_rank = lambda wildcards: wildcards.target_rank
     output:
-        fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
-        tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
+        fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
+        tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --anchor_file {input.anchor_file} \
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         {params.input_samples} --output_prefix {params.output_prefix} \
-        --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell}
+        --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell} \
+        --target_rank {params.target_rank}
     """
 
 
@@ -296,15 +303,15 @@ rule decompose_kmers:
     for each sample
     """
     input:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["decompose_kmers"]),
-        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}"),
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
         kmer_width = lambda wildcards: wildcards.kmer_width,
         kmer_step = lambda wildcards: wildcards.kmer_step
     output:
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
-        order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
@@ -319,12 +326,12 @@ rule match_kmers_to_clusters:
     their component kmers
     """
     input:
-        order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
-        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
+        order = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
+        unique_kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta")
     params:
         script = Path(config["scripts"]["match_kmers_to_clusters"])
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv")
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -338,13 +345,13 @@ rule embed_kmers_hyena:
     TODO: Make this rule replaceable with other embedding models in the future
     """
     input:
-        kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
+        kmers = Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_unique_kmers.fasta"),
         singularity_image = config["containers"]["hyena_embedder"]
     params:
         wrapper_script = config["scripts"]["embed_kmers_hyena"],
         python_embedder = config["scripts"]["hyena_kmer_embedder"]
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_hyena-embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv")
     shell:"""
         bash {params.wrapper_script} {params.python_embedder} {input.singularity_image} {input.kmers} {output}
     """
@@ -356,16 +363,16 @@ rule prepare_data_for_prediction_top_variance:
     and then saves the resulting data frame as a feather object to be used in the glmnet model.
     """
     input:
-        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv"),
-        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
+        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
     params:
         script = Path(config["scripts"]["format_embeddings_variance"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
         num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["glmnet"]
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -380,16 +387,16 @@ rule prepare_data_for_umap_top_variance:
     and then saves the resulting data frame as a feather object to be used in the glmnet model.
     """
     input:
-        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv"),
-        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
+        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
     params:
         script = Path(config["scripts"]["format_embeddings_variance"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_umap_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
         num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["umap"]
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -403,15 +410,15 @@ rule run_adelie:
     This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
     """
     input:
-        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
         min_samples = config["extended_options"]["min_samples_adelie"]
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
     conda:
         config["envs"]["adelie_env"]
     shell:"""
@@ -424,13 +431,13 @@ rule run_adelie:
 
 rule prepare_data_for_prediction_ohe:
     input:
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["format_sequences_ohe"]),
         kmer_width = lambda wildcards: wildcards.kmer_width,
         kmer_step = lambda wildcards: wildcards.kmer_step
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -440,15 +447,15 @@ rule prepare_data_for_prediction_ohe:
 
 rule run_adelie_ohe:
     input:
-        features = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather"),
+        features = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.feather"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
         min_samples = config["extended_options"]["min_samples_adelie"]
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
     conda:
         config["envs"]["adelie_env"]
     shell:"""
@@ -537,14 +544,14 @@ rule prepare_data_for_prediction_genomes:
     input:
         embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv"),
         ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
-        original_embeddings_feather = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        original_embeddings_feather = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     params:
         script = Path(config["scripts"]["format_embeddings_genomes"]),
-        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", 
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters",
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -559,9 +566,9 @@ rule run_adelie_genomes:
     and run the glmnet script
     """
     input:
-        train_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        train_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         train_metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        test_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        test_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         test_metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "genome_metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_genomes_script"]),
@@ -588,14 +595,14 @@ rule annotate_clusters:
     Currently, this lookup table includes annotations for antibiotic resistance genes
     """
     input:
-        cluster_seqs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        cluster_seqs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         lookup_table = config["lookup_table_for_annotation"]
     params:
         script = config["scripts"]["annotate_clusters"],
-        temp_dir = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}"),
+        temp_dir = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.num_clusters}-clusters", f"target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
         splash_bin = config["splash_bin"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}_annotated.tsv")
     conda:
         config["envs"]["biopython_env"]
     shell:"""
@@ -609,13 +616,13 @@ rule merge_annotations:
     Merge the annotations for each cluster onto the non-zero coefficients file
     """
     input:
-        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
     output:
-        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -628,17 +635,17 @@ rule run_blast_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -651,16 +658,16 @@ rule run_blastp_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "blastp"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, wildcards.normalize, wildcards.predictionTask, "split_fasta_blastp"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "blastp"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "split_fasta_blastp"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -673,12 +680,12 @@ rule merge_blast_results:
     Merge the blast results with the annotated sequences
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -691,12 +698,12 @@ rule merge_blastp_results:
     Merge the blast results with the annotated sequences
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -709,13 +716,13 @@ rule merge_annotations_OHE:
     Merge the annotations for each cluster onto the non-zero coefficients file for OHE features
     """
     input:
-        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
     output:
-        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        coefs = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv"),
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -728,17 +735,17 @@ rule run_blast_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database for OHE features
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -751,16 +758,16 @@ rule run_blastp_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "blastp"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, wildcards.predictionTask, "split_fasta_blastp"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "blastp"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "split_fasta_blastp"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -773,12 +780,12 @@ rule merge_blast_results_OHE:
     Merge the blast results with the annotated sequences for OHE features
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -791,12 +798,12 @@ rule merge_blastp_results_OHE:
     Merge the blast results with the annotated sequences for OHE features
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -809,7 +816,7 @@ rule merge_annotations_genomes:
     Merge the annotations for each cluster onto the non-zero coefficients file
     """
     input:
-        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}_annotated.tsv"),
+        annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target1_k{kmer_width}_s{kmer_step}_annotated.tsv"),
         coefficients = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
@@ -830,16 +837,16 @@ rule plot_blast_features:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
-        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     params:
         script = config["scripts"]["plot_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     conda:
         config["envs"]["default_r"]
     resources:
@@ -860,16 +867,16 @@ rule plot_blast_heatmaps:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
-        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     params:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -888,16 +895,16 @@ rule plot_blast_features_OHE:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
-        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.feather")
     params:
         script = config["scripts"]["plot_blast_results"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     conda:
         config["envs"]["default_r"]
     resources:
@@ -918,16 +925,16 @@ rule plot_blast_heatmaps_OHE:
     Merge the blast results with the annotated sequences
     """
     input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
-        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_k{kmer_width}_s{kmer_step}.tsv"),
+        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"), 
+        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"), 
+        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
+        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.feather")
+        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_ohe_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.feather")
     params:
         script = config["scripts"]["plot_blast_heatmaps"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_heatmaps.pdf")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -947,13 +954,13 @@ rule plot_embeddings_umap:
     This rule is used to visualize the embeddings of the clusters.
     """
     input:
-        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = config["scripts"]["plot_embeddings_umap"],
         num_PCs = config["extended_options"]["num_PCs_umap"]
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_embeddings_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.pdf")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_umap_embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.pdf")
     conda:
         config["envs"]["default_r"]
     shell:"""
