@@ -112,14 +112,16 @@ anchor_clusters <- fread(opt$cluster_file,
 
 # list all of the .satc files in the result_satc folder
 satc_files <- list.files(opt$satc_files,
-  pattern = "bin\\[0-9]+.satc$", full.names = TRUE
+  pattern = "bin\\d+.satc", full.names = TRUE
 )
+
 satc_files <- data.frame(satc_file = satc_files) %>%
   mutate(satc_dump = gsub(
     ".satc",
     ".satc.dump",
-    file.path(opt$temp_dir, "dumped", basename(satc_file))
-  ))
+    file.path(opt$temp_dir, "dumped", basename(satc_file))))
+
+# create temp dir for dumped satc files
 system(paste("mkdir -p", file.path(opt$temp_dir, "dumped")))
 
 # declare a satc file for the output of all the dump files
@@ -157,6 +159,7 @@ system(paste(
   " | grep -v '[ACTG]$' > ",
   file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt")
 ))
+
 system(paste(
   "mv",
   file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt"),
@@ -185,6 +188,7 @@ all_satc_temp_mapping <- file.path(
   opt$temp_dir,
   "all_satc_merged.temp_mapping.txt"
 )
+
 system(
   paste(
     file.path(opt$satc_util_bin, "satc_undump"),
@@ -242,7 +246,7 @@ satc_dt <- satc_dt[order(sample, anchor, -count)]
 
 # add a column for target rank
 satc_dt <- satc_dt %>%
-  group_by(sample_anchor) %>%
+  group_by(sample, anchor) %>%
   mutate(target_rank = row_number()) %>%
   ungroup()
 

@@ -269,13 +269,19 @@ system(
   )
 )
 
+# read in the dumped satc file
+satc_dt <- fread(
+  all_satc_filtered_dump,
+  header = FALSE,
+  col.names = c("sample", "anchor", "target", "count")
+)
 
 # now filter for ONLY the specified target rank
 satc_dt <- satc_dt[order(sample, anchor, -count)]
 
 # add a column for target rank
 satc_dt <- satc_dt %>%
-  group_by(sample_anchor) %>%
+  group_by(sample, anchor) %>%
   mutate(target_rank = row_number()) %>%
   ungroup()
 
