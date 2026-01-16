@@ -90,14 +90,14 @@ max_col_to_read <- max(effect_size_bin_col, nonzero_samples_col) + 1
 # load the input file using awk to filter out rows with effect size < 0.7
 EFFECT_SIZE_CUTOFF = opt$effect_size_cutoff
 if (grepl(".gz$", opt$splash_stats)) {
-  load_cmd <- paste0("zgrep -Ff <(cut -f2 ", opt$input_anchor_clusters, ") ",
+  load_cmd <- paste0("cut -f2 ", opt$input_anchor_clusters, " | zgrep -Ff - ",
                      opt$splash_stats, " | ",
                      "cut -f1-", max_col_to_read, " ",
                      " | awk '{OFS=\"\t\"}{if ($",
                      effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF,
                      ") print $0}'")
 } else {
-  load_cmd <- paste0("grep -Ff <(cut -f2 ", opt$input_anchor_clusters, ") ",
+  load_cmd <- paste0("cut -f2 ", opt$input_anchor_clusters, " | grep -Ff - ",
                      opt$splash_stats, " | ",
                      "cut -f1-", max_col_to_read, " ",
                      " | awk '{OFS=\"\t\"}{if ($",
