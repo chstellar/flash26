@@ -306,7 +306,7 @@ rule decompose_kmers:
         Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta")
     params:
         script = Path(config["scripts"]["decompose_kmers"]),
-        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}"),
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_decomposed_kmers_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target{wildcards.target_rank}"),
         kmer_width = lambda wildcards: wildcards.kmer_width,
         kmer_step = lambda wildcards: wildcards.kmer_step
     output:
