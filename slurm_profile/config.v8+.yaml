@@ -32,7 +32,7 @@ set-threads: # set specific threads for each rule
     choose_anchors: 4
     cluster_anchors: 4
     reorder_clusters: 32
-    prepare_sequences: 16
+    prepare_sequences: 64
     decompose_kmers: 4
     match_kmers_to_clusters: 1
     embed_kmers_hyena: 8
@@ -76,7 +76,8 @@ set-resources: # set specific resources for each rule
         mem_mb: 64000 + ((attempt - 1) * 64000)
         time: "5:00:00"
     prepare_sequences:
-        mem_mb: 128000
+        mem_mb: 256000
+        time: "12:00:00"
     decompose_kmers:
         mem_mb: 32000 + ((attempt - 1) * 32000)
         time: "3:00:00"
@@ -100,7 +101,7 @@ set-resources: # set specific resources for each rule
         mem_mb: 96000 + ((attempt - 1) * 64000)
         time: "3:00:00"
     run_adelie_ohe:
-        mem_mb: 128000 + ((attempt - 1) * 64000)
+        mem_mb: 512000 + ((attempt - 1) * 128000)
         time: "18:00:00"
     process_genome_to_sample_sequences:
         mem_mb: 128000

@@ -74,6 +74,7 @@ opt <- parse_args(OptionParser(option_list = option_list))
 
 # set up parallel processing
 plan(multicore, workers = opt$num_cores)
+setDTthreads(max(1, opt$num_cores - 4))
 
 # check that user specified all files
 if (!file.exists(opt$anchor_file) |
@@ -269,6 +270,7 @@ system(
   )
 )
 
+cat("Reading in dumped SATC_file...\n")
 # read in the dumped satc file
 satc_dt <- fread(
   all_satc_filtered_dump,
@@ -276,23 +278,32 @@ satc_dt <- fread(
   col.names = c("sample", "anchor", "target", "count")
 )
 
+cat("Ordering SATC file by sample, anchor, desc(count)...\n")
 # now filter for ONLY the specified target rank
-satc_dt <- satc_dt[order(sample, anchor, -count)]
+setorder(satc_dt, sample, anchor, -count)
 
 # add a column for target rank
-satc_dt <- satc_dt %>%
-  group_by(sample, anchor) %>%
-  mutate(target_rank = row_number()) %>%
-  ungroup()
+cat("Adding a target rank column to the SATC...\n")
+# instead we use data.table to set the target rank (after the satc_dt has been ordered)
+satc_dt[, target_rank := seq_len(.N), by = .(sample, anchor)]
+
+# satc_dt <- satc_dt %>%
+#   group_by(sample, anchor) %>%
+#   mutate(target_rank = row_number()) %>%
+#   ungroup()
 
 # filter for only the specified target rank
-satc_dt <- satc_dt %>%
-  filter(target_rank == opt$target_rank) %>%
-  ungroup() %>%
-  select(sample, anchor, target, count)
+cat(paste0("Filtering to only include targets of rank ", opt$target_rank, "...\n"))
+satc_dt <- satc_dt[target_rank == opt$target_rank, ]
+satc_dt <- satc_dt[, .(sample, anchor, target, count)]
+
+# satc_dt <- satc_dt %>%
+#   filter(target_rank == opt$target_rank) %>%
+#   ungroup() %>%
+#   select(sample, anchor, target, count)
 
 # get the target length (for filling in Ns later)
-target_length <- unique(nchar(satc_dt$target))
+target_length <- unique(nchar(head(satc_dt$target)))
 
 # grab the top anchor per cluster as a representative anchor
 representative_anchors <- anchor_clusters %>%
@@ -302,7 +313,12 @@ representative_anchors <- anchor_clusters %>%
   pull(anchor)
 
 # read in the satc and pivot it wider
+cat("Creating Wide SATC by merging on clusters and pivoting wider...\n")
 wide_satc <- merge(satc_dt, anchor_clusters, by = "anchor", all.x = TRUE)
+
+# drop any anchors where cluster_id is NA in case there were any extra anchors
+wide_satc <- as.data.table(wide_satc)
+wide_satc <- wide_satc[!is.na(cluster_id), ]
 
 # identify clusters that are not in the satc file
 missing_clusters <- setdiff(anchor_clusters$cluster_id, wide_satc$cluster_id)
