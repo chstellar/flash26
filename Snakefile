@@ -638,8 +638,8 @@ rule run_blast_nonzero_features:
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "split_fasta"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
@@ -661,8 +661,8 @@ rule run_blastp_nonzero_features:
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "blastp"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "split_fasta_blastp"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
@@ -738,8 +738,8 @@ rule run_blast_nonzero_features_OHE:
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "split_fasta"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blast"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
@@ -761,8 +761,8 @@ rule run_blastp_nonzero_features_OHE:
         fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "blastp"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "split_fasta_blastp"),
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp"),
         taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0

@@ -48,13 +48,13 @@ set-threads: # set specific threads for each rule
     run_adelie_genomes: 64
     annotate_clusters: 4
     merge_annotations: 1
-    run_blast_nonzero_features: 16
-    run_blastp_nonzero_features: 16
+    run_blast_nonzero_features: 32
+    run_blastp_nonzero_features: 32
     merge_blast_results: 1
     merge_blastp_results: 1
     merge_annotations_OHE: 1
-    run_blast_nonzero_features_OHE: 16
-    run_blastp_nonzero_features_OHE: 16
+    run_blast_nonzero_features_OHE: 32
+    run_blastp_nonzero_features_OHE: 32
     merge_blast_results_OHE: 1
     merge_blastp_results_OHE: 1
     merge_annotations_genomes: 1
@@ -95,13 +95,13 @@ set-resources: # set specific resources for each rule
         mem_mb: 256000 + ((attempt - 1) * 256000)
         time: "6:00:00"
     run_adelie:
-        mem_mb: 512000 + ((attempt - 1) * 128000)
+        mem_mb: 512000 + ((attempt - 1) * 256000)
         time: "24:00:00"
     prepare_data_for_prediction_ohe:
         mem_mb: 96000 + ((attempt - 1) * 64000)
         time: "3:00:00"
     run_adelie_ohe:
-        mem_mb: 512000 + ((attempt - 1) * 128000)
+        mem_mb: 512000 + ((attempt - 1) * 256000)
         time: "18:00:00"
     process_genome_to_sample_sequences:
         mem_mb: 128000
