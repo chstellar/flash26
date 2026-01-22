@@ -20,19 +20,53 @@ import argparse
 
 np.random.seed(42)
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train a model to predict antibiotic resistance")
+    parser = argparse.ArgumentParser(
+        description="Train a model to predict antibiotic resistance"
+    )
     parser.add_argument("--data", type=str, help="Path to the data file", required=True)
-    parser.add_argument("--metadata", type=str, help="Path to the metadata file", required=True)
-    parser.add_argument("--output_prefix", type=str, help="Prefix for the output files", required=True)
-    parser.add_argument("--min_samples", type=int, default=28, help="Minimum number of samples per category to keep")
-    parser.add_argument("--n_threads", type=int, default=1, help="Number of threads to use for training the model")
-    parser.add_argument("--balanced_test", action="store_true", help="Keep the same number of samples per class in the test set")
-    parser.add_argument("--train_prop", type=float, default=0.5, help="Proportion of the data to use for training. Grabs this proportion from the smallest class and then evenly samples that number from all other classes.")
+    parser.add_argument(
+        "--metadata", type=str, help="Path to the metadata file", required=True
+    )
+    parser.add_argument(
+        "--output_prefix", type=str, help="Prefix for the output files", required=True
+    )
+    parser.add_argument(
+        "--min_samples",
+        type=int,
+        default=28,
+        help="Minimum number of samples per category to keep",
+    )
+    parser.add_argument(
+        "--n_threads",
+        type=int,
+        default=1,
+        help="Number of threads to use for training the model",
+    )
+    parser.add_argument(
+        "--balanced_test",
+        action="store_true",
+        help="Keep the same number of samples per class in the test set",
+    )
+    parser.add_argument(
+        "--train_prop",
+        type=float,
+        default=0.5,
+        help="Proportion of the data to use for training. Grabs this proportion from the smallest class and then evenly samples that number from all other classes.",
+    )
+    parser.add_argument(
+        "--grouped",
+        action="store_true",
+        default=False,
+        help="Use grouped elastic net based on feature name prefixes",
+    )
     return parser.parse_args()
+
 
 def read_feather_data(file_path):
     return feather.read_feather(file_path)
+
 
 def read_metadata(file_path):
     metadata = pd.read_table(file_path)
@@ -42,6 +76,7 @@ def read_metadata(file_path):
     metadata = metadata.apply(lambda x: x.astype(str))
     return metadata
 
+
 def get_metadata_columns(metadata, min_samples=50):
     """
     Returns the columns of the metadata file except for the sample_name column
@@ -50,20 +85,29 @@ def get_metadata_columns(metadata, min_samples=50):
     """
     filtered_metadata = metadata.loc[:, metadata.columns != "sample_name"]
     # filter out columns with less than 2 unique values
-    filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: len(x.unique()) >= 2, axis=0)]
+    filtered_metadata = filtered_metadata.loc[
+        :, filtered_metadata.apply(lambda x: len(x.unique()) >= 2, axis=0)
+    ]
     # only grab columns with two or more categories that have more than min_samples
-    filtered_metadata = filtered_metadata.loc[:, filtered_metadata.apply(lambda x: sum(x.value_counts() > min_samples) > 1, axis=0)]
+    filtered_metadata = filtered_metadata.loc[
+        :,
+        filtered_metadata.apply(
+            lambda x: sum(x.value_counts() > min_samples) > 1, axis=0
+        ),
+    ]
     return filtered_metadata.columns
 
 
-def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_prop=0.5, balanced_test=False):
+def merge_and_split_data(
+    data, metadata, metadata_col, min_samples=50, train_prop=0.5, balanced_test=False
+):
     metadata = metadata[["sample_name", metadata_col]]
-    merged_data = pd.merge(data, metadata, on='sample_name', how='left')
+    merged_data = pd.merge(data, metadata, on="sample_name", how="left")
     merged_data = merged_data.dropna(subset=[metadata_col])
 
     # Check the distribution of classes for this metadata category
     class_counts = merged_data[metadata_col].value_counts()
-    
+
     # Drop any classes with less than min_samples
     class_counts = class_counts[class_counts >= min_samples]
     classes_to_keep = class_counts.index
@@ -73,7 +117,7 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     if len(classes_to_keep) < 2:
         return None, None, None, None, None
     merged_data = merged_data[merged_data[metadata_col].isin(classes_to_keep)]
-    
+
     # Get the minimum number of samples per class
     # keep exactly half of the samples for each class for the training set
     # and keep the rest of the samples for the test set
@@ -81,58 +125,127 @@ def merge_and_split_data(data, metadata, metadata_col, min_samples=50, train_pro
     if pd.isna(num_to_keep):
         return None, None, None, None, None
     num_to_keep = floor(num_to_keep * train_prop)
-    indices_to_keep = merged_data.groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
-    
+    indices_to_keep = (
+        merged_data.groupby(metadata_col)
+        .apply(
+            lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False
+        )
+        .explode()
+    )
+
     if train_prop == 1:
         # Split the data into training and test sets
-        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
-        model_features = X_train.columns
-        y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
-        
-        return np.asfortranarray(X_train), None, y_train, None, model_features
-    
-    # If we want a balanced test set, keep the same number of samples per class in the test set
-    if balanced_test:
-        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
+        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[
+            indices_to_keep
+        ]
         model_features = X_train.columns
         y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
 
-        test_indices = merged_data.drop(indices_to_keep).groupby(metadata_col).apply(lambda x: x.sample(n=num_to_keep, replace=False).index, include_groups=False).explode()
-        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).loc[test_indices]
+        return np.asfortranarray(X_train), None, y_train, None, model_features
+
+    # If we want a balanced test set, keep the same number of samples per class in the test set
+    if balanced_test:
+        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[
+            indices_to_keep
+        ]
+        model_features = X_train.columns
+        y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
+
+        test_indices = (
+            merged_data.drop(indices_to_keep)
+            .groupby(metadata_col)
+            .apply(
+                lambda x: x.sample(n=num_to_keep, replace=False).index,
+                include_groups=False,
+            )
+            .explode()
+        )
+        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).loc[
+            test_indices
+        ]
         y_test = merged_data[metadata_col].loc[test_indices].to_numpy()
     else:
         # Split the data into training and test sets
-        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[indices_to_keep]
+        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[
+            indices_to_keep
+        ]
         model_features = X_train.columns
         y_train = merged_data[metadata_col].loc[indices_to_keep].to_numpy()
-        
-        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(indices_to_keep)
-        y_test = merged_data[metadata_col].drop(indices_to_keep).to_numpy()
-    
-    return np.asfortranarray(X_train), np.asfortranarray(X_test), y_train, y_test, model_features
 
-def train_adelie_model(X_train, y_train,n_threads=1):
+        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(
+            indices_to_keep
+        )
+        y_test = merged_data[metadata_col].drop(indices_to_keep).to_numpy()
+
+    return (
+        np.asfortranarray(X_train),
+        np.asfortranarray(X_test),
+        y_train,
+        y_test,
+        model_features,
+    )
+
+
+def get_group_ids(column_names):
+    """
+    Given a list of the column names for X, return a list of the starting
+    index of each group based on the number following the first underscore.
+    The column names are expected to be in the format [cluster|kmer]_<group>_<feature>_NUM
+
+    Note that the column names must be sorted such that all features from the same group
+    are together. This is the case for the current implementation of feature generation.
+
+    Should return an ndarry of these starting indices.
+    """
+    group_ids = []
+    current_group = None
+    for i, col in enumerate(column_names):
+        parts = col.split("_")
+        if len(parts) < 3:
+            raise ValueError(
+                f"Column name {col} does not have the expected format [cluster|kmer]_<group>_<feature>_NUM"
+            )
+        group = parts[1]
+        if group != current_group:
+            group_ids.append(i)
+            current_group = group
+
+    return np.array(group_ids, dtype=np.int32)
+
+
+def train_adelie_model(X_train, y_train, n_threads=1, group_ids=None):
     oh = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     y_train2 = oh.fit_transform(y_train[:, np.newaxis])
-    
+
     model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial")
-    model.fit(X_train.astype(np.float64), y_train2.astype(np.float64), n_threads=n_threads)
-    
+    if group_ids is not None:
+        model.fit(
+            X_train.astype(np.float64),
+            y_train2.astype(np.float64),
+            n_threads=n_threads,
+            groups=group_ids,
+        )
+    else:
+        model.fit(
+            X_train.astype(np.float64), y_train2.astype(np.float64), n_threads=n_threads
+        )
+
     return model, oh
+
 
 def main():
     args = parse_args()
     output_prefix = args.output_prefix
     output_pdf = output_prefix + "_confusion_matrices.pdf"
     output_coef = output_prefix + "_nonzero_coefficients.tsv"
-    
+
     # Load teh data and metadata
     data = read_feather_data(args.data)
     metadata = read_metadata(args.metadata)
     # Get the metadata columns that have more than 2 unique values
     # and more than 50 samples per category
     metadata_columns = get_metadata_columns(metadata, min_samples=args.min_samples)
-    
+
     all_model_features = None
 
     # Iterate over the metadata columns
@@ -140,20 +253,39 @@ def main():
         for metadata_col in metadata_columns:
             print(f"Processing metadata column: {metadata_col}")
             print()
-            
-            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(data, metadata, metadata_col, min_samples=args.min_samples, balanced_test=args.balanced_test, train_prop=args.train_prop)
+
+            X_train, X_test, y_train, y_test, model_features = merge_and_split_data(
+                data,
+                metadata,
+                metadata_col,
+                min_samples=args.min_samples,
+                balanced_test=args.balanced_test,
+                train_prop=args.train_prop,
+            )
+
+            # set group ids based on feature names if --grouped is supplied
+            if args.grouped:
+                group_ids = get_group_ids(model_features)
+                print(f"Using grouped elastic net with {len(group_ids)} groups.")
+                print(group_ids)  # debug
+            else:
+                group_ids = None
 
             if X_train is None:
-                print(f"Skipping {metadata_col} as there are not enough samples after merging and filtering...")
+                print(
+                    f"Skipping {metadata_col} as there are not enough samples after merging and filtering..."
+                )
                 print()
                 continue
 
             try:
-                model, oh = train_adelie_model(X_train, y_train, n_threads=args.n_threads)
+                model, oh = train_adelie_model(
+                    X_train, y_train, n_threads=args.n_threads, group_ids=group_ids
+                )
             except Exception as e:
                 print(f"Failed to train model for {metadata_col}: {e}")
                 continue
-            
+
             if args.train_prop == 1:
                 cm = []
                 print(f"Not calculating test accuracy as we are not using test data...")
@@ -191,7 +323,6 @@ def main():
                         )
                         continue
 
-            
             yhat_train = model.predict(X_train.astype(np.float64))
             if len(np.unique(yhat_train)) < 2:
                 print(f"Train predictions for {metadata_col} are all of one class.")
@@ -199,11 +330,11 @@ def main():
                 yhat_train_2d = np.zeros((y_train.size, len(oh.categories_[0])))
                 yhat_train_2d[:, unique_class_train] = 1
                 y_train_pred = oh.inverse_transform(yhat_train_2d).flatten()
-                cm_train = confusion_matrix(y_train, y_train_pred, labels=oh.categories_[0])
-                train_accuracy = np.trace(cm_train) / np.sum(cm_train)
-                print(
-                    f"Train confusion matrix for {metadata_col}"
+                cm_train = confusion_matrix(
+                    y_train, y_train_pred, labels=oh.categories_[0]
                 )
+                train_accuracy = np.trace(cm_train) / np.sum(cm_train)
+                print(f"Train confusion matrix for {metadata_col}")
                 print(cm_train)
                 print(f"Train accuracy: {train_accuracy:.2f}\n")
             else:
@@ -214,9 +345,7 @@ def main():
                 try:
                     y_train_pred = oh.inverse_transform(yhat_train).flatten()
                     cm_train = confusion_matrix(y_train, y_train_pred)
-                    print(
-                        f"Train confusion matrix for {metadata_col}"
-                    )
+                    print(f"Train confusion matrix for {metadata_col}")
                     print(cm_train)
                     train_accuracy = np.trace(cm_train) / np.sum(cm_train)
                     print(f"Train accuracy: {train_accuracy:.2f}\n")
@@ -232,8 +361,12 @@ def main():
             coef = model.coef_
             # get the feature names for the nonzero coefficients
             metadata_categories = oh.categories_[0]
-            model_features = [f"{feature}+{category}" for feature in model_features for category in metadata_categories]
-            
+            model_features = [
+                f"{feature}+{category}"
+                for feature in model_features
+                for category in metadata_categories
+            ]
+
             # get the names and values of the nonzero coefficients
             model_features = pd.DataFrame(model_features, columns=["feature"])
             model_features["coefficient"] = coef.toarray().flatten()
@@ -243,11 +376,19 @@ def main():
             model_features["feature"] = model_features["feature"].str.split("+")
             model_features["category"] = model_features["feature"].str[1]
             model_features["feature"] = model_features["feature"].str[0]
-            
+
             # gather the coefficients and categorie names into two columns grouping by feature
-            model_features = model_features.groupby("feature").agg({"coefficient": list, "category": list}).reset_index()
-            model_features["classes"] = model_features["category"].apply(lambda x: "[" + ",".join(map(str, x)) + "]")
-            model_features["coefficients"] = model_features["coefficient"].apply(lambda x: "[" + ",".join(map(str, x)) + "]")
+            model_features = (
+                model_features.groupby("feature")
+                .agg({"coefficient": list, "category": list})
+                .reset_index()
+            )
+            model_features["classes"] = model_features["category"].apply(
+                lambda x: "[" + ",".join(map(str, x)) + "]"
+            )
+            model_features["coefficients"] = model_features["coefficient"].apply(
+                lambda x: "[" + ",".join(map(str, x)) + "]"
+            )
 
             # add column for metadata category
             model_features["metadata_category"] = metadata_col
@@ -271,24 +412,34 @@ def main():
                     accuracy = None
                     specificity = cm_train[0][0] / (cm_train[0][0] + cm_train[0][1])
                     sensitivity = cm_train[1][1] / (cm_train[1][0] + cm_train[1][1])
-            
+
             if args.train_prop < 1:
                 if specificity is None:
                     print(f"Accuracy: {accuracy:.2f}")
                 else:
-                    print(f"Accuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+                    print(
+                        f"Accuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}"
+                    )
             else:
                 if specificity is None:
                     print(f"Train accuracy: {train_accuracy:.2f}")
                 else:
-                    print(f"Train Accuracy: {train_accuracy:.2f}, Train Specificity: {specificity:.2f}, Train Sensitivity: {sensitivity:.2f}")
+                    print(
+                        f"Train Accuracy: {train_accuracy:.2f}, Train Specificity: {specificity:.2f}, Train Sensitivity: {sensitivity:.2f}"
+                    )
 
             # add the accuracy, specificity, and sensitivity to the model features
             model_features["accuracy"] = accuracy if accuracy is not None else "NA"
-            model_features["train_accuracy"] = train_accuracy if train_accuracy is not None else "NA"
-            model_features["specificity"] = specificity if specificity is not None else "NA"
-            model_features["sensitivity"] = sensitivity if sensitivity is not None else "NA"
-            
+            model_features["train_accuracy"] = (
+                train_accuracy if train_accuracy is not None else "NA"
+            )
+            model_features["specificity"] = (
+                specificity if specificity is not None else "NA"
+            )
+            model_features["sensitivity"] = (
+                sensitivity if sensitivity is not None else "NA"
+            )
+
             if args.train_prop < 1:
                 out_cm = [map(str, row) for row in cm]
                 out_cm = "{" + ";".join([",".join(row) for row in out_cm]) + "}"
@@ -296,13 +447,27 @@ def main():
                 out_cm = None
             model_features["confusion_matrix"] = out_cm if out_cm is not None else "NA"
 
-            model_features = model_features[["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "confusion_matrix", "classes", "coefficients"]]
+            model_features = model_features[
+                [
+                    "metadata_category",
+                    "feature",
+                    "accuracy",
+                    "train_accuracy",
+                    "sensitivity",
+                    "specificity",
+                    "confusion_matrix",
+                    "classes",
+                    "coefficients",
+                ]
+            ]
 
             # join with the larger set of model features
             if all_model_features is None:
                 all_model_features = model_features
             else:
-                all_model_features = pd.concat([all_model_features, model_features], axis=0)
+                all_model_features = pd.concat(
+                    [all_model_features, model_features], axis=0
+                )
 
             # plot the confusion matrix and save to the pdf
             # color by relative frequency
@@ -310,15 +475,19 @@ def main():
             # add accuracy, specificity, and sensitivity to the title
             if args.train_prop < 1:
                 plt.figure()
-                plt.imshow(cm / cm.sum(axis=1)[:, np.newaxis], cmap='viridis', vmin=0, vmax=1)
+                plt.imshow(
+                    cm / cm.sum(axis=1)[:, np.newaxis], cmap="viridis", vmin=0, vmax=1
+                )
                 plt.colorbar()
                 for i in range(cm.shape[0]):
                     for j in range(cm.shape[1]):
-                        plt.text(j, i, f"{cm[i, j]}", ha='center', va='center')
+                        plt.text(j, i, f"{cm[i, j]}", ha="center", va="center")
                 if cm.shape[0] > 2:
                     plt.title(f"{metadata_col}\nAccuracy: {accuracy:.2f}")
                 else:
-                    plt.title(f"{metadata_col}\nAccuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+                    plt.title(
+                        f"{metadata_col}\nAccuracy: {accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}"
+                    )
                 plt.xlabel("Predicted")
                 plt.ylabel("True")
                 plt.xticks(range(cm.shape[1]), metadata_categories, rotation=45)
@@ -329,15 +498,22 @@ def main():
                 plt.close()
             else:
                 plt.figure()
-                plt.imshow(cm_train / cm_train.sum(axis=1)[:, np.newaxis], cmap='viridis', vmin=0, vmax=1)
+                plt.imshow(
+                    cm_train / cm_train.sum(axis=1)[:, np.newaxis],
+                    cmap="viridis",
+                    vmin=0,
+                    vmax=1,
+                )
                 plt.colorbar()
                 for i in range(cm_train.shape[0]):
                     for j in range(cm_train.shape[1]):
-                        plt.text(j, i, f"{cm_train[i, j]}", ha='center', va='center')
+                        plt.text(j, i, f"{cm_train[i, j]}", ha="center", va="center")
                 if cm_train.shape[0] > 2:
                     plt.title(f"{metadata_col}\nTrain Accuracy: {train_accuracy:.2f}")
                 else:
-                    plt.title(f"{metadata_col}\nTrain Accuracy: {train_accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}")
+                    plt.title(
+                        f"{metadata_col}\nTrain Accuracy: {train_accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}"
+                    )
                 plt.xlabel("Predicted")
                 plt.ylabel("True")
                 plt.xticks(range(cm_train.shape[1]), metadata_categories, rotation=45)
@@ -346,24 +522,38 @@ def main():
                 plt.tight_layout()
                 pdf.savefig()
                 plt.close()
-                
-            # add a blank line 
+
+            # add a blank line
             print()
 
         if all_model_features is None:
             # Write a blank page to the PDF
             plt.figure()
-            plt.text(0.5, 0.5, "No metadata columns were processed", ha='center', va='center')
-            plt.axis('off')
+            plt.text(
+                0.5, 0.5, "No metadata columns were processed", ha="center", va="center"
+            )
+            plt.axis("off")
             pdf.savefig()
             plt.close()
-        
+
             # Write an empty output TSV with just column names
-            columns = ["metadata_category", "feature", "accuracy", "train_accuracy", "sensitivity", "specificity", "confusion_matrix", "classes", "coefficients"]
+            columns = [
+                "metadata_category",
+                "feature",
+                "accuracy",
+                "train_accuracy",
+                "sensitivity",
+                "specificity",
+                "confusion_matrix",
+                "classes",
+                "coefficients",
+            ]
             pd.DataFrame(columns=columns).to_csv(output_coef, sep="\t", index=False)
         else:
             # output the nonzero coefficients to a tsv file
-            all_model_features.to_csv(output_coef, sep="\t", index=False, float_format="%.4f")
+            all_model_features.to_csv(
+                output_coef, sep="\t", index=False, float_format="%.4f"
+            )
 
 
 if __name__ == "__main__":
