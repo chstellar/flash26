@@ -263,6 +263,14 @@ def main():
                 train_prop=args.train_prop,
             )
 
+             # skip the column if the merge and split function returns None
+            if X_train is None:
+                print(
+                    f"Skipping {metadata_col} as there are not enough samples after merging and filtering..."
+                )
+                print()
+                continue
+
             # set group ids based on feature names if --grouped is supplied
             if args.grouped:
                 group_ids = get_group_ids(model_features)
@@ -270,13 +278,6 @@ def main():
                 print(group_ids)  # debug
             else:
                 group_ids = None
-
-            if X_train is None:
-                print(
-                    f"Skipping {metadata_col} as there are not enough samples after merging and filtering..."
-                )
-                print()
-                continue
 
             try:
                 model, oh = train_adelie_model(
