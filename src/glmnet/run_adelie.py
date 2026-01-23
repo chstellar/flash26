@@ -1,5 +1,5 @@
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score
+# from sklearn.model_selection import train_test_split
+# from sklearn.metrics import r2_score
 from sklearn.metrics import confusion_matrix
 from sklearn.preprocessing import OneHotEncoder
 
@@ -9,13 +9,14 @@ from matplotlib.backends.backend_pdf import PdfPages
 import adelie as ad
 
 import numpy as np
-import scipy.stats as st
+
+# import scipy.stats as st
 
 import pyarrow.feather as feather
 import pandas as pd
 from math import floor
 
-from os.path import basename
+# from os.path import basename
 import argparse
 
 np.random.seed(42)
@@ -53,13 +54,26 @@ def parse_args():
         "--train_prop",
         type=float,
         default=0.5,
-        help="Proportion of the data to use for training. Grabs this proportion from the smallest class and then evenly samples that number from all other classes.",
+        help="Proportion of the data to use for training."
+        "Grabs this proportion from the smallest class and then evenly samples that number from all other classes.",
     )
     parser.add_argument(
         "--grouped",
         action="store_true",
         default=False,
         help="Use grouped elastic net based on feature name prefixes",
+    )
+    parser.add_argument(
+        "--max_iters",
+        type=float,
+        default=1e5,
+        help="Maximum number of iterations for the Adelie model training",
+    )
+    parser.add_argument(
+        "--tol",
+        type=float,
+        default=1e-7,
+        help="Tolerance for the Adelie model training convergence",
     )
     return parser.parse_args()
 
@@ -213,21 +227,33 @@ def get_group_ids(column_names):
     return np.array(group_ids, dtype=np.int32)
 
 
-def train_adelie_model(X_train, y_train, n_threads=1, group_ids=None):
+def train_adelie_model(
+    X_train, y_train, n_threads=1, group_ids=None, max_iters=1e5, tol=1e-7
+):
     oh = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     y_train2 = oh.fit_transform(y_train[:, np.newaxis])
+
+    X_train_wrap = ad.matrix.dense(X_train, method="naive", n_threads=n_threads)
+
+    max_iters = int(max_iters)
 
     model = ad.GroupElasticNet(solver="cv_grpnet", family="multinomial")
     if group_ids is not None:
         model.fit(
-            X_train.astype(np.float64),
+            X_train_wrap,
             y_train2.astype(np.float64),
             n_threads=n_threads,
             groups=group_ids,
+            max_iters=max_iters,
+            tol=tol,
         )
     else:
         model.fit(
-            X_train.astype(np.float64), y_train2.astype(np.float64), n_threads=n_threads
+            X_train.astype(np.float64),
+            y_train2.astype(np.float64),
+            n_threads=n_threads,
+            max_iters=max_iters,
+            tol=tol,
         )
 
     return model, oh
@@ -263,7 +289,7 @@ def main():
                 train_prop=args.train_prop,
             )
 
-             # skip the column if the merge and split function returns None
+            # skip the column if the merge and split function returns None
             if X_train is None:
                 print(
                     f"Skipping {metadata_col} as there are not enough samples after merging and filtering..."
@@ -271,17 +297,30 @@ def main():
                 print()
                 continue
 
+            num_classes = len(np.unique(y_train))
+            print(f"Number of classes for {metadata_col}: {num_classes}")
+
             # set group ids based on feature names if --grouped is supplied
-            if args.grouped:
+            if args.grouped and num_classes < 4:
                 group_ids = get_group_ids(model_features)
                 print(f"Using grouped elastic net with {len(group_ids)} groups.")
                 print(group_ids)  # debug
             else:
+                print("Not using grouped elastic net.")
+                if args.grouped:
+                    print(
+                        f"Skipping grouped elastic net for {metadata_col} as it has {num_classes} classes (must be less than 4)."
+                    )
                 group_ids = None
 
             try:
                 model, oh = train_adelie_model(
-                    X_train, y_train, n_threads=args.n_threads, group_ids=group_ids
+                    X_train,
+                    y_train,
+                    n_threads=args.n_threads,
+                    group_ids=group_ids,
+                    tol=args.tol,
+                    max_iters=args.max_iters,
                 )
             except Exception as e:
                 print(f"Failed to train model for {metadata_col}: {e}")
@@ -289,7 +328,7 @@ def main():
 
             if args.train_prop == 1:
                 cm = []
-                print(f"Not calculating test accuracy as we are not using test data...")
+                print("Not calculating test accuracy as we are not using test data...")
             else:
                 # add a check to make sure there are more than 2 unique values in the predictions
                 # an error can be thrown if inverse_transform gets the wrong number of columns
