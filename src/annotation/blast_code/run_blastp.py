@@ -8,8 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from Bio import SeqIO
 import pandas as pd
 
-SPLIT_THRESH = 100
-SPLIT_EACH = 50
+SPLIT_THRESH = 20  # 100
+SPLIT_EACH = 10  # 50
 
 
 def read_fasta(fasta_file, output_type="dict"):

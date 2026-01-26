@@ -1,12 +1,12 @@
-# process_splash_data_for_embedding.R
+# process_fastqs_for_embedding_and_ohe.R
 # Daniel Cotter
 # 2024-09-13
 
-# This script takes in a path to SPLASH SATC files as well as a list of anchors
-# and a list of anchor clusters. It then dumps the anchors from the SATC files
-# and reformats a sequence for each sample that can be used in downstream
-# analyses. The output is a fasta file and a tsv file with the sample id and
-# the sequence.
+# This script takes in a path to the original SPLASH sample_sheet.txt file
+# in order to map back to the original data as well as as well as a list of anchors
+# and a list of anchor clusters. It then dumps the anchors from the original fasta files
+# and proceeds to transform these new files into a set of downstream files that will
+# be formatted for input into the embedding and OHE steps.
 
 ## import packages --------
 suppressPackageStartupMessages(library(data.table))
@@ -32,8 +32,8 @@ option_list <- list(
       "character"
   ),
   make_option(
-    c("-s", "--satc_files"),
-    "Path to SPLASH SATC file directory",
+    c("--sample_sheet"),
+    "Path to original SPLASH sample_sheet.txt file",
     type = "character"
   ),
   make_option(c("-o", "--output_prefix"), "Output prefix.", type = "character"),
@@ -56,7 +56,7 @@ option_list <- list(
   ),
   make_option(
     c("--single_cell"),
-    help = "merge the first 2 cols of the SATC to create sample barcode pairs",
+    help = "Whether to merge the first two columns of the SATC file to create sample barcode pairs",
     type = "logical",
     default = FALSE,
     action = "store_true"
@@ -74,16 +74,13 @@ opt <- parse_args(OptionParser(option_list = option_list))
 
 # set up parallel processing
 plan(multicore, workers = opt$num_cores)
+setDTthreads(max(1, opt$num_cores - 4))
 
 # check that user specified all files
 if (!file.exists(opt$anchor_file) |
   !file.exists(opt$cluster_file) |
-  is.null(opt$satc_files) |
-  is.null(opt$output_prefix) | !file.exists(opt$id_mapping)) {
-  stop(paste(
-    "Must provide anchor file, cluster file,",
-    "satc files, id mapping file, and output prefix"
-  ))
+  is.null(opt$sample_sheet) | is.null(opt$output_prefix)) {
+  stop("Must provide anchor file, cluster file, satc files, id mapping file, and output prefix")
 }
 
 # create a temporary directory to store intermediate files
@@ -98,58 +95,109 @@ if (!is.null(opt$temp_dir)) {
   system(paste("mkdir -p", temp_dir))
 }
 
+system(paste0("rm ", temp_dir, "/*/*"))
 system(paste0("rm ", temp_dir, "/*"))
-system(paste0("rm ", temp_dir, "/dumped/*"))
 
 # read in the anchor cluster file
 anchor_clusters <- fread(opt$cluster_file,
-  header = FALSE,
+  header = F,
   col.names = c("cluster_id", "anchor")
 ) %>%
   group_by(cluster_id) %>%
   mutate(rank = row_number()) %>%
   ungroup()
 
-# list all of the .satc files in the result_satc folder
-satc_files <- list.files(opt$satc_files,
-  pattern = "bin\\d+.satc", full.names = TRUE
+# create the data frame that is used to process the satc files with fafq filter
+satc_files <- fread(
+  opt$sample_sheet,
+  header = F,
+  col.names = c("sample_id", "fastq_file")
 )
-
-satc_files <- data.frame(satc_file = satc_files) %>%
+satc_files <- satc_files %>% mutate(satc_file = file.path(temp_dir, "satc_files", paste0(sample_id, ".satc")))
+if (!dir.exists(file.path(temp_dir, "satc_files"))) {
+  system(paste("mkdir -p", file.path(temp_dir, "satc_files")))
+}
+# add a new column for the dumped satc files
+satc_files <- satc_files %>%
   mutate(satc_dump = gsub(
     ".satc",
     ".satc.dump",
-    file.path(temp_dir, "dumped", basename(satc_file))))
-
-# create temp dir for dumped satc files
+    file.path(temp_dir, "dumped", basename(satc_file))
+  ))
 system(paste("mkdir -p", file.path(temp_dir, "dumped")))
 
 # declare a satc file for the output of all the dump files
 all_satc_file <- file.path(temp_dir, "all_satc_merged.txt")
 
+# get anchor and target lengths from the name of the output file
+anchor_len <- nchar(readLines(opt$anchor_file, n = 1))
+kmer_len <- str_extract(basename(opt$output_prefix), "(?<=_k)[0-9]+(?=_s\\d+)")
+kmer_len <- as.integer(kmer_len)
+# calculate target length
+target_len <- kmer_len - anchor_len
+
+
+# create the individual satc files for each sample using fafq filter and
+# the provided anchor list
+cat("Creating SATC files using fafq_filter...\n")
+future_walk2(
+  satc_files$fastq_file,
+  satc_files$satc_file,
+  \(x, y) system(
+    paste0(
+      file.path(opt$satc_util_bin, "fafq_filter"),
+      " -d ",
+      opt$anchor_file,
+      " -i ",
+      x,
+      " -o ",
+      y,
+      " -n ",
+      opt$target_rank + 1, # get target_rank +1 targets per anchor
+      " --anchor_len ",
+      anchor_len,
+      " --target_len ",
+      target_len
+    )
+  )
+)
 
 # dump the satc files
 cat("Dumping SATC files...\n")
-future_walk2(satc_files$satc_file, satc_files$satc_dump, function(x, y) {
-  system(
+future_walk2(
+  satc_files$satc_file,
+  satc_files$satc_dump,
+  \(x, y) system(
     paste0(
       file.path(opt$satc_util_bin, "satc_dump"),
       " --anchor_list ",
       opt$anchor_file,
-      " --sample_names ",
-      opt$id_mapping,
       " ",
       x,
       " ",
       y
     )
   )
-})
+)
 
-# merge them into one file
-cat("Merging dumped SATC files...\n")
+# merge all of the dumped satc files into one file
 system(paste("rm", all_satc_file))
-walk(satc_files$satc_dump, \(x) system(paste("cat", x, ">>", all_satc_file)))
+# when merging them into one file keep columns 2-3 and use sample_id as the sample name
+cat("Merging dumped SATC files...\n")
+walk2(
+  satc_files$satc_dump,
+  satc_files$sample_id,
+  \(x, y) system(
+    paste0(
+      "awk 'BEGIN {OFS=\"\\t\"} {print \"",
+      y,
+      "\", $2, $3, $4}' ",
+      x,
+      " >> ",
+      all_satc_file
+    )
+  )
+)
 
 # remove any lines that start or end in [ACTG]
 cat("Removing invalid anchor-target pairs...\n")
@@ -157,38 +205,26 @@ system(paste(
   "grep -v '^[ACTG]{3}' ",
   all_satc_file,
   " | grep -v '[ACTG]$' > ",
-  file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt")
+  file.path(temp_dir, "all_satc_merged_no_anchor.txt")
 ))
-
 system(paste(
   "mv",
-  file.path(opt$temp_dir, "all_satc_merged_no_anchor.txt"),
+  file.path(temp_dir, "all_satc_merged_no_anchor.txt"),
   all_satc_file
 ))
 
-# if single cell, merge the first two columns to create sample barcode pairs
+
 if (opt$single_cell) {
-  cat("Single cell mode: merging first two cols...\n")
-  temp_merged_file <- file.path(opt$temp_dir, "all_satc_SC_merged_columns.txt")
-  system(
-    paste(
-      "awk 'BEGIN {OFS=\"\\t\"} {print $1\"_\"$2, $3, $4, $5}'",
-      all_satc_file,
-      ">",
-      temp_merged_file
-    )
+  # exit since this is not supported for single cell data
+  stop(
+    "Single Cell data is not supported for this script. Snakemake will default to the original process_splash_data_for_embedding.R script."
   )
-  system(paste("mv", temp_merged_file, all_satc_file))
 }
 
 # undump the satc files
+all_satc_undumped <- file.path(temp_dir, "all_satc_merged.undumped.txt")
+all_satc_temp_mapping <- file.path(temp_dir, "all_satc_merged.temp_mapping.txt")
 cat("Undumping merged SATC file...\n")
-all_satc_undumped <- file.path(opt$temp_dir, "all_satc_merged.undumped.txt")
-all_satc_temp_mapping <- file.path(
-  opt$temp_dir,
-  "all_satc_merged.temp_mapping.txt"
-)
-
 system(
   paste(
     file.path(opt$satc_util_bin, "satc_undump"),
@@ -203,9 +239,9 @@ system(
 
 
 # filter the satc files
+all_satc_filtered <- file.path(temp_dir, "all_satc.filtered.txt")
 cat("Filtering merged SATC file...\n")
 cat(paste("Using target rank:", opt$target_rank, "\n"))
-all_satc_filtered <- file.path(opt$temp_dir, "all_satc.filtered.txt")
 system(
   paste(
     file.path(opt$satc_util_bin, "satc_filter"),
@@ -216,14 +252,14 @@ system(
     "-d",
     opt$anchor_file,
     "-n",
-    opt$target_rank + 1 # grab all targets up to the specified rank + 1
+    opt$target_rank + 1 # get target_rank +1 targets per anchor
   )
 )
 
 
 # redump the satc file
-cat("Redumping filtered SATC file for downstream processing...\n")
-all_satc_filtered_dump <- file.path(opt$temp_dir, "all_satc.filtered.dump")
+all_satc_filtered_dump <- file.path(temp_dir, "all_satc.filtered.dump")
+cat("Redumping filtered SATC file...\n")
 system(
   paste(
     file.path(opt$satc_util_bin, "satc_dump"),
@@ -234,6 +270,7 @@ system(
   )
 )
 
+cat("Reading in dumped SATC_file...\n")
 # read in the dumped satc file
 satc_dt <- fread(
   all_satc_filtered_dump,
@@ -241,33 +278,47 @@ satc_dt <- fread(
   col.names = c("sample", "anchor", "target", "count")
 )
 
+cat("Ordering SATC file by sample, anchor, desc(count)...\n")
 # now filter for ONLY the specified target rank
-satc_dt <- satc_dt[order(sample, anchor, -count)]
+setorder(satc_dt, sample, anchor, -count)
 
 # add a column for target rank
-satc_dt <- satc_dt %>%
-  group_by(sample, anchor) %>%
-  mutate(target_rank = row_number()) %>%
-  ungroup()
+cat("Adding a target rank column to the SATC...\n")
+# instead we use data.table to set the target rank (after the satc_dt has been ordered)
+satc_dt[, target_rank := seq_len(.N), by = .(sample, anchor)]
+
+# satc_dt <- satc_dt %>%
+#   group_by(sample, anchor) %>%
+#   mutate(target_rank = row_number()) %>%
+#   ungroup()
 
 # filter for only the specified target rank
-satc_dt <- satc_dt %>%
-  filter(target_rank == opt$target_rank) %>%
-  ungroup() %>%
-  select(sample, anchor, target, count)
+cat(paste0("Filtering to only include targets of rank ", opt$target_rank, "...\n"))
+satc_dt <- satc_dt[target_rank == opt$target_rank, ]
+satc_dt <- satc_dt[, .(sample, anchor, target, count)]
+
+# satc_dt <- satc_dt %>%
+#   filter(target_rank == opt$target_rank) %>%
+#   ungroup() %>%
+#   select(sample, anchor, target, count)
 
 # get the target length (for filling in Ns later)
-target_length <- unique(nchar(satc_dt$target))
+target_length <- unique(nchar(head(satc_dt$target)))
 
 # grab the top anchor per cluster as a representative anchor
 representative_anchors <- anchor_clusters %>%
   group_by(cluster_id) %>%
-  distinct(cluster_id, .keep_all = TRUE) %>%
+  distinct(cluster_id, .keep_all = T) %>%
   ungroup() %>%
   pull(anchor)
 
 # read in the satc and pivot it wider
+cat("Creating Wide SATC by merging on clusters and pivoting wider...\n")
 wide_satc <- merge(satc_dt, anchor_clusters, by = "anchor", all.x = TRUE)
+
+# drop any anchors where cluster_id is NA in case there were any extra anchors
+wide_satc <- as.data.table(wide_satc)
+wide_satc <- wide_satc[!is.na(cluster_id), ]
 
 # identify clusters that are not in the satc file
 missing_clusters <- setdiff(anchor_clusters$cluster_id, wide_satc$cluster_id)
@@ -300,13 +351,11 @@ wide_satc <- as.data.frame(wide_satc)
 # add the representative anchors to the wide satc
 wide_satc <- cbind(wide_satc[1], map2_df(
   wide_satc[, 2:ncol(wide_satc)],
-  seq_along(representative_anchors),
-  function(x, y) {
-    ifelse(is.na(x), str_c(
-      representative_anchors[y], strrep("N", target_length),
-      sep = ""
-    ), x)
-  }
+  1:length(representative_anchors),
+  \(x, y) ifelse(is.na(x), str_c(
+    representative_anchors[y], strrep("N", target_length),
+    sep = ""
+  ), x)
 ))
 wide_satc <- wide_satc %>% ungroup()
 

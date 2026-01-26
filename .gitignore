@@ -11,3 +11,6 @@ tmp/*
 splash-*/
 benchmarks
 benchmarks/*
+.Rproj.user
+*.Rhistory
+*.Rproj

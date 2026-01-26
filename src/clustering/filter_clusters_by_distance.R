@@ -18,6 +18,8 @@ suppressPackageStartupMessages(library(furrr))
 option_list <- list(
   make_option(c("-i", "--input_anchor_clusters"), "Input anchor clusters", type="character"),
   make_option(c("-s", "--splash_stats"), "SPLASH stats file", type="character"),
+  make_option(c("--effect_size_cutoff"), "Effect size cutoff for filtering anchors from the SPLASH stats file",
+              type="double", default=0.5),
   make_option(c("-o", "--output"), "Output file", type="character"),
   make_option(c("--temp_dir"), "Temporary directory to store intermediate files", 
               type="character"),
@@ -26,7 +28,9 @@ option_list <- list(
   make_option(c("--num_cores"), "Number of cores to use for parallel processing"
               , type="integer", default=1),
   make_option(c("--distance_threshold"), "Distance threshold for filtering anchors",
-              type="integer", default=5)
+              type="integer", default=5),
+  make_option(c("--max_clusters_to_process"), "Maximum number of clusters to process",
+              type="integer", default=100000)
 )
 
 # parse command line arguments
@@ -38,6 +42,7 @@ if (!file.exists(opt$input_anchor_clusters) | !file.exists(opt$splash_stats) | i
 }
 
 # set up parallel processing
+# multisession works much faster than multicore for this step
 plan(multisession, workers = opt$num_cores)
 
 # create a temporary directory to store intermediate files
@@ -47,7 +52,7 @@ if (!is.null(opt$temp_dir)) {
                      paste0(opt$temp_dir, "/"))
   system(paste("mkdir -p", temp_dir))
 } else {
-  temp_dir <- file.path(dirname(opt$output_prefix), "tmp/")
+  temp_dir <- file.path(dirname(opt$output), "tmp/")
   system(paste("mkdir -p", temp_dir))
 }
 
@@ -68,30 +73,48 @@ cat("###################################################################\n\n")
 
 # read in the anchor cluster file
 cat("Reading in the anchor clusters file\n")
-anchor_clusters <- fread(opt$input_anchor_clusters, 
-                    header = F, col.names = c("cluster_id", "anchor"))
+anchor_clusters <- fread(opt$input_anchor_clusters,
+                         header = FALSE,
+                         col.names = c("cluster_id", "anchor"))
 
 
 # read in the splash stats file (grepping for the anchors in the anchor file)
 cat("Reading in the splash stats file\n")
 ## load the data
 # read in the headers of the input file to identify the effect_size_bin column
-headers <- fread(opt$splash_stats, nrows = 1, header=T)
+headers <- fread(opt$splash_stats, nrows = 1, header = TRUE)
 effect_size_bin_col <- grep("effect_size_bin", names(headers))
+nonzero_samples_col <- grep("number_nonzero_samples", names(headers))
+max_col_to_read <- max(effect_size_bin_col, nonzero_samples_col) + 1
 
 # load the input file using awk to filter out rows with effect size < 0.7
-EFFECT_SIZE_CUTOFF = 0.6
-load_cmd <- paste0("cat ", opt$splash_stats, " | awk '{OFS=\"\t\"}{if ($", effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF, ") print $0}'")
-if (grepl(".gz$", opt$input)) {
-  load_cmd = paste0("z", load_cmd)
+EFFECT_SIZE_CUTOFF = opt$effect_size_cutoff
+if (grepl(".gz$", opt$splash_stats)) {
+  load_cmd <- paste0("cut -f2 ", opt$input_anchor_clusters, " | zgrep -Ff - ",
+                     opt$splash_stats, " | ",
+                     "cut -f1-", max_col_to_read, " ",
+                     " | awk '{OFS=\"\t\"}{if ($",
+                     effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF,
+                     ") print $0}'")
+} else {
+  load_cmd <- paste0("cut -f2 ", opt$input_anchor_clusters, " | grep -Ff - ",
+                     opt$splash_stats, " | ",
+                     "cut -f1-", max_col_to_read, " ",
+                     " | awk '{OFS=\"\t\"}{if ($",
+                     effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF,
+                     ") print $0}'")
 }
-splash_stats <- fread(cmd=load_cmd, header = T, select = 1:18)
+
+splash_stats <- fread(cmd = load_cmd, header = FALSE,
+                      col.names = names(headers)[1:max_col_to_read])
 splash_stats <- splash_stats %>% filter(anchor %in% anchor_clusters$anchor)
 
 # join the splash stats file with the anchor clusters file
 cat("Joining the splash stats file with the anchor clusters file\n")
 anchor_clusters_with_stats <- anchor_clusters %>%
-  left_join(splash_stats, by = "anchor") %>% select(cluster_id, anchor, effect_size_bin, number_nonzero_samples)
+  left_join(splash_stats, by = "anchor") %>% select(cluster_id, anchor, effect_size_bin, number_nonzero_samples) %>%
+  mutate(effect_size_bin = as.numeric(effect_size_bin),
+         number_nonzero_samples = as.numeric(number_nonzero_samples))
 
 # reorder the cluster ids based on the mean effect size and number of nonzero samples
 cat("Reordering the cluster ids based on the mean effect size and number of nonzero samples\n")
@@ -179,14 +202,14 @@ cat("Using the ", opt$distance_metric, " distance metric\n")
 
 # only apply the distance filter to the first 100000 clusters
 # this is to speed up the process
-max_anchor_clusters <- 100000
+max_anchor_clusters <- opt$max_clusters_to_process
 max_anchor_clusters <- min(max_anchor_clusters, length(all_anchor_sets)) # make sure we don't go over the number of clusters
 all_anchor_sets <- all_anchor_sets[1:max_anchor_clusters]
 representative_anchors <- representative_anchors[1:max_anchor_clusters]
 
 
 filtered_anchor_sets <- future_map2(all_anchor_sets, representative_anchors, 
-                                    \(x, y) distance_filter(x, y, opt$distance_metric, 
+                                    \(x, y) distance_filter(x, y, distance_metric=opt$distance_metric, 
                                                             distance_threshold=opt$distance_threshold))
 
 # combine the filtered anchor sets into a single df
