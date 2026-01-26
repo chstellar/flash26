@@ -304,7 +304,6 @@ def main():
             if args.grouped and num_classes < 4:
                 group_ids = get_group_ids(model_features)
                 print(f"Using grouped elastic net with {len(group_ids)} groups.")
-                print(group_ids)  # debug
             else:
                 print("Not using grouped elastic net.")
                 if args.grouped:
