@@ -119,13 +119,13 @@ satc_files <- data.frame(satc_file = satc_files) %>%
   mutate(satc_dump = gsub(
     ".satc",
     ".satc.dump",
-    file.path(opt$temp_dir, "dumped", basename(satc_file))))
+    file.path(temp_dir, "dumped", basename(satc_file))))
 
 # create temp dir for dumped satc files
-system(paste("mkdir -p", file.path(opt$temp_dir, "dumped")))
+system(paste("mkdir -p", file.path(temp_dir, "dumped")))
 
 # declare a satc file for the output of all the dump files
-all_satc_file <- file.path(opt$temp_dir, "all_satc_merged.txt")
+all_satc_file <- file.path(temp_dir, "all_satc_merged.txt")
 
 
 # dump the satc files
