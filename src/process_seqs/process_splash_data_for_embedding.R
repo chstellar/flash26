@@ -277,7 +277,7 @@ if (!is_empty(missing_clusters)) {
   missing_df <- data.frame(
     sample = unique(head(wide_satc$sample))[1],
     anchor = representative_anchors[missing_clusters],
-    target = strrep("N", nchar(representative_anchors[missing_clusters])),
+    target = strrep("N", target_length),
     count = 0,
     cluster_id = missing_clusters,
     rank = 1
