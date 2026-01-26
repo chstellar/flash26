@@ -53,7 +53,7 @@ There is an example script for running SPLASH in the `resources/utility_scripts`
 1. Column 1 contains the same sample ids as were used to run `SPLASH` and is named `sample_name` (the script will attempt to assign the first column as `sample_name` otherwise)
 2. The other columns contain a simple column name describing the metadata as well as the observations of the metadata.
 
-### 3. Ensure that the paramaters you want to use are specified in the `config.yaml` file. Snakemake will use these to fill out the wildcards in the `Snakefile`
+### 3. Ensure that the parameters you want to use are specified in the `config.yaml` file. Snakemake will use these to fill out the wildcards in the `Snakefile`
 
 The current wildcards are defined as follows:
 
@@ -99,7 +99,8 @@ To enable taxonomic filtering of the blast features, using the `taxid` field in 
 
 ### 4. Update all paths in the config file, `config.yaml`
 
-The `config.yaml` file is also used by the Snakemake workflow to specify the correct locations of all paths and some paramaters.
+The `config.yaml` file is also used by the Snakemake workflow to specify the correct locations of all paths and some parameters.
+
 It is necessary to change the fields below to match your setup and computing environment:
 
 1. Change the `entrez_email` entry if you intend to run the pipeline with blast plots enabled.
@@ -199,7 +200,7 @@ These files are the necessary inputs for the FLASH pipeline. You can then procee
 
 ### Running FLASH
 
-You should not need to modify any of the paramaters in the `config.yaml` unless you change the anchor or target lengths when running SPLASH as mentioned above. If you do change these lengths, ensure that the `anchor_length` and `target_length` variables in the `config.yaml` file are updated accordingly. After confirming that all paths and parameters are correctly set, you can run the FLASH pipeline using Snakemake as described in the previous sections.
+You should not need to modify any of the parameters in the `config.yaml` unless you change the anchor or target lengths when running SPLASH as mentioned above. If you do change these lengths, ensure that the `anchor_length` and `target_length` variables in the `config.yaml` file are updated accordingly. After confirming that all paths and parameters are correctly set, you can run the FLASH pipeline using Snakemake as described in the previous sections.
 
 Note that if you use a very short anchor length, you should also modify the `CLUSTER_TYPES` variable in the `Snakefile` to avoid using clustering methods that rely on longer anchors, such as `shiftDist-levFilter`. This should instead be set to use `noCluster`:
 
