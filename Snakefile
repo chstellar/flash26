@@ -215,7 +215,7 @@ rule reorder_clusters:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type),
         effect_size_threshold = config["extended_options"]["effect_size_cutoff"],
         distance_threshold = config["extended_options"]["distance_threshold"],
-        max_clusters_to_process = config["options"]["num_clusters"] * 1.5 # process 1.5x the number of clusters to select from
+        max_clusters_to_process = int(config["options"]["num_clusters"] * 1.5) # process 1.5x the number of clusters to select from
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_reordered_clusters_{select_type}_{cluster_type}.txt")
     conda:
