@@ -38,9 +38,9 @@ set-threads: # set specific threads for each rule
     embed_kmers_hyena: 8
     prepare_data_for_prediction_top_variance: 32
     prepare_data_for_umap_top_variance: 32
-    run_adelie: 32
+    run_adelie: 64
     prepare_data_for_prediction_ohe: 4
-    run_adelie_ohe: 16
+    run_adelie_ohe: 32
     process_genome_to_sample_sequences: 16
     decompose_kmers_genomes: 4
     embed_kmers_hyena_genomes: 8
@@ -66,7 +66,7 @@ set-threads: # set specific threads for each rule
     plot_embeddings_umap: 16
 set-resources: # set specific resources for each rule
     choose_anchors:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 64000)
         time: "4:00:00"
     cluster_anchors:
     # increase time for larger datasets or more complex clustering
@@ -76,7 +76,7 @@ set-resources: # set specific resources for each rule
         mem_mb: 64000 + ((attempt - 1) * 64000)
         time: "5:00:00"
     prepare_sequences:
-        mem_mb: 256000
+        mem_mb: 256000 + ((attempt - 1) * 256000)
         time: "12:00:00"
     decompose_kmers:
         mem_mb: 32000 + ((attempt - 1) * 32000)
@@ -104,7 +104,7 @@ set-resources: # set specific resources for each rule
         mem_mb: 512000 + ((attempt - 1) * 256000)
         time: "18:00:00"
     process_genome_to_sample_sequences:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 64000)
     decompose_kmers_genomes:
         mem_mb: 16000 + ((attempt - 1) * 16000)
         time: "3:00:00"
@@ -123,40 +123,41 @@ set-resources: # set specific resources for each rule
     merge_annotations:
         mem_mb: 64000 + ((attempt - 1) * 32000)
     run_blast_nonzero_features:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 128000)
         time: "9:00:00"
     run_blastp_nonzero_features:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         time: "12:00:00"
     merge_blast_results:
-        mem_mb: 8000
+        mem_mb: 8000 + ((attempt - 1) * 16000)
     merge_blastp_results:
-        mem_mb: 8000
+        mem_mb: 8000 + ((attempt - 1) * 16000)
     merge_annotations_OHE:
         mem_mb: 32000
     run_blast_nonzero_features_OHE:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 128000)
         time: "9:00:00"
     run_blastp_nonzero_features_OHE:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         time: "9:00:00"
     merge_blast_results_OHE:
-        mem_mb: 8000
+        mem_mb: 8000 + ((attempt - 1) * 16000)
     merge_blastp_results_OHE:
-        mem_mb: 8000
+        mem_mb: 8000 + ((attempt - 1) * 16000)
     merge_annotations_genomes:
         mem_mb: 32000
     plot_blast_features:
-        mem_mb: 128000
+        mem_mb: 256000 + ((attempt - 1) * 128000)
         msa: 1
         time: "4:00:00"
     plot_blast_heatmaps:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 128000)
+        time: "4:00:00"
     plot_blast_features_OHE:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 128000)
         msa: 1
     plot_blast_heatmaps_OHE:
-        mem_mb: 128000
+        mem_mb: 128000 + ((attempt - 1) * 128000)
     prepare_data_for_umap_top_variance:
         mem_mb: 256000 + ((attempt - 1) * 256000)
         time: "6:00:00"

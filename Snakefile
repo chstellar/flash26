@@ -645,7 +645,9 @@ rule run_blast_nonzero_features:
         temp_dir = config["temp_dir"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -667,7 +669,9 @@ rule run_blastp_nonzero_features:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -680,7 +684,8 @@ rule merge_blast_results:
     Merge the blast results with the annotated sequences
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
@@ -698,7 +703,8 @@ rule merge_blastp_results:
     Merge the blast results with the annotated sequences
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
@@ -745,7 +751,9 @@ rule run_blast_nonzero_features_OHE:
         temp_dir = config["temp_dir"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{num_clusters}", "target" + "{target_rank}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -767,7 +775,8 @@ rule run_blastp_nonzero_features_OHE:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+        Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{num_clusters}", "target" + "{target_rank}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
@@ -780,7 +789,8 @@ rule merge_blast_results_OHE:
     Merge the blast results with the annotated sequences for OHE features
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{num_clusters}", "target" + "{target_rank}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]
@@ -798,7 +808,8 @@ rule merge_blastp_results_OHE:
     Merge the blast results with the annotated sequences for OHE features
     """
     input:
-        blast_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{num_clusters}", "target" + "{target_rank}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_blast_results"]

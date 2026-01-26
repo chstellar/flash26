@@ -249,7 +249,7 @@ def train_adelie_model(
         )
     else:
         model.fit(
-            X_train.astype(np.float64),
+            X_train_wrap,
             y_train2.astype(np.float64),
             n_threads=n_threads,
             max_iters=max_iters,
