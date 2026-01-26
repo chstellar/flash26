@@ -36,7 +36,8 @@ KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps 
 MODELS = config["options"]["models"]
 NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
-TARGET_RANK = config["options"]["target_rank"] # this is the rank of the target to use for prediction (1 = top target, 2 = second target, etc.)
+raw_target_rank = config["options"]["target_rank"] # this is the rank of the target to use for prediction (1 = top target, 2 = second target, etc.)
+TARGET_RANK = raw_target_rank if isinstance(raw_target_rank, (list, tuple)) else [raw_target_rank]
 
 # whether to generate plots or to stop at the output of the prediction task
 GENERATE_PLOTS = config["options"]["generate_plots"]
