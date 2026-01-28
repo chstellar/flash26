@@ -371,7 +371,7 @@ rule prepare_data_for_prediction_top_variance:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
-        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["glmnet"]
+        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["by_variance"]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
@@ -379,6 +379,36 @@ rule prepare_data_for_prediction_top_variance:
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
         --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} {params.normalized_flag}
+    """
+
+
+rule prepare_data_for_prediction_pca:
+    """
+    This rule processes the embeddings to fit into a glmnet model by performing PCA on the embeddings by 
+    samples matrix per cluster and then saves the resulting data frame as a feather object to be used in the glmnet model.
+    The number of PCA components to keep is defined in the config file under "num_embedding_features_to_keep" -> "by_pca"
+    """
+    input: 
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
+        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    params:
+        script = Path(config["scripts"]["format_embeddings_pca"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_pca_embeddings", wildcards.normalize),
+        normalized_flag = lambda wildcards: "--normalized" if wildcards.normalize =="normalized" else "",
+        num_pcs = config["extended_options"]["num_embedding_features_to_keep"]["by_pca"]
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} \
+        --ordering {input.ordering} \
+        --output {output} \
+        --temp_dir {params.tmp_dir} \
+        --num_threads {threads} \
+        --num_pcs {params.num_pcs} \
+        {params.normalized_flag}
     """
 
 
@@ -411,7 +441,12 @@ rule run_adelie:
     This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
     """
     input:
-        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        embeddings = if config["options"]["feature_processing_method"] == "pca":
+            Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        else if config["options"]["feature_processing_method"] == "top_variance":
+            Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        else:
+            Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),

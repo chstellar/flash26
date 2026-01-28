@@ -27,6 +27,7 @@ containers:
 # boolean and paramater options
 options:
   seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
+  feature_processing_method: "pca" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
   generate_plots: false # set to true to generate plots after model training
   num_clusters: 20000 # number of clusters to use for clustering anchors
   filters: ["filter1"] # define which anchor selection filters to use
@@ -44,7 +45,8 @@ extended_options:
   effect_size_cutoff: 0.6 # this is the cutoff for selecting an anchor from the SPLASH results
   distance_threshold: 5 # distance threshold for filtering anchors after clustering
   num_embedding_features_to_keep:
-    glmnet: 100 # number of top variance embedding features to keep for GLMnet
+    by_variance: 100 # number of top variance embedding features to keep for GLMnet
+    by_pca: 5 # number of principal components to keep for GLMnet
     umap: 1 # number of top variance embedding features to keep for UMAP
   num_PCs_umap: 10 # number of principal components to use for UMAP plotting
   min_samples_adelie: 28 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
@@ -76,6 +78,7 @@ scripts:
   embed_kmers_hyena: src/hyena_utils/embed_fasta_H100.sh
   hyena_kmer_embedder: src/hyena_utils/dev_embedder.py
   format_embeddings_variance: src/glmnet/grab_top_embeddings_by_variance.R
+  format_embeddings_pca: src/glmnet/perform_pca_on_embeddings.R
   format_sequences_ohe: src/process_seqs/one_hot_encode_anchor_clusters.R
   adelie: src/glmnet/run_adelie.py
   genome_to_sample_sequences: src/process_genomes/sample_sequences_from_genomes.R

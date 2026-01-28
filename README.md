@@ -55,11 +55,12 @@ There is an example script for running SPLASH in the `resources/utility_scripts`
 
 ### 3. Ensure that the parameters you want to use are specified in the `config.yaml` file. Snakemake will use these to fill out the wildcards in the `Snakefile`
 
-The current wildcards are defined as follows:
+The current wildcards and parameters are defined as follows:
 
-```yaml
+```{yaml}
 options:
   seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
+  feature_processing_method: "pca" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
   generate_plots: false # set to true to generate plots after model training
   num_clusters: 20000 # number of clusters to use for clustering anchors
   filters: ["filter1"] # define which anchor selection filters to use
