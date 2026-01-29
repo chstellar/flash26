@@ -441,12 +441,21 @@ rule run_adelie:
     This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
     """
     input:
-        embeddings = if config["options"]["feature_processing_method"] == "pca":
-            Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
-        else if config["options"]["feature_processing_method"] == "top_variance":
-            Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
-        else:
-            Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        embeddings = lambda wildcards: (
+            Path(
+                TEMP_DIR,
+                "{dataset}",
+                "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather",
+            )
+            if config["options"]["feature_processing_method"] == "pca"
+            else Path(
+                TEMP_DIR,
+                "{dataset}",
+                "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather",
+            )
+            if config["options"]["feature_processing_method"] == "top_variance"
+            else "",
+        ),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),

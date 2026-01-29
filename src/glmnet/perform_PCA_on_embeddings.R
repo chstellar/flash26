@@ -15,6 +15,7 @@ suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(optparse))
 suppressPackageStartupMessages(library(resample))
 suppressPackageStartupMessages(library(furrr))
+suppressPackageStartupMessages(library(RhpcBLASctl)) # for controlling BLAS threads with furrr
 
 
 ## parse arguments --------
@@ -67,9 +68,18 @@ if (!is.null(opt$temp_dir)) {
 }
 
 # define future plans
-setDTthreads(opt$num_threads)
-plan(multicore, workers = opt$num_threads)
+# determine number of futures and number of threads per future to use
+num_threads <- opt$num_threads
+max_futures <- num_threads %/% 4 - 1
+if (max_futures < 1) {
+  max_futures <- 1
+}
+threads_per_future <- ceiling(num_threads / max_futures)
+
+# set the future plan
+plan(multisession, workers = max_futures) # multisession is better for many small tasks
 options(future.globals.maxSize = 8000 * 1024^2)
+RhpcBLASctl::blas_set_num_threads(threads_per_future) # to avoid oversubscribing threads
 
 ## print a summary of the arguments
 cat("\n####################\n")
@@ -128,7 +138,7 @@ join_and_write_clusters <- function(cluster_df, filename, all_embeddings) {
     select(-kmer) %>%
     fwrite(
       file = filename,
-      nThread = 1,
+      nThread = threads_per_future,
       col.names = T
     )
 }
@@ -156,8 +166,7 @@ if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
   future_walk2(
     clusters,
     cluster_files,
-    \(x, y) join_and_write_clusters(x, y, all_embeddings = embeddings),
-    .progress = T
+    \(x, y) join_and_write_clusters(x, y, all_embeddings = embeddings)
   )
 }
 
@@ -173,7 +182,7 @@ calculate_PCA_by_cluster <- function(in_file,
   # grab the cluster number from the file name
   cluster_num <- str_extract(in_file, "cluster_(\\d+).csv", group = 1) %>% as.integer()
   # read in the file and keep the header
-  temp_dt <- fread(in_file, header = T, nThread = 1)
+  temp_dt <- fread(in_file, header = T, nThread = threads_per_future)
   temp_dt <- temp_dt %>% arrange(sample_name)
 
   # get a vector that will be an indicator variable for missing sequences
@@ -232,7 +241,7 @@ calculate_PCA_by_cluster <- function(in_file,
     dplyr::rename(!!paste0("cluster_", cluster_num, "_is_missing") := is_missing)
 
   # return the pcs data table
-  pcs_dt <- pcs_data %>%
+  pcs_dt <- pcs_dt %>%
     arrange(sample_name)
 
   if (cluster_num != 0) {
@@ -245,10 +254,15 @@ calculate_PCA_by_cluster <- function(in_file,
 
 cat("Calculating top PCs per cluster...\n")
 all_pc_dt <- future_map(cluster_files,
-                        function(x) {calculate_PCA_by_cluster(
-                            x, 
-                            normalized = opt$normalized,
-                            num_pcs = opt$num_pcs)}, .progress = T)
+  function(x) {
+    calculate_PCA_by_cluster(
+      x,
+      normalized = opt$normalized,
+      num_pcs = opt$num_pcs
+    )
+  },
+  .progress = T
+)
 
 # bind all the pc data tables together and relocate sample_name to front
 all_pc_dt <- bind_cols(all_pc_dt) %>% relocate(sample_name)
