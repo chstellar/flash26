@@ -67,20 +67,6 @@ if (!is.null(opt$temp_dir)) {
   system(paste("mkdir -p", temp_dir))
 }
 
-# define future plans
-# determine number of futures and number of threads per future to use
-num_threads <- opt$num_threads
-max_futures <- num_threads %/% 4 - 1
-if (max_futures < 1) {
-  max_futures <- 1
-}
-threads_per_future <- ceiling(num_threads / max_futures)
-
-# set the future plan
-plan(multisession, workers = max_futures) # multisession is better for many small tasks
-options(future.globals.maxSize = 8000 * 1024^2)
-RhpcBLASctl::blas_set_num_threads(threads_per_future) # to avoid oversubscribing threads
-
 ## print a summary of the arguments
 cat("\n####################\n")
 cat("Running grab_top_embeddings_by_variance.R with the following arguments:\n")
@@ -89,6 +75,24 @@ cat("Embeddings file: ", opt$embeddings, "\n")
 cat("Output file: ", opt$output, "\n")
 cat("Temporary directory: ", temp_dir, "\n")
 cat("####################\n\n")
+
+# define future plans
+# determine number of futures and number of threads per future to use
+num_threads <- opt$num_threads
+max_futures <- num_threads - 1
+if (max_futures < 1) {
+  max_futures <- 1
+}
+threads_per_future <- 1
+
+# set the future plan
+cat("Setting up parallelization with ", max_futures, " workers and ",
+    threads_per_future,
+    " threads per worker.\n"
+)
+plan(multisession, workers = max_futures) # multisession is better for many small tasks
+options(future.globals.maxSize = 8000 * 1024^2)
+RhpcBLASctl::blas_set_num_threads(threads_per_future) # to avoid oversubscribing threads
 
 ## load data --------
 # load embeddings
