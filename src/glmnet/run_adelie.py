@@ -75,6 +75,12 @@ def parse_args():
         default=1e-7,
         help="Tolerance for the Adelie model training convergence",
     )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=1,
+        help="Alpha parameter for elastic net regularization (0 = ridge, 1 = lasso)",
+    )
     return parser.parse_args()
 
 
@@ -217,7 +223,7 @@ def get_group_ids(column_names):
         parts = col.split("_")
         if len(parts) < 3:
             raise ValueError(
-                f"Column name {col} does not have the expected format [cluster|kmer]_<group>_<feature>_NUM"
+                f"Column name {col} does not have the expected format [cluster|kmer]_<group>_<feature>_..."
             )
         group = parts[1]
         if group != current_group:
@@ -228,7 +234,7 @@ def get_group_ids(column_names):
 
 
 def train_adelie_model(
-    X_train, y_train, n_threads=1, group_ids=None, max_iters=1e5, tol=1e-7
+    X_train, y_train, n_threads=1, group_ids=None, max_iters=1e5, tol=1e-7, alpha=0.5
 ):
     oh = OneHotEncoder(sparse_output=False, handle_unknown="ignore")
     y_train2 = oh.fit_transform(y_train[:, np.newaxis])
@@ -246,6 +252,7 @@ def train_adelie_model(
             groups=group_ids,
             max_iters=max_iters,
             tol=tol,
+            alpha=alpha,
         )
     else:
         model.fit(
@@ -254,6 +261,7 @@ def train_adelie_model(
             n_threads=n_threads,
             max_iters=max_iters,
             tol=tol,
+            alpha=alpha,
         )
 
     return model, oh
@@ -320,6 +328,7 @@ def main():
                     group_ids=group_ids,
                     tol=args.tol,
                     max_iters=args.max_iters,
+                    alpha=args.alpha,
                 )
             except Exception as e:
                 print(f"Failed to train model for {metadata_col}: {e}")

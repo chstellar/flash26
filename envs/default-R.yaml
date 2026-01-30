@@ -15,6 +15,7 @@ dependencies:
   - r-ggthemes
   - r-data.table
   - r-furrr
+  - r-irlba
   - r-rhpcblasctl
   - bioconda::bioconductor-biostrings
   - r-stringdist

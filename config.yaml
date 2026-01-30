@@ -28,12 +28,13 @@ containers:
 options:
   seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
   feature_processing_method: "pca" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
+  grouped_model: true # set to true to use cluster groups for glmnet modeling instead of individual embeddings or PCs
   generate_plots: false # set to true to generate plots after model training
   num_clusters: 20000 # number of clusters to use for clustering anchors
   filters: ["filter1"] # define which anchor selection filters to use
-  cluster_types: ["shiftDist-levFilter", "masked-nucleotide-clustered"] # define which clustering methods to use
+  cluster_types: ["shiftDist-levFilter"] # define which clustering methods to use # see scripts section for available options
   models: ["hyena"] # currently only 'hyena' is supported
-  normalize_embeddings: ['normalized', 'unnormalized'] # define whether to use normalized or unnormalized embeddings, this will do both
+  normalize_embeddings: ['normalized'] # define whether to use normalized or unnormalized embeddings (for pca whether to scale/center prior to pca)
   train_proportion: 0.8 # proportion of samples to use for training GLMnet models
   anchor_length: 27 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
   target_length: 27 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
@@ -50,17 +51,18 @@ extended_options:
     umap: 1 # number of top variance embedding features to keep for UMAP
   num_PCs_umap: 10 # number of principal components to use for UMAP plotting
   min_samples_adelie: 28 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
+  adelie_alpha: 0.5 # alpha parameter for elastic net regularization in adelie (0 = ridge, 1 = lasso)
 
 
 # define all scripts and parameters used in the pipeline
 scripts:
-  anchor_select_script: 
+  anchor_select_script: # filtering options
     filter1: src/anchor_selection/select_anchors_filter1.R # arrange by nonzero samples then head
-  cluster_script: 
+  cluster_script: # clustering options
     shiftDist-levFilter: 'python src/clustering/shiftDist_clustering.py'
     masked-aa-clustered: 'python src/clustering/fuzzy_lookup_clustering_AA.py'
     masked-nucleotide-clustered: 'python src/clustering/fuzzy_lookup_clustering.py'
-    noCluster: 'python src/clustering/noClustering.py' # used for short anchors
+    noCluster: 'python src/clustering/noClustering.py' # used for short anchors primarily
   clustering_params:
     fuzzy_nt_clustering_params: "--m 5 --N 1000 --j 5"
     fuzzy_aa_clustering_params: "--m 3 --N 300 --j 2"
@@ -78,7 +80,7 @@ scripts:
   embed_kmers_hyena: src/hyena_utils/embed_fasta_H100.sh
   hyena_kmer_embedder: src/hyena_utils/dev_embedder.py
   format_embeddings_variance: src/glmnet/grab_top_embeddings_by_variance.R
-  format_embeddings_pca: src/glmnet/perform_pca_on_embeddings.R
+  format_embeddings_pca: src/glmnet/perform_PCA_on_embeddings.R
   format_sequences_ohe: src/process_seqs/one_hot_encode_anchor_clusters.R
   adelie: src/glmnet/run_adelie.py
   genome_to_sample_sequences: src/process_genomes/sample_sequences_from_genomes.R

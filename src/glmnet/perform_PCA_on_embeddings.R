@@ -12,6 +12,7 @@
 ## import packages --------
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(irlba))
 suppressPackageStartupMessages(library(optparse))
 suppressPackageStartupMessages(library(resample))
 suppressPackageStartupMessages(library(furrr))
@@ -51,16 +52,15 @@ opt <- parse_args(OptionParser(option_list = option_list))
 
 # check that user specified all files
 if (!file.exists(opt$embeddings) |
-  !file.exists(opt$ordering) | is.null(opt$output)) {
+    !file.exists(opt$ordering) | is.null(opt$output)) {
   stop("Must provide embeddings, ordering, and output prefix")
 }
 
 # create a temporary directory to store intermediate files
 if (!is.null(opt$temp_dir)) {
   temp_dir <- ifelse(grepl("/$", opt$temp_dir),
-    opt$temp_dir,
-    paste0(opt$temp_dir, "/")
-  )
+                     opt$temp_dir,
+                     paste0(opt$temp_dir, "/"))
   system(paste("mkdir -p", temp_dir))
 } else {
   temp_dir <- file.path(dirname(opt$output), "tmp/")
@@ -79,18 +79,21 @@ cat("####################\n\n")
 # define future plans
 # determine number of futures and number of threads per future to use
 num_threads <- opt$num_threads
-max_futures <- num_threads - 1
+max_futures <- num_threads - 2
 if (max_futures < 1) {
   max_futures <- 1
 }
 threads_per_future <- 1
 
 # set the future plan
-cat("Setting up parallelization with ", max_futures, " workers and ",
-    threads_per_future,
-    " threads per worker.\n"
+cat(
+  "Setting up parallelization with ",
+  max_futures,
+  " workers and ",
+  threads_per_future,
+  " threads per worker.\n"
 )
-plan(multisession, workers = max_futures) # multisession is better for many small tasks
+plan(multisession, workers = max_futures) # multisession seems to be better for many small tasks
 options(future.globals.maxSize = 8000 * 1024^2)
 RhpcBLASctl::blas_set_num_threads(threads_per_future) # to avoid oversubscribing threads
 
@@ -101,7 +104,8 @@ cat("\nLoading embeddings...\n")
 embeddings_temp <- file.path(temp_dir, "raw_embeddings_temp.tsv")
 system(paste("cp", opt$embeddings, embeddings_temp))
 embeddings <- fread(embeddings_temp, header = F)
-colnames(embeddings) <- c("kmer", paste0("embedding_", 1:(ncol(embeddings) - 1)))
+colnames(embeddings) <-
+  c("kmer", paste0("embedding_", 1:(ncol(embeddings) - 1)))
 
 # load the ordering file
 cat("Loading the ordering file...\n")
@@ -135,34 +139,30 @@ clusters <- ordering %>%
 
 # takes in a cluster data frame and the embeddings data frame and write a new
 # file with the embeddings for that cluster joined on
-join_and_write_clusters <- function(cluster_df, filename, all_embeddings) {
-  cluster_df %>%
-    select(-cluster) %>%
-    left_join(all_embeddings, by = "kmer") %>%
-    select(-kmer) %>%
-    fwrite(
-      file = filename,
-      nThread = threads_per_future,
-      col.names = T
-    )
-}
+join_and_write_clusters <-
+  function(cluster_df, filename, all_embeddings) {
+    cluster_df %>%
+      select(-cluster) %>%
+      left_join(all_embeddings, by = "kmer") %>%
+      select(-kmer) %>%
+      fwrite(file = filename,
+             nThread = threads_per_future,
+             col.names = T)
+  }
 
 # create a temporary directory to store per-cluster embeddings
-temp_embeddings_dir <- file.path(temp_dir, "embeddings_per_cluster/")
-system(paste0("rm -r ", temp_embeddings_dir))
-system(paste("mkdir -p", temp_embeddings_dir))
-cluster_files <- paste0(
-  temp_embeddings_dir,
-  "embeddings_cluster_",
-  0:(length(clusters) - 1),
-  ".csv"
-)
+temp_embeddings_dir <-
+  file.path(temp_dir, "embeddings_per_cluster/")
+# system(paste0("rm -r ", temp_embeddings_dir))
+# system(paste("mkdir -p", temp_embeddings_dir))
+cluster_files <- paste0(temp_embeddings_dir,
+                        "embeddings_cluster_",
+                        0:(length(clusters) - 1),
+                        ".csv")
 
 # Cleaning up temp directory
-cat(
-  "Writing all clusters and their embeddings out to file in: ",
-  temp_embeddings_dir
-)
+cat("Writing all clusters and their embeddings out to file in: ",
+    temp_embeddings_dir)
 
 # this condition will not recalculate if the files already exist, however,
 # we delete the temp directory above and so this will always run
@@ -174,7 +174,7 @@ if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
   )
 }
 
-cat("Formatting the embeddings for downstream use...\n")
+cat("\n\nFormatting the embeddings for downstream use...\n")
 
 # For each cluster we have a matrix of samples x embedding dimensions (and a
 # column for sequences and sample name). We want to select which sequence is the most
@@ -183,90 +183,138 @@ cat("Formatting the embeddings for downstream use...\n")
 calculate_PCA_by_cluster <- function(in_file,
                                      normalized = FALSE,
                                      num_pcs = 5) {
+  # set number of threads inside function since futures may not inherit
+  RhpcBLASctl::blas_set_num_threads(threads_per_future)
+  # print(paste0("Processing file: ", in_file, "\n")) # debug
+  # cat(paste0("Using ", threads_per_future, " threads per worker.\n")) # debug
+  
   # grab the cluster number from the file name
-  cluster_num <- str_extract(in_file, "cluster_(\\d+).csv", group = 1) %>% as.integer()
+  cluster_num <-
+    str_extract(in_file, "cluster_(\\d+).csv", group = 1) %>% as.integer()
   # read in the file and keep the header
-  temp_dt <- fread(in_file, header = T, nThread = threads_per_future)
+  temp_dt <-
+    fread(in_file, header = T, nThread = threads_per_future)
   temp_dt <- temp_dt %>% arrange(sample_name)
-
+  
   # get a vector that will be an indicator variable for missing sequences
   temp_dt <- temp_dt %>%
     mutate(is_missing = grepl(pattern = "NNNN", x = temp_dt$seq))
-
+  
   # filter the embedding data table for only samples with non-missing data
   temp_dt_filtered <- temp_dt %>% filter(!is_missing)
-
+  
+  # if there are no samples with non missing data or the number of unique seqs
+  # is less than 2, return a data table where all samples are missing and
+  # the PC columns are all 0
+  if (length(unique(temp_dt_filtered$seq)) < 2) {
+    pcs_dt <- temp_dt %>% select(sample_name, is_missing)
+    PC_cols <- paste0("cluster_", cluster_num, "_PC_", 1:num_pcs)
+    for (col in PC_cols) {
+      pcs_dt[[col]] <- 0
+    }
+    pcs_dt <-
+      pcs_dt %>% select(sample_name, is_missing, all_of(PC_cols)) %>%
+      arrange(sample_name) %>%
+      mutate(is_missing = ifelse(is_missing, 1, 0)) %>%
+      rename(!!paste0("cluster_", cluster_num, "_is_missing") := is_missing)
+    
+    if (cluster_num != 0) {
+      pcs_dt <- pcs_dt %>%
+        select(-sample_name)
+    }
+    
+    return(pcs_dt) # returns the same structure as below but with 0s in the PC columns
+  }
+  
   embedding_matrix <- temp_dt_filtered %>%
     column_to_rownames("sample_name") %>%
     select(starts_with("embedding")) %>%
     as.matrix()
-
-  # normalize if specified
-  if (normalized) {
-    embedding_matrix <- scale(embedding_matrix, center = TRUE, scale = TRUE)
-  }
-
-  # calculate PCA
-  pca_res <- prcomp(embedding_matrix, center = FALSE, scale. = FALSE)
-
-  # grab top N PCs as a data frame with sample_name as a column
-  pcs_dt <- as.data.frame(pca_res$x[, 1:num_pcs]) %>%
-    rownames_to_column("sample_name")
-
+  
+  # wrap in try catch to handle overarching errors and report cluster number
+  pcs_dt <- tryCatch({
+    # use princomp to calculate PCA
+    if (normalized) {
+      embedding_matrix <- scale(embedding_matrix)
+    }
+    
+    sample_names <- rownames(embedding_matrix)
+    pca_res <- irlba::prcomp_irlba(embedding_matrix, n = min(
+      num_pcs,
+      nrow(embedding_matrix) - 1,
+      ncol(embedding_matrix) - 1
+    ))
+    
+    # add the PCs to a truncated data table
+    num_pcs <- min(num_pcs, pca_res$x %>% ncol())
+    pcs_dt <- as.data.frame(pca_res$x[, 1:num_pcs]) %>%
+      mutate(sample_name = sample_names) %>%
+      relocate(sample_name)
+    pcs_dt # return pcs_dt
+  }, error = function(e) {
+    stop(paste0(
+      "Error in calculating PCA for cluster ",
+      cluster_num,
+      ": ",
+      e$message
+    ))
+  })
+  
   # rename the PC columns to indicate cluster
   colnames(pcs_dt) <- ifelse(
     grepl("PC", colnames(pcs_dt)),
-    yes = paste0("cluster_", cluster_num, "_PC_", 1:num_pcs),
+    yes = paste0(
+      "cluster_",
+      cluster_num,
+      "_PC_",
+      str_extract(colnames(pcs_dt), "(\\d+)$", group = 1)
+    ),
     no = colnames(pcs_dt)
   )
-
+  
   # now we need to reinsert rows for missing samples with NA values
   if (any(temp_dt$is_missing)) {
     missing_samples <- temp_dt %>% filter(is_missing) %>%
       # create a column for each PC named the same as above
       select(sample_name, is_missing)
-    PC_cols <- paste0("cluster_", cluster_num, "_PC_", 1:num_pcs)
+    PC_cols <- colnames(pcs_dt)[grepl("_PC_", colnames(pcs_dt))]
     for (col in PC_cols) {
       missing_samples[[col]] <- 0
     }
     missing_samples <- missing_samples %>%
       select(sample_name, all_of(PC_cols), is_missing)
     pcs_dt <- bind_rows(pcs_dt %>%
-      mutate(is_missing = FALSE), missing_samples) %>%
+                          mutate(is_missing = FALSE), missing_samples) %>%
       arrange(sample_name) %>%
       mutate(is_missing = ifelse(is_missing, 1, 0))
   } else {
     pcs_dt <- pcs_dt %>%
       mutate(is_missing = 0)
   }
-
+  
+  # rename is_missing column to indicate cluster
   pcs_dt <- pcs_dt %>%
     relocate(sample_name, is_missing) %>%
     dplyr::rename(!!paste0("cluster_", cluster_num, "_is_missing") := is_missing)
-
+  
   # return the pcs data table
   pcs_dt <- pcs_dt %>%
     arrange(sample_name)
-
+  
   if (cluster_num != 0) {
     pcs_dt <- pcs_dt %>%
       select(-sample_name)
   }
-
+  
   return(pcs_dt)
 }
 
 cat("Calculating top PCs per cluster...\n")
-all_pc_dt <- future_map(cluster_files,
-  function(x) {
-    calculate_PCA_by_cluster(
-      x,
-      normalized = opt$normalized,
-      num_pcs = opt$num_pcs
-    )
-  },
-  .progress = T
-)
+all_pc_dt <- future_map(cluster_files, function(x) {
+  calculate_PCA_by_cluster(x,
+                           normalized = opt$normalized,
+                           num_pcs = opt$num_pcs)
+}, .options = furrr_options(seed = TRUE), .progress = T)
 
 # bind all the pc data tables together and relocate sample_name to front
 all_pc_dt <- bind_cols(all_pc_dt) %>% relocate(sample_name)
@@ -278,3 +326,4 @@ feather::write_feather(all_pc_dt, pc_feather)
 
 # Cleaning up temp directory
 system(paste0("rm -r", temp_embeddings_dir))
+cat("Done!\n")
