@@ -32,8 +32,23 @@ annotations <- fread(opt$annotations, header = TRUE)
 flat_annotations <- annotations %>% 
   mutate(summary = paste0("[[", kmer, ": ", seq, " : ", str_trunc(query,width=200,side="right",), " : ", stats, " ]]")) %>% 
   group_by(cluster) %>% summarise(anno = str_c(summary, sep=";", collapse=";"))
+
 coefficients <- fread(opt$coefficients, header = TRUE)
-coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+
+# because we have run grouped elastic net there will be multiple rows per cluster. We want to keep the one with the highest absolute coefficient
+get_max_coef <- function(coef_string) {
+  coefs <- as.numeric(strsplit(gsub("\\[|\\]", "", coef_string), split = ",", fixed = TRUE)[[1]])
+  return(max(abs(coefs)))
+}
+
+coefficients <- coefficients %>%
+  rowwise() %>%
+  mutate(max_coef = get_max_coef(coefficients)) %>%
+  arrange(metadata_category, cluster, -max_coef) %>%
+  group_by(metadata_category, cluster) %>%
+  dplyr::slice(1) %>%
+  ungroup()
 
 # Merge the data on the 'cluster' column 
 # there may be multiple entries in annotations that match
