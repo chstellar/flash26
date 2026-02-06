@@ -69,13 +69,15 @@ option_list <- list(
   ),
   make_option(
     c("--apply_cluster_filter"),
-    "If supplied, apply either a filter eliminating clusters with fewer " +
-      "than a certain fraction of anchors " +
-      "or a filter eliminating clusters with binary targets " +
-      "(i.e clusters with only 2 unique sequences across all samples). " +
-      "Format should be 'fractionMissing:N' or 'binaryTarget' where N " +
-      "is the fraction (i.e. 0.05) of anchors that are allowed to be missing " +
-      "for it to be retained.",
+    paste(
+      "If supplied, apply either a filter eliminating clusters with fewer",
+      "than a certain fraction of anchors",
+      "or a filter eliminating clusters with binary targets",
+      "(i.e clusters with only 2 unique sequences across all samples).",
+      "Format should be 'fractionMissing:N' or 'binaryTarget' where N",
+      "is the fraction (i.e. 0.05) of anchors that are allowed to be missing",
+      "for it to be retained."
+    ),
     type = "character",
     default = NULL
   )
