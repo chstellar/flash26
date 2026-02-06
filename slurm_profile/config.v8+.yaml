@@ -15,7 +15,8 @@ default-resources:
   - partition="horence,owners,normal"
   - mem_mb=4000
   - slurm_extra=""
-  - msa=1
+resources:
+  - msa=10 # sets msa=10 to limit rules that use the R msa package
 jobs: 2000
 local-cores: 1
 max-jobs-per-second: 500

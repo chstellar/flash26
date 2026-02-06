@@ -282,7 +282,11 @@ rule prepare_sequences:
         single_cell = lambda wildcards: (
             "--single_cell" if "SC10X" in wildcards.dataset else ""
         ),
-        target_rank = lambda wildcards: wildcards.target_rank
+        target_rank = lambda wildcards: wildcards.target_rank,
+        cluster_filter = lambda wildcards: (
+            f"--apply_cluster_filter {config['options']['cluster_filter']['type']}:{config['options']['cluster_filter']['threshold']}"
+            if config["options"]["cluster_filter"]["apply"] else ""
+        )
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
@@ -293,7 +297,7 @@ rule prepare_sequences:
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         {params.input_samples} --output_prefix {params.output_prefix} \
         --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell} \
-        --target_rank {params.target_rank}
+        --target_rank {params.target_rank} {params.cluster_filter}
     """
 
 
@@ -371,14 +375,16 @@ rule prepare_data_for_prediction_top_variance:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
-        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["by_variance"]
+        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["by_variance"],
+        recode_missing_flag = "--recode_missing" if config["options"]["feature_processing"]["recode_missing"] else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
-        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} {params.normalized_flag}
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} \
+        {params.normalized_flag} {params.recode_missing_flag}
     """
 
 
@@ -447,13 +453,13 @@ rule run_adelie:
                 "{dataset}",
                 "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather",
             )
-            if config["options"]["feature_processing_method"] == "pca"
+            if config["options"]["feature_processing"]["method"] == "pca"
             else Path(
                 TEMP_DIR,
                 "{dataset}",
                 "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather",
             )
-            if config["options"]["feature_processing_method"] == "top_variance"
+            if config["options"]["feature_processing"]["method"] == "top_variance"
             else "",
         ),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
