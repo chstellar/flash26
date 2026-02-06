@@ -18,9 +18,9 @@ option_list <- list(
     help = "Path to the output CSV file", metavar = "character"
   ),
   make_option(c("-t", "--translation_table"),
-    type = "character", default = 11,
+    type = "integer", default = 11,
     help = "Path to the translation table file. Default is 11 for bacteria.",
-    metavar = "character"
+    metavar = "integer"
   )
 )
 
@@ -71,7 +71,7 @@ if (str_detect(opt$blast_annotations, "blastp")) {
 
     translated <- pmap_vec(list(x = translated_seqs, y = frames, z = reverse), function(x, y, z) {
       out <- ifelse(!is.na(y),
-        seqinr::c2s(seqinr::translate(seq = x, frame = y, sens = ifelse(z, "R", "F"), numcode = translation_table)),
+        seqinr::c2s(seqinr::translate(seq = x, frame = y, sens = ifelse(z, "R", "F"), numcode = as.integer(translation_table))),
         NA
       )
 

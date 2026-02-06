@@ -766,13 +766,14 @@ rule merge_blastp_results:
                                  "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
-        script = config["scripts"]["merge_blast_results"]
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
-        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
     """
 
 
@@ -871,13 +872,14 @@ rule merge_blastp_results_OHE:
                                  "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
-        script = config["scripts"]["merge_blast_results"]
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
-        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
     """
 
 
