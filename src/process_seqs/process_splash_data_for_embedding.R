@@ -121,6 +121,7 @@ if (!is.null(opt$temp_dir)) {
 }
 
 system(paste0("rm ", temp_dir, "/*"))
+system(paste0("rm ", temp_dir, "/filtered/*"))
 system(paste0("rm ", temp_dir, "/dumped/*"))
 
 # read in the anchor cluster file
@@ -138,11 +139,19 @@ satc_files <- list.files(opt$satc_files,
 )
 
 satc_files <- data.frame(satc_file = satc_files) %>%
+  mutate(satc_filter = gsub(
+    ".satc",
+    "filtered.satc",
+    file.path(temp_dir, "filtered", basename(satc_file))
+  )) %>%
   mutate(satc_dump = gsub(
     ".satc",
     ".satc.dump",
     file.path(temp_dir, "dumped", basename(satc_file))
   ))
+
+# create temp dir for the filtered satc files
+system(paste("mkdir -p", file.path(temp_dir, "filtered")))
 
 # create temp dir for dumped satc files
 system(paste("mkdir -p", file.path(temp_dir, "dumped")))
@@ -150,10 +159,28 @@ system(paste("mkdir -p", file.path(temp_dir, "dumped")))
 # declare a satc file for the output of all the dump files
 all_satc_file <- file.path(temp_dir, "all_satc_merged.txt")
 
+# first filter the satc files to only include anchors in the anchor file and
+# up to 1 plus the specified target rank, then dump them using the satc_util_bin
+cat("Filtering SATC files...\n")
+future_walk2(satc_files$satc_file, satc_files$satc_filter, function(x, y) {
+  system(
+    paste(
+      file.path(opt$satc_util_bin, "satc_filter"),
+      "-i",
+      x,
+      "-o",
+      y,
+      "-d",
+      opt$anchor_file,
+      "-n",
+      opt$target_rank + 1 # grab all targets up to the specified rank + 1
+    )
+  )
+})
 
 # dump the satc files
 cat("Dumping SATC files...\n")
-future_walk2(satc_files$satc_file, satc_files$satc_dump, function(x, y) {
+future_walk2(satc_files$satc_filter, satc_files$satc_dump, function(x, y) {
   system(
     paste0(
       file.path(opt$satc_util_bin, "satc_dump"),

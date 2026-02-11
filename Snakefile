@@ -286,7 +286,8 @@ rule prepare_sequences:
         cluster_filter = lambda wildcards: (
             f"--apply_cluster_filter {config['options']['cluster_filter']['type']}:{config['options']['cluster_filter']['threshold']}"
             if config["options"]["cluster_filter"]["apply"] else ""
-        )
+        ),
+        satc_util_bin = Path(config["splash_bin"]) # satc utils are typically located in the same directory as the main splash binary.
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
@@ -297,7 +298,8 @@ rule prepare_sequences:
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         {params.input_samples} --output_prefix {params.output_prefix} \
         --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell} \
-        --target_rank {params.target_rank} {params.cluster_filter}
+        --target_rank {params.target_rank} {params.cluster_filter} \
+        --satc_util_bin {params.satc_util_bin}
     """
 
 
