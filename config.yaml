@@ -2,6 +2,7 @@
 data_table: dataset_table.csv
 temp_dir: tmp/
 splash_bin: splash-2.11.6/
+satc_util_bin: splash-2.11.6/ # usually the same as the splash_bin
 
 # annotation lookup table
 lookup_table_for_annotation: resources/lookup_tables/amr_split.slt
@@ -26,7 +27,7 @@ containers:
 
 # boolean and paramater options
 options:
-  seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
+  seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results # must set to false if using anchor length shorter than 10 (i.e. 8-mers or 9-mers).
   feature_processing:
    method: "top_variance" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
    recode_missing: false # set to true to recode missing values to 0 after processing the embeddings by either method (i.e. top variance or pca) prior to glmnet modeling. # This circumvents the problem where the NNNN embedding can be a large outlier.

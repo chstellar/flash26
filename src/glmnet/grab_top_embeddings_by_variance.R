@@ -139,6 +139,7 @@ join_and_write_clusters <- function(cluster_df, filename, all_embeddings, recode
     )
   } else {
     fwrite(
+      cluster_df,
       file = filename,
       nThread = 1,
       col.names = T
@@ -228,4 +229,4 @@ cat("Writing top variance embeddings to ", embeddings_feather, "\n")
 feather::write_feather(top_var_dt, embeddings_feather)
 
 # Cleaning up temp directory
-system(paste0("rm -r", temp_embeddings_dir))
+system(paste("rm -r", temp_embeddings_dir))
