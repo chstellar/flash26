@@ -740,6 +740,31 @@ rule run_blastp_nonzero_features:
     """
 
 
+rule run_blastp_swissprot_nonzero_features:
+    """
+    Run a blast search on the significant sequences to find the closest matches in the NCBI database
+    """
+    input:
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+    params:
+        script = lambda wildcards: config["scripts"]["run_blastp"],
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp_swissprot"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp_swissprot"),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
+        protein_db = "swissprot"
+    output:
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_swissprot.tsv")
+    conda:
+        config["envs"]["biopython_env_r"]
+    shell:"""
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path} {params.protein_db}
+    """
+
+
 rule merge_blast_results:
     """
     Merge the blast results with the annotated sequences
@@ -772,6 +797,26 @@ rule merge_blastp_results:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
+    """
+
+
+rule merge_blastp_swissprot_results:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_swissprot.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_swissprot_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""

@@ -68,6 +68,7 @@ def run_blast(
     taxid,
     translation_table,
     local_blast_db="",
+    protein_db="refseq_protein",
 ):
     fmt = "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send sstrand evalue qcovs qframe sgi sacc slen staxids stitle"
     taxid = f"-taxids {str(taxid)}" if taxid != 0 else ""
@@ -98,7 +99,7 @@ def run_blast(
             f"-outfmt '{fmt}'",
             f"-query {f}",
             remote_flag,
-            "-db refseq_protein",
+            f"-db {protein_db}",
             f"-out {blast_out}",
             "-evalue 0.1",
             "-max_target_seqs 10",
@@ -147,6 +148,12 @@ def parse_args():
         type=str,
         default="",
         help="Path to local BLAST database (if any)",
+    ),
+    parser.add_argument(
+        "--protein_db",
+        type=str,
+        default="refseq_protein",
+        help="Which protein database to use for BLAST (default: refseq_protein)",
     )
     return parser.parse_args()
 
@@ -172,4 +179,5 @@ if __name__ == "__main__":
         args.taxid,
         args.translation_table,
         args.local_blast_db,
+        args.protein_db,
     )
