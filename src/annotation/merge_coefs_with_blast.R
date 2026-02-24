@@ -38,7 +38,7 @@ if (is.null(opt$blast_annotations) || is.null(opt$coefficients) || is.null(opt$o
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
-if (str_detect(opt$blast_annotations, "blastp")) {
+if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   annotations <- annotations %>%
     select(query, evalue, identity, qcovs, qframe, stitle, `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
