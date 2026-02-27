@@ -37,9 +37,9 @@ python src/annotation/blast_code/run_blastp.py \
   --blast_folder $BLAST_OUTPUT_FOLDER \
   --max_workers $THREADS \
   --taxid $TAXID \
-  --translation_table $TRANSLATION_TABLE \
-  $LOCAL_BLAST_DB \ # flag will be provided as --local_blast_db "/path/to/db" or will be empty
-  $PROTEIN_DB_FLAG # flag will be provided as --protein_db "/path/to/db" or will be empty
+  --translation_table $TRANSLATION_TABLE ${LOCAL_BLAST_DB} \
+  $PROTEIN_DB_FLAG # flag will be provided as --protein_db "/path/to/db" or will be empty # flag will be provided as --local_blast_db "/path/to/db" or will be empty
+ 
 
 Rscript --vanilla src/annotation/blast_code/merge_blastp_with_GO.R \
   --blast_folder $BLAST_OUTPUT_FOLDER \

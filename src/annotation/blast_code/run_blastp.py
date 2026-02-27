@@ -91,6 +91,12 @@ def run_blast(
         if os.path.exists(blast_out) and os.path.getsize(blast_out) > 0:
             print(f"Skipping {f} as blast output already exists")
             return
+          
+        # use slightly less significant evalue for swissprot
+        if protein_db == "swissprot":
+            evalue = 0.2
+        else:
+            evalue = 0.1
 
         # define the blast command
         params = [
@@ -101,7 +107,7 @@ def run_blast(
             remote_flag,
             f"-db {protein_db}",
             f"-out {blast_out}",
-            "-evalue 0.1",
+            f"-evalue {evalue}",
             "-max_target_seqs 10",
             taxid,
             f"-query_gencode {translation_table}",
