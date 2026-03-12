@@ -29,3 +29,4 @@ dependencies:
   - r-dbscan
   - r-umap
   - r-fossil
+  - r-seqinr
