@@ -49,7 +49,7 @@ if (!file.exists(opt$input_anchor_clusters) | !file.exists(opt$splash_stats) | i
 
 # set up parallel processing
 # multisession works much faster than multicore for this step
-plan(multisession, workers = opt$num_cores)
+plan(multisession, workers = opt$num_cores - 2)
 
 # create a temporary directory to store intermediate files
 if (!is.null(opt$temp_dir)) {
@@ -127,9 +127,9 @@ splash_stats <- splash_stats %>% filter(anchor %in% anchor_clusters$anchor)
 cat("Joining the splash stats file with the anchor clusters file\n")
 anchor_clusters_with_stats <- anchor_clusters %>%
   left_join(splash_stats, by = "anchor") %>%
-  select(cluster_id, anchor, effect_size_bin, number_nonzero_samples) %>%
+  select(cluster_id, anchor, effect_size_cts, number_nonzero_samples) %>%
   mutate(
-    effect_size_bin = as.numeric(effect_size_bin),
+    effect_size_cts = as.numeric(effect_size_cts),
     number_nonzero_samples = as.numeric(number_nonzero_samples)
   )
 
@@ -138,7 +138,7 @@ cat("Reordering the cluster ids based on the mean effect size and number of nonz
 anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   group_by(cluster_id) %>%
   mutate(
-    mean_effect_size = mean(effect_size_bin),
+    mean_effect_size = mean(effect_size_cts),
     mean_nonzero_samples = mean(number_nonzero_samples)
   ) %>%
   mutate(sort_val = mean_effect_size * mean_nonzero_samples) %>%
@@ -147,7 +147,7 @@ anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
   mutate(new_cluster_id = as.numeric(factor(cluster_id, levels = unique(cluster_id)))) %>%
   ungroup() %>%
   group_by(new_cluster_id) %>%
-  arrange(new_cluster_id, desc(effect_size_bin)) %>%
+  arrange(new_cluster_id, desc(effect_size_cts)) %>%
   ungroup() %>%
   select(new_cluster_id, anchor)
 
@@ -193,7 +193,7 @@ distance_filter <- function(anchor_set, representative_anchor, distance_metric, 
   # Check if the distance metric is Levenshtein distance
   if (distance_metric == "lev") {
     # Calculate the Levenshtein distance between each anchor and the representative anchor
-    lev_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "lv", nThread = 1)
+    lev_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "lv", nthread = 1)
     # Create a logical vector indicating which anchors are within the distance threshold
     dist_filter <- as.logical(lev_dist <= distance_threshold)
     # Filter the anchor set based on the distance threshold
@@ -203,7 +203,7 @@ distance_filter <- function(anchor_set, representative_anchor, distance_metric, 
     # Check if the distance metric is Hamming distance
   } else if (distance_metric == "ham") {
     # Calculate the Hamming distance between each anchor and the representative anchor
-    ham_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "hamming", nThread = 1)
+    ham_dist <- stringdist::stringdistmatrix(anchor_set$anchor, representative_anchor, method = "hamming", nthread = 1)
     # Create a logical vector indicating which anchors are within the distance threshold
     dist_filter <- as.logical(ham_dist <= distance_threshold)
     # Filter the anchor set based on the distance threshold
