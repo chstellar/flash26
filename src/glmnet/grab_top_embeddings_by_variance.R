@@ -18,10 +18,12 @@ suppressPackageStartupMessages(library(furrr))
 # define command line arguments
 # define command line arguments
 option_list <- list(
-  make_option(c("-e", "--embeddings"), 
-              help = "Embeddings file", type = "character"),
+  make_option(c("-e", "--embeddings"),
+    help = "Embeddings file", type = "character"
+  ),
   make_option(c("-o", "--ordering"),
-              help = "Ordering file", type = "character"),
+    help = "Ordering file", type = "character"
+  ),
   make_option(
     c("-n", "--num_to_keep"),
     help = "Number of components to keep per cluster",
@@ -29,9 +31,10 @@ option_list <- list(
     default = 10
   ),
   make_option(c("-p", "--output"), help = "Output file.", type = "character"),
-  make_option(c("--temp_dir"), 
-              help = "Temporary directory to store intermediate files", 
-              type = "character"),
+  make_option(c("--temp_dir"),
+    help = "Temporary directory to store intermediate files",
+    type = "character"
+  ),
   make_option(
     c("--num_threads"),
     help = "Number of threads to use for parallel operations",
@@ -43,6 +46,12 @@ option_list <- list(
     help = "Whether to normalize the embeddings before calculating variance",
     action = "store_true",
     default = FALSE
+  ),
+  make_option(
+    c("--recode_missing"),
+    help = "Whether to recode missing values to 0 before processing the embeddings by either method (i.e. top variance or pca) prior to glmnet modeling.",
+    action = "store_true",
+    default = FALSE
   )
 )
 
@@ -51,15 +60,16 @@ opt <- parse_args(OptionParser(option_list = option_list))
 
 # check that user specified all files
 if (!file.exists(opt$embeddings) |
-    !file.exists(opt$ordering) | is.null(opt$output)) {
+  !file.exists(opt$ordering) | is.null(opt$output)) {
   stop("Must provide embeddings, ordering, and output prefix")
 }
 
 # create a temporary directory to store intermediate files
 if (!is.null(opt$temp_dir)) {
   temp_dir <- ifelse(grepl("/$", opt$temp_dir),
-                     opt$temp_dir,
-                     paste0(opt$temp_dir, "/"))
+    opt$temp_dir,
+    paste0(opt$temp_dir, "/")
+  )
   system(paste("mkdir -p", temp_dir))
 } else {
   temp_dir <- file.path(dirname(opt$output), "tmp/")
@@ -113,34 +123,52 @@ clusters <- ordering %>%
   group_by(cluster) %>%
   group_split()
 
-join_and_write_clusters <- function(cluster_df, filename, all_embeddings) {
-  cluster_df %>%
+join_and_write_clusters <- function(cluster_df, filename, all_embeddings, recode_missing = FALSE) {
+  cluster_df <- cluster_df %>%
     select(-cluster) %>%
     left_join(all_embeddings, by = "kmer") %>%
-    select(-kmer) %>%
-    fwrite(file = filename,
-           nThread = 1,
-           col.names = T)
+    select(-kmer)
+  if (recode_missing) {
+    cluster_df_missing <- cluster_df %>%
+      mutate(across(starts_with("embedding"), \(x) ifelse(grepl("NNNN", kmer), 0, x)))
+    fwrite(
+      cluster_df_missing,
+      file = filename,
+      nThread = 1,
+      col.names = T
+    )
+  } else {
+    fwrite(
+      cluster_df,
+      file = filename,
+      nThread = 1,
+      col.names = T
+    )
+  }
 }
 
 
 temp_embeddings_dir <- file.path(temp_dir, "embeddings_per_cluster/")
 system(paste0("rm -r ", temp_embeddings_dir))
 system(paste("mkdir -p", temp_embeddings_dir))
-cluster_files <- paste0(temp_embeddings_dir,
-                        "embeddings_cluster_",
-                        0:(length(clusters) - 1),
-                        ".csv")
+cluster_files <- paste0(
+  temp_embeddings_dir,
+  "embeddings_cluster_",
+  0:(length(clusters) - 1),
+  ".csv"
+)
 
 # Cleaning up temp directory
-cat("Writing all clusters and their embeddings out to file in: ",
-    temp_embeddings_dir)
+cat(
+  "Writing all clusters and their embeddings out to file in: ",
+  temp_embeddings_dir
+)
 
 if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
   future_walk2(
     clusters,
     cluster_files,
-    \(x, y) join_and_write_clusters(x, y, all_embeddings = embeddings)
+    \(x, y) join_and_write_clusters(x, y, all_embeddings = embeddings, recode_missing = opt$recode_missing)
   )
 }
 
@@ -152,7 +180,7 @@ if (!sum(file.exists(cluster_files)) == length(cluster_files)) {
 # # write out the cluster to kmer mapping
 # cluster_to_kmer_mapping_file <- paste0(opt$output_prefix,
 #                                        "_cluster_to_kmer_mapping.tsv")
-# cat("Writing cluster to kmer mapping to ", 
+# cat("Writing cluster to kmer mapping to ",
 #     cluster_to_kmer_mapping_file, "\n")
 # write_tsv(cluster_to_kmer_mapping, cluster_to_kmer_mapping_file)
 
@@ -201,4 +229,4 @@ cat("Writing top variance embeddings to ", embeddings_feather, "\n")
 feather::write_feather(top_var_dt, embeddings_feather)
 
 # Cleaning up temp directory
-system(paste0("rm -r", temp_embeddings_dir))
+system(paste("rm -r", temp_embeddings_dir))

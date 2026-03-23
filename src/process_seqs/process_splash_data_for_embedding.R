@@ -66,6 +66,20 @@ option_list <- list(
     "Rank of the target to use when assembling anchor-target pairs",
     type = "integer",
     default = 1
+  ),
+  make_option(
+    c("--apply_cluster_filter"),
+    paste(
+      "If supplied, apply either a filter eliminating clusters with fewer",
+      "than a certain fraction of anchors",
+      "or a filter eliminating clusters with binary targets",
+      "(i.e clusters with only 2 unique sequences across all samples).",
+      "Format should be 'fractionMissing:N' or 'binaryTarget' where N",
+      "is the fraction (i.e. 0.05) of anchors that are allowed to be missing",
+      "for it to be retained."
+    ),
+    type = "character",
+    default = NULL
   )
 )
 
@@ -86,6 +100,14 @@ if (!file.exists(opt$anchor_file) |
   ))
 }
 
+# check that the cluster filter argument is in the correct format if supplied
+if (!is.null(opt$apply_cluster_filter)) {
+  if (!grepl("fractionMissing:\\d+", opt$apply_cluster_filter) &&
+    opt$apply_cluster_filter != "binaryTarget") {
+    stop("Invalid format for --apply_cluster_filter. Must be 'fractionMissing:N' or 'binaryTarget'.")
+  }
+}
+
 # create a temporary directory to store intermediate files
 if (!is.null(opt$temp_dir)) {
   temp_dir <- ifelse(grepl("/$", opt$temp_dir),
@@ -99,6 +121,7 @@ if (!is.null(opt$temp_dir)) {
 }
 
 system(paste0("rm ", temp_dir, "/*"))
+system(paste0("rm ", temp_dir, "/filtered/*"))
 system(paste0("rm ", temp_dir, "/dumped/*"))
 
 # read in the anchor cluster file
@@ -116,10 +139,19 @@ satc_files <- list.files(opt$satc_files,
 )
 
 satc_files <- data.frame(satc_file = satc_files) %>%
+  mutate(satc_filter = gsub(
+    ".satc",
+    "filtered.satc",
+    file.path(temp_dir, "filtered", basename(satc_file))
+  )) %>%
   mutate(satc_dump = gsub(
     ".satc",
     ".satc.dump",
-    file.path(temp_dir, "dumped", basename(satc_file))))
+    file.path(temp_dir, "dumped", basename(satc_file))
+  ))
+
+# create temp dir for the filtered satc files
+system(paste("mkdir -p", file.path(temp_dir, "filtered")))
 
 # create temp dir for dumped satc files
 system(paste("mkdir -p", file.path(temp_dir, "dumped")))
@@ -127,10 +159,28 @@ system(paste("mkdir -p", file.path(temp_dir, "dumped")))
 # declare a satc file for the output of all the dump files
 all_satc_file <- file.path(temp_dir, "all_satc_merged.txt")
 
+# first filter the satc files to only include anchors in the anchor file and
+# up to 1 plus the specified target rank, then dump them using the satc_util_bin
+cat("Filtering SATC files...\n")
+future_walk2(satc_files$satc_file, satc_files$satc_filter, function(x, y) {
+  system(
+    paste(
+      file.path(opt$satc_util_bin, "satc_filter"),
+      "-i",
+      x,
+      "-o",
+      y,
+      "-d",
+      opt$anchor_file,
+      "-n",
+      opt$target_rank + 1 # grab all targets up to the specified rank + 1
+    )
+  )
+})
 
 # dump the satc files
 cat("Dumping SATC files...\n")
-future_walk2(satc_files$satc_file, satc_files$satc_dump, function(x, y) {
+future_walk2(satc_files$satc_filter, satc_files$satc_dump, function(x, y) {
   system(
     paste0(
       file.path(opt$satc_util_bin, "satc_dump"),
@@ -309,6 +359,33 @@ wide_satc <- cbind(wide_satc[1], map2_df(
   }
 ))
 wide_satc <- wide_satc %>% ungroup()
+
+# if applying a cluster filter, apply it now
+if (!is.null(opt$apply_cluster_filter)) {
+  if (grepl("fractionMissing", opt$apply_cluster_filter)) {
+    fraction_missing <- as.numeric(str_remove(opt$apply_cluster_filter, "fractionMissing:"))
+    cat(paste("Applying percent missing filter with threshold:", fraction_missing, "\n"))
+    cluster_filter <- function(cluster_col) {
+      total_samples <- nrow(wide_satc)
+      missing_samples <- sum(grepl("NNN", cluster_col))
+      missing_fraction <- (missing_samples / total_samples)
+      return(missing_fraction <= fraction_missing)
+    }
+    clusters_to_keep <- sapply(wide_satc[, -1], cluster_filter)
+    wide_satc <- wide_satc[, c(TRUE, clusters_to_keep)]
+  } else if (grepl("binaryTarget", opt$apply_cluster_filter)) {
+    cat("Applying binary target filter...\n")
+    cluster_filter <- function(cluster_col) {
+      unique_seqs <- unique(cluster_col)
+      unique_seqs <- unique_seqs[!grepl("NNN", unique_seqs)]
+      return(length(unique_seqs) > 2)
+    }
+    clusters_to_keep <- sapply(wide_satc[, -1], cluster_filter)
+    wide_satc <- wide_satc[, c(TRUE, clusters_to_keep)]
+  } else {
+    stop("Invalid format for --apply_cluster_filter. Must be 'fractionMissing:N' or 'binaryTarget'.")
+  }
+}
 
 # join the columns together into one sequence and write to a tsv
 seqs <- wide_satc %>% unite(seq, -sample, sep = "")

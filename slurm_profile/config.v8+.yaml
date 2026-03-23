@@ -7,7 +7,7 @@ cluster-generic-submit-cmd:
     --partition={resources.partition}
     --cpus-per-task={threads}
     --mem={resources.mem_mb}
-    --job-name=smk-{rule}-%j
+    --job-name=smk-{rule}
     --output=logs/`date +"%d-%m-%y"`/{rule}/{rule}-%j.out
     {resources.slurm_extra}
 default-resources:
@@ -15,7 +15,8 @@ default-resources:
   - partition="horence,owners,normal"
   - mem_mb=4000
   - slurm_extra=""
-  - msa=1
+resources:
+  - msa=10 # sets msa=10 to limit rules that use the R msa package
 jobs: 2000
 local-cores: 1
 max-jobs-per-second: 500
@@ -37,6 +38,7 @@ set-threads: # set specific threads for each rule
     match_kmers_to_clusters: 1
     embed_kmers_hyena: 8
     prepare_data_for_prediction_top_variance: 32
+    prepare_data_for_prediction_pca: 48
     prepare_data_for_umap_top_variance: 32
     run_adelie: 64
     prepare_data_for_prediction_ohe: 4
@@ -89,6 +91,9 @@ set-resources: # set specific resources for each rule
         partition: "horence,gpu,owners"
         slurm_extra: "-G 1 -C 'GPU_GEN:HPR|GPU_GEN:AMP|GPU_GEN:TUR'"
     prepare_data_for_prediction_top_variance:
+        mem_mb: 256000 + ((attempt - 1) * 256000)
+        time: "6:00:00"
+    prepare_data_for_prediction_pca:
         mem_mb: 256000 + ((attempt - 1) * 256000)
         time: "6:00:00"
     prepare_data_for_umap_top_variance:

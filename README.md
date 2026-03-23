@@ -8,14 +8,6 @@ The following pipeline uses `Snakemake` to run metadata-driven prediction and at
 
 This pipeline has been modified to run locally but it requires extensive resources. It can be submitted to a scheduler by providing a `--profile` that contains a job submission command. See `slurm_profile/` for an example.
 
-#### To do
-
-The only thing that needs to be fixed are some of the paths to SLASH repos and some of the paths to the hyena embedding objects. Need to figure out how to wrap this into a more packageable format.
-
-Also the large artifact lookup table is too big to add to github. May need to provide code to build it locally for the user.
-
-Also the SPLASH output directory is currently hard-coded to the location on sherlock. This will need to be fixed.
-
 ## Running the workflow
 
 ### 1. Install `mamba`, `snakemake`, and `SPLASH`
@@ -55,11 +47,12 @@ There is an example script for running SPLASH in the `resources/utility_scripts`
 
 ### 3. Ensure that the parameters you want to use are specified in the `config.yaml` file. Snakemake will use these to fill out the wildcards in the `Snakefile`
 
-The current wildcards are defined as follows:
+The current wildcards and parameters are defined as follows:
 
-```yaml
+```{yaml}
 options:
   seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
+  feature_processing_method: "pca" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
   generate_plots: false # set to true to generate plots after model training
   num_clusters: 20000 # number of clusters to use for clustering anchors
   filters: ["filter1"] # define which anchor selection filters to use
@@ -124,24 +117,26 @@ The flag `--sdm conda` is important because it will tell snakemake to build and 
 
 #### Embedding mode or genome predictions
 
+**IMPORTANT:** **Before you run in embeddings mode you will need to download the singularity image containing the model state and necessary code into the folder `containers/`. See `containers/README.md` in that folder for further information.**
+
 If you want to run FLASH using the embedding mode or genome prediction mode, you will need a GPU in the environment where you run `snakemake` or you will need to use a profile that can allocate GPUs and other resources (like the one provided for slurm schedulers in the directory `slurm_profile/`).
 
----
-
-**IMPORTANT:** *Before you run in embeddings mode you will need to download the singularity image containing the model state and necessary code into the folder `containers/`. See the `containers/README.md` file in that folder for further information.*
+**The keyword genomes is arbitrary and this mode can be used to perform predictions across any type of external data not used to run SPLASH or train the FLASH model. We have used this mode to run predictions on other short-read datasets, on genomes, and on long-read datasets.**
 
 ---
 
-The command for running the code in an interactive environment (where a GPU is present) is similar to above:
+The command for running the code in an interactive environment (where a GPU is present if running embeddings) is similar to above:
 
 ```{bash}
 export NUM_CORES=1
-snakemake --sdm conda -j $NUM_CORES all_embeddings
+snakemake --sdm conda -j $NUM_CORES all_embeddings # for embedding mode
+
+snakemake --sdm conda -j $NUM_CORES all_ohe # for one hot encoding mode
 ```
 
 The code can also be run using an automatic scheduler. The included example submission script (`resources/utility_scripts/run_snakemake.sbatch`) and profile (`slurm_profile/config.v8+.yaml`) can submit the pipeline and request the required resources including GPU resources. For running on a cluster using `slurm` you can use this config using the --profile slurm_profile/config.v8+.yaml.
 
-**NOTE: You must modify the profile to match the correct partitions, resources, and constraints necessary for your cluster. The provided config is an example for our local clusters resources. This can be adapted to different schedulers by modifying the profile but is currently only set to work for `slurm`.**
+**NOTE: You must modify the profile to match your own partitions resources, and constraints necessary for your cluster. The provided config is an example for our local HPC resources. This can be adapted to different schedulers by modifying the profile but is currently only set to work for `slurm`.**
 
 ## Input Files
 
@@ -220,4 +215,4 @@ CLUSTER_TYPES = ["noCluster"]
 
 An example dataset containing SPLASH results and metadata for H5N1 samples is provided in the `resources/metadata/` folder. There are several utility scripts in the project root that will download the example data and run SPLASH. FLASH can then be run on this example data by following the instructions above and modifying the `dataset_table.csv` file to point to the example data paths and the included metadata file.
 
-The script `generate_example_data.sh` will download the example data into a folder `example_data/` and generate a file `sample_sheet.txt` for running SPLASH. The script `run_splash_example.sh` will run SPLASH on the example data (provided SPLASH has been installed and the path to the binaries has been set correctly in the script). After running SPLASH, you can modify the `dataset_table.csv` file to point to the SPLASH output folder and the metadata file `resources/metadata/H5N1_example_metadata.csv`. You can then run FLASH using Snakemake as described above.
+The script `generate_example_data.sh` will download the example data into a folder `example_data/` and generate a file `sample_sheet.txt` for running SPLASH. The script `run_splash_example.sh` will run SPLASH on the example data (provided SPLASH has been installed and the path to the binaries has been set correctly in the script). After running SPLASH, you can modify the `dataset_table.csv` file to point to the location of the SPLASH output folder and the metadata file `resources/metadata/H5N1_example_metadata.csv`. You can then run FLASH using Snakemake as described above.

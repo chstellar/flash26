@@ -41,11 +41,11 @@ plan(multisession, workers=opt$max_workers)
 # Read in the data
 blast_files <- list.files(path=opt$blast_folder, pattern="blastout.tsv", full.names = T)
 
-blast_dfs <- future_map(blast_files, \(x) ifelse(ncol(fread(x, nrow=5)) == 19, return(fread(x, col.names = c("query", "subject", "identity", "alignment_length", 
+blast_dfs <- future_map(blast_files, \(x) ifelse(ncol(fread(x, sep="\t", nrow=5)) == 19, return(fread(x, sep="\t", col.names = c("query", "subject", "identity", "alignment_length", 
                                                    "mismatches", "gap_opens", "q_start", "q_end",
                                                    "s_start", "s_end", "sstrand", "evalue", "qcovs", "qframe",
                                                    "sgi", "sacc", "slen", "staxids", "stitle"))),
-                                                 return(fread(x, col.names = c("query", "subject", "identity", "alignment_length", 
+                                                 return(fread(x, sep="\t", col.names = c("query", "subject", "identity", "alignment_length", 
                                                                         "mismatches", "gap_opens", "q_start", "q_end",
                                                                         "s_start", "s_end", "sstrand", "evalue", "qcovs",
                                                                         "sgi", "sacc", "slen", "staxids", "stitle")) %>% mutate(qframe="-"))))
@@ -86,7 +86,7 @@ merge_on_go_terms <- function(file, df, uniprot_mapping, go_mapping) {
 
 if (TRUE) {
   merged_df <- map(blast_dfs, \(x) x %>% mutate(staxids=as.character(staxids))) %>% bind_rows() %>% mutate(NCBI_protein_accession=str_extract(subject, "ref\\|(.+)\\|", group=1)) %>%
-    mutate(UniProt_accession=NA, method=NA, GO=NA) %>%
+    mutate(UniProt_accession=str_extract(subject, "sp\\|(.+)\\|", group=1), method=NA, GO=NA) %>%
     select(query, identity, evalue, qcovs, qframe, staxids, stitle, NCBI_protein_accession, UniProt_accession, method, GO)
 } else {
   merged_df <- future_map2(blast_files, blast_dfs, \(x,y) merge_on_go_terms(x,y,opt$uniprot_mapping_path,opt$go_mapping_path)) %>% bind_rows()

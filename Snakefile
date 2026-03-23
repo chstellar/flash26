@@ -88,9 +88,15 @@ rule all_genomes:
     Generate prediction for genome sequences provided for a given dataset.
     """
     input:
-            # all genome coefficients files
-            expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", 
-                "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_{FILE}"),
+        # all genome coefficients files
+        expand(Path("results",
+                    "{dataset}", 
+                    "{select_type}", 
+                    "{cluster_type}", 
+                    "{model}", 
+                    "genomes", 
+                    "{normalize}", 
+                    "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{FILE}"),
                dataset=DATASETS,
                select_type=SELECT_TYPES,
                cluster_type=CLUSTER_TYPES,
@@ -98,6 +104,7 @@ rule all_genomes:
                num_clusters=NUM_CLUSTERS,
                kmer_width=KMER_WIDTH,
                kmer_step=KMER_STEP,
+               train_proportion=TRAIN_PROPORTION,
                normalize=NORMALIZE,
                FILE = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]) 
                # no need to plot genomes blast results as they
@@ -282,7 +289,12 @@ rule prepare_sequences:
         single_cell = lambda wildcards: (
             "--single_cell" if "SC10X" in wildcards.dataset else ""
         ),
-        target_rank = lambda wildcards: wildcards.target_rank
+        target_rank = lambda wildcards: wildcards.target_rank,
+        cluster_filter = lambda wildcards: (
+            f"--apply_cluster_filter {config['options']['cluster_filter']['type']}:{config['options']['cluster_filter']['threshold']}"
+            if config["options"]["cluster_filter"]["apply"] else ""
+        ),
+        satc_util_bin = Path(config["satc_util_bin"]) # satc utils are typically located in the same directory as the main splash binary.
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
@@ -293,7 +305,8 @@ rule prepare_sequences:
         --cluster_file {input.cluster_file} --id_mapping {input.id_mapping} \
         {params.input_samples} --output_prefix {params.output_prefix} \
         --temp_dir {params.tmp_dir} --num_cores {threads} {params.single_cell} \
-        --target_rank {params.target_rank}
+        --target_rank {params.target_rank} {params.cluster_filter} \
+        --satc_util_bin {params.satc_util_bin}
     """
 
 
@@ -371,14 +384,46 @@ rule prepare_data_for_prediction_top_variance:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
-        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["glmnet"]
+        num_to_keep = config["extended_options"]["num_embedding_features_to_keep"]["by_variance"],
+        recode_missing_flag = "--recode_missing" if config["options"]["feature_processing"]["recode_missing"] else ""
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} \
-        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} {params.normalized_flag}
+        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} --num_to_keep {params.num_to_keep} \
+        {params.normalized_flag} {params.recode_missing_flag}
+    """
+
+
+rule prepare_data_for_prediction_pca:
+    """
+    This rule processes the embeddings to fit into a glmnet model by performing PCA on the embeddings by 
+    samples matrix per cluster and then saves the resulting data frame as a feather object to be used in the glmnet model.
+    The number of PCA components to keep is defined in the config file under "num_embedding_features_to_keep" -> "by_pca"
+    """
+    input: 
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
+        ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv")
+    params:
+        script = Path(config["scripts"]["format_embeddings_pca"]),
+        tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "target" + wildcards.target_rank,
+                                         "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_pca_embeddings", wildcards.normalize),
+        normalized_flag = lambda wildcards: "--normalized" if wildcards.normalize =="normalized" else "",
+        num_pcs = config["extended_options"]["num_embedding_features_to_keep"]["by_pca"]
+    output:
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --embeddings {input.embeddings} \
+        --ordering {input.ordering} \
+        --output {output} \
+        --temp_dir {params.tmp_dir} \
+        --num_threads {threads} \
+        --num_pcs {params.num_pcs} \
+        {params.normalized_flag}
     """
 
 
@@ -411,12 +456,28 @@ rule run_adelie:
     This rule uses preprocessed embeddings for running the glmnet model to predict on the metadata.
     """
     input:
-        embeddings = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        embeddings = lambda wildcards: (
+            Path(
+                TEMP_DIR,
+                "{dataset}",
+                "{dataset}_{model}_pca_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather",
+            )
+            if config["options"]["feature_processing"]["method"] == "pca"
+            else Path(
+                TEMP_DIR,
+                "{dataset}",
+                "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather",
+            )
+            if config["options"]["feature_processing"]["method"] == "top_variance"
+            else "",
+        ),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = Path(config["scripts"]["adelie"]),
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
-        min_samples = config["extended_options"]["min_samples_adelie"]
+        min_samples = config["extended_options"]["min_samples_adelie"],
+        grouped_flag = "--grouped" if config["options"]["grouped_model"] else "",
+        alpha = config["extended_options"]["adelie_alpha"]
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -426,7 +487,9 @@ rule run_adelie:
         python {params.script} --data {input.embeddings} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
         --min_samples {params.min_samples} \
-        --n_threads {threads} --train_prop {wildcards.train_proportion}
+        --n_threads {threads} --train_prop {wildcards.train_proportion} \
+        --alpha {params.alpha} \
+        {params.grouped_flag}
     """
 
 
@@ -453,7 +516,9 @@ rule run_adelie_ohe:
     params:
         script = Path(config["scripts"]["adelie"]),
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
-        min_samples = config["extended_options"]["min_samples_adelie"]
+        min_samples = config["extended_options"]["min_samples_adelie"],
+        grouped_flag = "--grouped" if config["options"]["grouped_model"] else "",
+        alpha = config["extended_options"]["adelie_alpha"]
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -463,7 +528,9 @@ rule run_adelie_ohe:
         python {params.script} --data {input.features} \
         --metadata {input.metadata} --output_prefix {params.output_prefix} \
         --min_samples {params.min_samples} \
-        --n_threads {threads} --train_prop {wildcards.train_proportion}
+        --n_threads {threads} --train_prop {wildcards.train_proportion} \
+        --alpha {params.alpha} \
+        {params.grouped_flag}
     """
 
 
@@ -545,19 +612,23 @@ rule prepare_data_for_prediction_genomes:
     input:
         embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}-embeddings_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}.tsv"),
         ordering = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_decomposed_kmers_genomes_{select_type}_{cluster_type}_top{num_clusters}_k{kmer_width}_s{kmer_step}_kmer_ordering.tsv"),
-        original_embeddings_feather = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        original_embeddings_feather = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        nonzero_coefficients_file = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = Path(config["scripts"]["format_embeddings_genomes"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters",
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
-        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else ""
+        normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_{wildcards.model}_top_variance_features_for_glmnet_genomes_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target1_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{train_proportion}_{wildcards.normalize}")
     output:
-        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{normalize}_ORIGINAL.feather"),
+        Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{normalize}_GENOMES.feather")
     conda:
         config["envs"]["default_r"]
     shell:"""
         Rscript --vanilla {params.script} --embeddings {input.embeddings} --ordering {input.ordering} --original_feather {input.original_embeddings_feather} \
-        --output {output} --temp_dir {params.tmp_dir} --num_threads {threads} {params.normalized_flag} 
+        --original_adelie_output {input.nonzero_coefficients_file} \
+        --output_prefix {params.output_prefix} --temp_dir {params.tmp_dir} --num_threads {threads} {params.normalized_flag} 
     """
 
 
@@ -567,22 +638,26 @@ rule run_adelie_genomes:
     and run the glmnet script
     """
     input:
-        train_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        train_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{normalize}_ORIGINAL.feather"),
         train_metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        test_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        test_features = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{normalize}_GENOMES.feather"),
         test_metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "genome_metadata_file"]
     params:
         script = Path(config["scripts"]["glmnet_genomes_script"]),
-        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}")
+        output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", "genomes", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_genomes_results_top{wildcards.num_clusters}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
+        alpha = config["extended_options"]["adelie_alpha"],
+        grouped_flag = "--grouped" if config["options"]["grouped_model"] else ""
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv"),
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_confusion_matrices.pdf"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
     conda:
         config["envs"]["adelie_env"]
     shell:"""
         python {params.script} --train_features {input.train_features} --train_metadata {input.train_metadata} \
         --test_features {input.test_features} --test_metadata {input.test_metadata} --output_prefix {params.output_prefix} \
-        --n_threads {threads}
+        --n_threads {threads} \
+        --alpha {params.alpha} \
+        {params.grouped_flag}
     """
 
 
@@ -680,6 +755,31 @@ rule run_blastp_nonzero_features:
     """
 
 
+rule run_blastp_swissprot_nonzero_features:
+    """
+    Run a blast search on the significant sequences to find the closest matches in the NCBI database
+    """
+    input:
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+    params:
+        script = lambda wildcards: config["scripts"]["run_blastp"],
+        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp_swissprot"),
+        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp_swissprot"),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
+        protein_db = "swissprot"
+    output:
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_swissprot.tsv")
+    conda:
+        config["envs"]["biopython_env_r"]
+    shell:"""
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path} {params.protein_db}
+    """
+
+
 rule merge_blast_results:
     """
     Merge the blast results with the annotated sequences
@@ -708,13 +808,34 @@ rule merge_blastp_results:
                                  "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
-        script = config["scripts"]["merge_blast_results"]
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
-        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
+    """
+
+
+rule merge_blastp_swissprot_results:
+    """
+    Merge the blast results with the annotated sequences
+    """
+    input:
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_swissprot.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_swissprot_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
     """
 
 
@@ -813,13 +934,14 @@ rule merge_blastp_results_OHE:
                                  "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
         coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
-        script = config["scripts"]["merge_blast_results"]
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
-        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
     """
 
 
@@ -829,11 +951,11 @@ rule merge_annotations_genomes:
     """
     input:
         annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target1_k{kmer_width}_s{kmer_step}_annotated.tsv"),
-        coefficients = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients.tsv")
+        coefficients = Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_adelie_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
     params:
         script = config["scripts"]["merge_annotations"]
     output:
-        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_nonzero_coefficients_annotated.tsv")
+        Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "genomes", "{normalize}", "{dataset}_{model}_{predictionTask}_genomes_results_top{num_clusters}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -966,7 +1088,7 @@ rule plot_embeddings_umap:
     This rule is used to visualize the embeddings of the clusters.
     """
     input:
-        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
+        embeddings = lambda wildcards: Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_umap_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"]
     params:
         script = config["scripts"]["plot_embeddings_umap"],

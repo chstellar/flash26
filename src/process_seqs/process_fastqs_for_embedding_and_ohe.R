@@ -66,6 +66,20 @@ option_list <- list(
     "Rank of the target to use when assembling anchor-target pairs",
     type = "integer",
     default = 1
+  ),
+  make_option(
+    c("--apply_cluster_filter"),
+    paste(
+      "If supplied, apply either a filter eliminating clusters with fewer",
+      "than a certain fraction of anchors",
+      "or a filter eliminating clusters with binary targets",
+      "(i.e clusters with only 2 unique sequences across all samples).",
+      "Format should be 'fractionMissing:N' or 'binaryTarget' where N",
+      "is the fraction (i.e. 0.05) of anchors that are allowed to be missing",
+      "for it to be retained."
+    ),
+    type = "character",
+    default = NULL
   )
 )
 
@@ -81,6 +95,14 @@ if (!file.exists(opt$anchor_file) |
   !file.exists(opt$cluster_file) |
   is.null(opt$sample_sheet) | is.null(opt$output_prefix)) {
   stop("Must provide anchor file, cluster file, satc files, id mapping file, and output prefix")
+}
+
+# check that the cluster filter argument is in the correct format if supplied
+if (!is.null(opt$apply_cluster_filter)) {
+  if (!grepl("fractionMissing:\\d+", opt$apply_cluster_filter) &&
+    opt$apply_cluster_filter != "binaryTarget") {
+    stop("Invalid format for --apply_cluster_filter. Must be 'fractionMissing:N' or 'binaryTarget'.")
+  }
 }
 
 # create a temporary directory to store intermediate files
@@ -358,6 +380,33 @@ wide_satc <- cbind(wide_satc[1], map2_df(
   ), x)
 ))
 wide_satc <- wide_satc %>% ungroup()
+
+# if applying a cluster filter, apply it now
+if (!is.null(opt$apply_cluster_filter)) {
+  if (grepl("fractionMissing", opt$apply_cluster_filter)) {
+    fraction_missing <- as.numeric(str_remove(opt$apply_cluster_filter, "fractionMissing:"))
+    cat(paste("Applying percent missing filter with threshold:", fraction_missing, "\n"))
+    cluster_filter <- function(cluster_col) {
+      total_samples <- nrow(wide_satc)
+      missing_samples <- sum(grepl("NNN", cluster_col))
+      missing_fraction <- (missing_samples / total_samples)
+      return(missing_fraction <= fraction_missing)
+    }
+    clusters_to_keep <- sapply(wide_satc[, -1], cluster_filter)
+    wide_satc <- wide_satc[, c(TRUE, clusters_to_keep)]
+  } else if (grepl("binaryTarget", opt$apply_cluster_filter)) {
+    cat("Applying binary target filter...\n")
+    cluster_filter <- function(cluster_col) {
+      unique_seqs <- unique(cluster_col)
+      unique_seqs <- unique_seqs[!grepl("NNN", unique_seqs)]
+      return(length(unique_seqs) > 2)
+    }
+    clusters_to_keep <- sapply(wide_satc[, -1], cluster_filter)
+    wide_satc <- wide_satc[, c(TRUE, clusters_to_keep)]
+  } else {
+    stop("Invalid format for --apply_cluster_filter. Must be 'fractionMissing:N' or 'binaryTarget'.")
+  }
+}
 
 # join the columns together into one sequence and write to a tsv
 seqs <- wide_satc %>% unite(seq, -sample, sep = "")

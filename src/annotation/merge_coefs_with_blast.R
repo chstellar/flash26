@@ -16,8 +16,14 @@ option_list <- list(
   make_option(c("-o", "--output"),
     type = "character", default = NULL,
     help = "Path to the output CSV file", metavar = "character"
+  ),
+  make_option(c("-t", "--translation_table"),
+    type = "integer", default = 11,
+    help = "Path to the translation table file. Default is 11 for bacteria.",
+    metavar = "integer"
   )
 )
+
 
 # Parse command line options
 opt_parser <- OptionParser(option_list = option_list)
@@ -30,45 +36,100 @@ if (is.null(opt$blast_annotations) || is.null(opt$coefficients) || is.null(opt$o
 }
 
 # Read in the data
-annotations <- fread(opt$blast_annotations,
-  header = TRUE,
-  sep = "\t", nThread = 60
-)
+annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
-if (str_detect(opt$blast_annotations, "blastp")) {
+if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   annotations <- annotations %>%
-    select(
-      query, evalue, identity, qcovs, qframe,
-      stitle, `NCBI_protein_accession`, UniProt_accession, method, GO
+    select(query, evalue, identity, qcovs, qframe, stitle, `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
+    mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+
+  # we also add on the translated sequence for as a column. The query column contains cluster_X_{Sequence} and the qframe column contains the frame
+  # we extract {sequence} and translate it using the qframe
+  TRANSLATION_TABLE <- opt$translation_table
+
+  sequence_dt <- annotations %>%
+    select(query, qframe) %>%
+    distinct() %>%
+    filter(!is.na(query)) %>%
+    mutate(sequence = str_remove(query, "^.*cluster_\\d+_|\\w+_kmer_\\d+_")) %>%
+    mutate(
+      reverse = ifelse(qframe < 0, TRUE, FALSE),
+      frame = abs(qframe) - 1
     ) %>%
-    mutate(cluster = str_extract(query,
-      "(^.*cluster_\\d+|\\w+_kmer_\\d+)_",
-      group = 1
-    ))
+    distinct()
+
+  duplicates <- sequence_dt %>%
+    group_by(query) %>%
+    filter(n() > 1) %>%
+    mutate(cluster = str_remove(query, "_[ACTGNactgn]+$")) %>%
+    pull(cluster) %>%
+    unique()
+
+  translate_sequences <- function(sequences, frames, reverse, translation_table) {
+    translated_seqs <- tolower(sequences)
+    translated_seqs <- map(translated_seqs, seqinr::s2c)
+
+    translated <- pmap_vec(list(x = translated_seqs, y = frames, z = reverse), function(x, y, z) {
+      out <- ifelse(!is.na(y),
+        seqinr::c2s(seqinr::translate(seq = x, frame = y, sens = ifelse(z, "R", "F"), numcode = as.integer(translation_table))),
+        NA
+      )
+
+      return(out)
+    })
+
+    return(translated)
+  }
+
+  translated_sequences <- translate_sequences(sequence_dt$sequence, sequence_dt$frame, sequence_dt$reverse, TRANSLATION_TABLE)
+  sequence_dt <- sequence_dt %>% mutate(translated_sequence = translated_sequences)
+
+  # also add a column removing anything after a stop codon and aligning the translated_sequences
+  aa_temps <- sequence_dt %>%
+    mutate(cluster = str_remove(query, "_[ACTGNactgn]+$")) %>%
+    filter(!(cluster %in% duplicates)) %>%
+    select(query, cluster, translated_sequence) %>%
+    group_by(cluster) %>%
+    group_split(.keep = FALSE)
+
+  align_cluster <- function(aa_dt) {
+    aa_dt_filtered <- aa_dt %>%
+      mutate(translated_sequence = str_remove(translated_sequence, "\\*.+$")) %>%
+      filter(nchar(translated_sequence) > 5)
+    if (nrow(aa_dt_filtered) == 0) {
+      return(aa_dt %>% select(-translated_sequence) %>% mutate(aligned_sequence = NA))
+    } else if (nrow(aa_dt_filtered) == 1) {
+      return(aa_dt_filtered %>% rename(aligned_sequence = translated_sequence))
+    }
+    aas <- Biostrings::AAStringSet(aa_dt_filtered$translated_sequence %>% str_remove("\\*.+$"))
+    names(aas) <- aa_dt_filtered$query
+    aligned <- msa::msa(aas, order = "input")
+    aligned <- Biostrings::AAStringSet(aligned)
+    aligned_seqs <- data.frame(query = names(aligned), aligned_sequence = aligned)
+    return(aligned_seqs)
+  }
+
+  aa_aligned <- map(aa_temps, align_cluster)
+  aa_aligned <- bind_rows(aa_aligned)
+  sequence_dt <- sequence_dt %>% left_join(aa_aligned, by = "query")
+  sequence_dt <- sequence_dt %>% select(query, qframe, translated_sequence, aligned_sequence)
+
+  # now bind it all together
+  annotations <- annotations %>% left_join(sequence_dt, by = c("query", "qframe"))
 } else {
   annotations <- annotations %>%
     select(query, evalue, identity, qcovs, features, contains("window")) %>%
-    mutate(cluster = str_extract(query,
-      "(^.*cluster_\\d+|\\w+_kmer_\\d+)_",
-      group = 1
-    ))
+    mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 }
 
 
 
 coefficients <- fread(opt$coefficients, header = TRUE)
-coefficients <- coefficients %>% mutate(cluster = str_extract(feature,
-  "(^.*cluster_\\d+|\\w+_kmer_\\d+)_",
-  group = 1
-))
+coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 
-# because we have run grouped glm there will be multiple rows per cluster.
-# We want to keep the one with the highest absolute coefficient
+# because we have run grouped elastic net there will be multiple rows per cluster. We want to keep the one with the highest absolute coefficient
 get_max_coef <- function(coef_string) {
-  coefs <- as.numeric(strsplit(
-    gsub("\\[|\\]", "", coef_string),
-    split = ",", fixed = TRUE
-  )[[1]])
+  coefs <- as.numeric(strsplit(gsub("\\[|\\]", "", coef_string), split = ",", fixed = TRUE)[[1]])
   return(max(abs(coefs)))
 }
 
@@ -80,15 +141,20 @@ coefficients <- coefficients %>%
   slice(1) %>%
   ungroup()
 
-merged_data <- coefficients %>%
-  full_join(annotations, by = "cluster", relationship = "many-to-many")
+merged_data <- coefficients %>% full_join(annotations, by = "cluster", relationship = "many-to-many")
 
 merged_data <- merged_data %>%
   arrange(metadata_category, -abs(max_coef), -identity) %>%
   select(-max_coef)
-# Merge the data on the 'cluster' column
-# there may be multiple entries in annotations that match
-# in this case, the coefficients will be repeated for each match
+
+# relocate sequences in blastp output
+if (str_detect(opt$blast_annotations, "blastp")) {
+  merged_data <- merged_data %>%
+    relocate(translated_sequence, aligned_sequence,
+      .after = "NCBI_protein_accession"
+    )
+}
+
 
 # Write the merged data to a new CSV file
 write_tsv(merged_data, opt$output, col_names = T, quote = "needed")
