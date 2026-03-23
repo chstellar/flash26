@@ -7,7 +7,7 @@
 # Modify the threads and membory paramaters as needed. Increasing n_bins will also
 # improved memory usage at the cost of speed.
 
-SPLASH_BIN="PATH/TO/SPLASH_2.6.*"  # Modify this path to point to your SPLASH binary
+SPLASH_BIN="PATH/TO/SPLASH-2.*/splash"  # Modify this path to point to your SPLASH binary 
 
 $SPLASH_BIN --outname_prefix result \ 
     --anchor_len 27 \
