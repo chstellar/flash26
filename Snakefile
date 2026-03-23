@@ -549,6 +549,7 @@ rule process_genome_to_sample_sequences:
         script = Path(config["scripts"]["genome_to_sample_sequences"]),
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters", "genomes"),
         output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_prepared_sequences_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_genomes"),
+        satc_util_bin = Path(config["satc_util_bin"]) # satc utils are typically located in the same directory as the main splash binary.
     output:
         fasta = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.fasta"),
         tsv = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_genomes_sample_sequences.tsv")
@@ -558,7 +559,7 @@ rule process_genome_to_sample_sequences:
         Rscript --vanilla {params.script} --cluster_file {input.cluster_file} \
         --genome_list {input.genome_list} --genome_files {input.genome_files} \
         --output_prefix {params.output_prefix} --temp_dir {params.tmp_dir} \
-        --num_cores {threads}
+        --num_cores {threads} --satc_util_bin {params.satc_util_bin}
     """
 
 
