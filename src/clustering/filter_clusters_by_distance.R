@@ -36,6 +36,9 @@ option_list <- list(
   ),
   make_option(c("--max_clusters_to_process"), "Maximum number of clusters to process",
     type = "integer", default = 100000
+  ),
+  make_option(c("--use_effect_size_bin"), "Whether to use the effect size bin for sorting instead of the effect size cts",
+    action = "store_true", default = FALSE
   )
 )
 
@@ -125,31 +128,60 @@ splash_stats <- splash_stats %>% filter(anchor %in% anchor_clusters$anchor)
 
 # join the splash stats file with the anchor clusters file
 cat("Joining the splash stats file with the anchor clusters file\n")
-anchor_clusters_with_stats <- anchor_clusters %>%
-  left_join(splash_stats, by = "anchor") %>%
-  select(cluster_id, anchor, effect_size_cts, number_nonzero_samples) %>%
-  mutate(
-    effect_size_cts = as.numeric(effect_size_cts),
-    number_nonzero_samples = as.numeric(number_nonzero_samples)
-  )
+if (opt$use_effect_size_bin) {
+  anchor_clusters_with_stats <- anchor_clusters %>%
+    left_join(splash_stats, by = "anchor") %>%
+    select(cluster_id, anchor, effect_size_bin, number_nonzero_samples) %>%
+    mutate(
+      effect_size_bin = as.numeric(effect_size_bin),
+      number_nonzero_samples = as.numeric(number_nonzero_samples)
+    )
 
-# reorder the cluster ids based on the mean effect size and number of nonzero samples
-cat("Reordering the cluster ids based on the mean effect size and number of nonzero samples\n")
-anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
-  group_by(cluster_id) %>%
-  mutate(
-    mean_effect_size = mean(effect_size_cts),
-    mean_nonzero_samples = mean(number_nonzero_samples)
-  ) %>%
-  mutate(sort_val = mean_effect_size * mean_nonzero_samples) %>%
-  arrange(desc(sort_val), cluster_id) %>%
-  ungroup() %>%
-  mutate(new_cluster_id = as.numeric(factor(cluster_id, levels = unique(cluster_id)))) %>%
-  ungroup() %>%
-  group_by(new_cluster_id) %>%
-  arrange(new_cluster_id, desc(effect_size_cts)) %>%
-  ungroup() %>%
-  select(new_cluster_id, anchor)
+  # if using the effect size bin, we want to order the clusters by the mean effect size bin and number of nonzero samples
+  cat("Reordering the cluster ids based on the mean effect size (bin)and number of nonzero samples\n")
+  anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
+    group_by(cluster_id) %>%
+    mutate(
+      mean_effect_size = mean(effect_size_bin),
+      mean_nonzero_samples = mean(number_nonzero_samples)
+    ) %>%
+    mutate(sort_val = mean_effect_size * mean_nonzero_samples) %>%
+    arrange(desc(sort_val), cluster_id) %>%
+    ungroup() %>%
+    mutate(new_cluster_id = as.numeric(factor(cluster_id, levels = unique(cluster_id)))) %>%
+    ungroup() %>%
+    group_by(new_cluster_id) %>%
+    arrange(new_cluster_id, desc(effect_size_bin)) %>%
+    ungroup() %>%
+    select(new_cluster_id, anchor)
+} else {
+  anchor_clusters_with_stats <- anchor_clusters %>%
+    left_join(splash_stats, by = "anchor") %>%
+    select(cluster_id, anchor, effect_size_cts, number_nonzero_samples) %>%
+    mutate(
+      effect_size_cts = as.numeric(effect_size_cts),
+      number_nonzero_samples = as.numeric(number_nonzero_samples)
+    )
+
+  # reorder the cluster ids based on the mean effect size and number of nonzero samples
+  cat("Reordering the cluster ids based on the mean effect size (cts) and number of nonzero samples\n")
+  anchor_clusters_with_stats <- anchor_clusters_with_stats %>%
+    group_by(cluster_id) %>%
+    mutate(
+      mean_effect_size = mean(effect_size_cts),
+      mean_nonzero_samples = mean(number_nonzero_samples)
+    ) %>%
+    mutate(sort_val = mean_effect_size * mean_nonzero_samples) %>%
+    arrange(desc(sort_val), cluster_id) %>%
+    ungroup() %>%
+    mutate(new_cluster_id = as.numeric(factor(cluster_id, levels = unique(cluster_id)))) %>%
+    ungroup() %>%
+    group_by(new_cluster_id) %>%
+    arrange(new_cluster_id, desc(effect_size_cts)) %>%
+    ungroup() %>%
+    select(new_cluster_id, anchor)
+}
+
 
 # if we have --distance_metric noCluster, write out the
 # anchor clusters file with the new cluster ids and exit
