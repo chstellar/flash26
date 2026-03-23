@@ -27,7 +27,7 @@ option_list <- list(
     type = "character"
   ),
   make_option(c("--satc_util_bin"), "Path to SATC Util binary folder",
-    type = "character", default = "/oak/stanford/groups/horence/dcotter1/satc_utils/"
+    type = "character", default = ""
   ),
   make_option(c("--num_cores"), "Number of cores to use", type = "integer", default = 8)
 )
