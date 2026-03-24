@@ -620,7 +620,7 @@ rule prepare_data_for_prediction_genomes:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.num_clusters + "-clusters",
                                          "k" + wildcards.kmer_width + "_s" + wildcards.kmer_step, wildcards.model + "_embeddings", wildcards.normalize),
         normalized_flag = lambda wildcards: "--normalized_embeddings" if wildcards.normalize =="normalized" else "",
-        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_{wildcards.model}_top_variance_features_for_glmnet_genomes_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target1_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{train_proportion}_{wildcards.normalize}")
+        output_prefix = lambda wildcards: Path(TEMP_DIR, f"{wildcards.dataset}", f"{wildcards.dataset}_{wildcards.model}_top_variance_features_for_glmnet_genomes_{wildcards.select_type}_{wildcards.cluster_type}_top{wildcards.num_clusters}_target1_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}_{wildcards.normalize}")
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{normalize}_ORIGINAL.feather"),
         Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_genomes_{select_type}_{cluster_type}_top{num_clusters}_target1_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_{normalize}_GENOMES.feather")
