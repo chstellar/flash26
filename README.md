@@ -216,3 +216,13 @@ CLUSTER_TYPES = ["noCluster"]
 An example dataset containing SPLASH results and metadata for H5N1 samples is provided in the `resources/metadata/` folder. There are several utility scripts in the project root that will download the example data and run SPLASH. FLASH can then be run on this example data by following the instructions above and modifying the `dataset_table.csv` file to point to the example data paths and the included metadata file.
 
 The script `generate_example_data.sh` will download the example data into a folder `example_data/` and generate a file `sample_sheet.txt` for running SPLASH. The script `run_splash_example.sh` will run SPLASH on the example data (provided SPLASH has been installed and the path to the binaries has been set correctly in the script). After running SPLASH, you can modify the `dataset_table.csv` file to point to the location of the SPLASH output folder and the metadata file `resources/metadata/H5N1_example_metadata.csv`. You can then run FLASH using Snakemake as described above.
+
+## Types of data that can be analyzed
+In principal FLASH has been written to run on any data with sturctured phenotype/metadata labels provided. However, there are some caveats to this. 
+
+#### Very small datasets
+The FLASH paramaters are built to only include metadata categories from a metadata file with >= 28 samples in the smallest class of a metadata category. This means that only datasets with exactly 56 samples (that are evenly split into 28 and 28 will pass the adelie step of the pipeline. 
+This can be changed by adjusting the paramater `min_samples_adelie` in the `extended_options` section of the `config.yml` file. The default number was chosen after extensive testing in many datasets but feel free to experiment with smaller datasets. It is possilbe the the unsupervised clustering mode will still work for smaller amounts of data. 
+
+#### Data where SPLASH has very few significant anchors or anchors that pass the threshold 
+If SPLASH does not provide a good insight into the structure encoded in your set of samples, it will not provide many anchors with hgih effect size. Because we use a default of 0.6 to filter for high effect size anchors, this could mean too few anchors enter into the analysis in the first place. This can be dropped in the `config.yaml` by adjusting the `effect_size_cutoff` praramter under `extended_options`. 
