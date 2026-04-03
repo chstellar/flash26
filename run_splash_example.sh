@@ -16,12 +16,14 @@ if [ ! -d "example_data" ]; then
 fi
 
 # check if sample sheet exists
-if [ ! -f "example_data/sample_sheet.tsv" ]; then
+if [ ! -f "example_data/sample_sheet.txt" ]; then
     echo "Sample sheet does not exist. Please run generate_example_data.sh first."
     exit 1
 fi
 
 mdkir -p H5N1-splash-results
+
+cp example_data/sample_sheet.txt 
 
 # Run SPLASH with the provided parameters
 ./splash-2.11.6/splash \
@@ -39,4 +41,4 @@ mdkir -p H5N1-splash-results
     --n_most_freq_targets 10 \
     --dump_sample_anchor_target_count_binary \
     --satc_merge_dump_format satc \
-    example_data/sample_sheet.tsv
+    example_data/sample_sheet.txt
