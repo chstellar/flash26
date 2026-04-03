@@ -8,7 +8,7 @@
 # you must install fasterq-dump and prefetch from SRA Toolkit to run this script
 # and have it in your PATH
 # If you don't have SRA Toolkit installed, you can download it from 
-https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software
+# https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software
 
 # Define the dataset name and the directory to store the example data
 DATASET_NAME="H5N1-cattle"
@@ -37,7 +37,7 @@ echo "All accessions processed."
 
 # create a sample sheet from the processed FASTQ files
 echo "Creating sample sheet for dataset: $DATASET_NAME"
-SAMPLE_SHEET="$EXAMPLE_DATA_DIR/sample_sheet.tsv"
+SAMPLE_SHEET="$EXAMPLE_DATA_DIR/sample_sheet.txt"
 awk 'BEGIN {FS=OFS="\t"} {print $1,$1"_1.fastq"}' resources/metadata/H5N1_accessions.txt > $SAMPLE_SHEET
 
 echo "Sample sheet created at: $SAMPLE_SHEET"
