@@ -22,23 +22,23 @@ option_list <- list(
     type = "double", default = 0.5
   ),
   make_option(c("-o", "--output"), "Output file", type = "character"),
-  make_option(c("--temp_dir"), "Temporary directory to store intermediate files",
+  make_option(c("--temp_dir"), help="Temporary directory to store intermediate files",
     type = "character"
   ),
-  make_option(c("--distance_metric"), "Distance metric to use for filtering",
+  make_option(c("--distance_metric"), help="Distance metric to use for filtering",
     type = "character", default = "lev"
   ),
-  make_option(c("--num_cores"), "Number of cores to use for parallel processing",
+  make_option(c("--num_cores"), help="Number of cores to use for parallel processing",
     type = "integer", default = 1
   ),
-  make_option(c("--distance_threshold"), "Distance threshold for filtering anchors",
+  make_option(c("--distance_threshold"), help="Distance threshold for filtering anchors",
     type = "integer", default = 5
   ),
-  make_option(c("--max_clusters_to_process"), "Maximum number of clusters to process",
+  make_option(c("--max_clusters_to_process"), help="Maximum number of clusters to process",
     type = "integer", default = 100000
   ),
-  make_option(c("--use_effect_size_bin"), "Whether to use the effect size bin for sorting instead of the effect size cts",
-    action = "store_true", default = FALSE
+  make_option(c("--use_effect_size_bin"), help="Whether to use the effect size bin for sorting instead of the effect size cts",
+    type = "logical", action = "store_true", default = FALSE
   )
 )
 
