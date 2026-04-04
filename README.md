@@ -28,17 +28,20 @@ mamba install snakemake-executor-plugin-cluster-generic
 
 To install `SPLASH`, download the relase here: [github.com/refresh-bio/SPLASH/releases/tag/v2.11.6](https://github.com/refresh-bio/SPLASH/releases/tag/v2.11.6). Unzip it into a folder in the project root and change the `splash_bin` parameter in `config.yaml` to match. You can also run the script `get_splash.sh` if you are using x64 linux.
 
+**The FLASH pipeline uses several SPLASH utilities throughout but the pipeline requires you to have run SPLASH on your data *before* running the full set of snakemake commands.**
+
 ### 2. Ensure `dataset_table.csv` is filled out correctly
 
-This file contains all of the datasets on which we want to run the FLASH Snakemake pipeline. Replace the current datasets with ones you would like to run. To run on a new dataset, add a new row with a **short name**, a path to the **SPLASH run folder** (where you have run SPLASH with the option to dump SATC files), a path to the **metadata file**, a path to a **lookup table for artifact filtering** (you don't need to change this from the other rows), and a **translation table** (this is an integer corresponding to the correct genetic code to use for translation).
+This file contains all of the datasets on which we want to run the FLASH Snakemake pipeline. Replace the current datasets with ones you would like to run. To run on a new dataset, add a new row with a **short name**, a path to the **SPLASH run folder** (where you ***must have already run*** SPLASH with the option to dump SATC files), a path to the **metadata file**, a path to a **lookup table for artifact filtering** (you don't need to change this from the other rows), and a **translation table** (this is an integer corresponding to the correct genetic code to use for translation).
 
-#### Inside the SPLASH run folder, the script is looking for the following files
+#### Inside the SPLASH run folder, the FLASH pipeline is looking for the following files specifically:
 
-1. `result.after_correction.scores.tsv`
-2. `sample_name_to_id.mapping.txt`
-3. `result_satc/` containing all of the satc files for the run.
+1. `sample_sheet.txt` generated in order to originally run SPLASH.
+2. `result.after_correction.scores.tsv` 
+3. `sample_name_to_id.mapping.txt` 
+4. `result_satc/` containing all of the satc files for the run.
 
-There is an example script for running SPLASH in the `resources/utility_scripts` folder (run_splash.sh).
+There is an example script for running SPLASH in the `resources/utility_scripts` folder (run_splash.sh). See below for further detail.
 
 #### The metadata file needs to be formatted as follows
 
@@ -51,7 +54,7 @@ The current wildcards and parameters are defined as follows:
 
 ```{yaml}
 options:
-  seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results
+  seqs_from_raw_data: true # set to true if you want FLASH to assemble it's sequences from raw FASTQ files, false if you want to default from the pre-processed SPLASH results
   feature_processing_method: "pca" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
   generate_plots: false # set to true to generate plots after model training
   num_clusters: 20000 # number of clusters to use for clustering anchors
@@ -117,11 +120,11 @@ The flag `--sdm conda` is important because it will tell snakemake to build and 
 
 #### Embedding mode or genome predictions
 
-**IMPORTANT:** **Before you run in embeddings mode you will need to download the singularity image containing the model state and necessary code into the folder `containers/`. See `containers/README.md` in that folder for further information.**
+**IMPORTANT:** **Before you run in embeddings mode you will need to download the singularity image containing the model state and necessary code into the folder `containers/`. This can be done by ensuring `singularity` is installed and running `bash containers/setup.sh` to pull the container image from GitHub Container Registry.**
 
-If you want to run FLASH using the embedding mode or genome prediction mode, you will need a GPU in the environment where you run `snakemake` or you will need to use a profile that can allocate GPUs and other resources (like the one provided for slurm schedulers in the directory `slurm_profile/`).
+If you want to run FLASH using the embedding mode or genome prediction mode, you will need a GPU in the environment where you run `snakemake` or you will need to use a profile that can allocate GPUs and other resources (like the one provided for the slurm scheduler in the directory `slurm_profile/`).
 
-**The keyword genomes is arbitrary and this mode can be used to perform predictions across any type of external data not used to run SPLASH or train the FLASH model. We have used this mode to run predictions on other short-read datasets, on genomes, and on long-read datasets.**
+**The keyword `genomes` is arbitrary and this mode can be used to perform predictions across any type of external data not used to run SPLASH or train the FLASH model. We have used this mode to run predictions on other short-read datasets, on genomes, and on long-read datasets.**
 
 ---
 
@@ -131,7 +134,7 @@ The command for running the code in an interactive environment (where a GPU is p
 export NUM_CORES=1
 snakemake --sdm conda -j $NUM_CORES all_embeddings # for embedding mode
 
-snakemake --sdm conda -j $NUM_CORES all_ohe # for one hot encoding mode
+snakemake --sdm conda -j $NUM_CORES all_genomes # for genomes mode, requires additional files/setup
 ```
 
 The code can also be run using an automatic scheduler. The included example submission script (`resources/utility_scripts/run_snakemake.sbatch`) and profile (`slurm_profile/config.v8+.yaml`) can submit the pipeline and request the required resources including GPU resources. For running on a cluster using `slurm` you can use this config using the --profile slurm_profile/config.v8+.yaml.
@@ -180,6 +183,8 @@ Output files are available in the `results/` folder with the dataset name as a s
 
 ### SPLASH
 
+You can use the following to prepare the sample data for the example. You can use these scripts to run SPLASH on your own data to prepare it for the FLASH pipeline as well. 
+
 To run the pipeline, you must first run SPLASH on your raw sequencing data to generate the necessary input files. An example script for running SPLASH is provided in the `resources/utility_scripts` folder (run_splash.sh). This script requires a file called `sample_sheet.txt` that contains two columns: `sample_name` and `file_path`, where `sample_name` is a unique identifier for each sample and `file_path` is the path to the raw sequencing data file (in FASTQ format). Typically, when using paired end data, we run SPLASH only on the forward reads. The options in the example script are set to generate the necessary SATC files for FLASH as they are not generated by default. You can modify the anchor and target lengths as needed, but these must match the values used in the FLASH pipeline. By default, we typically use 27 for both anchor and target lengths, which corresponds to ~9 amino acids each when translated.
 
 ### Required Outputs
@@ -189,7 +194,7 @@ After running SPLASH, ensure that the output folder contains the following files
 1. `result.after_correction.scores.tsv`
 2. `sample_name_to_id.mapping.txt`
 3. `result_satc/` containing all of the satc files for the run.
-4. `sample_sheet.txt` (if using the `seqs_from_raw_data: true` option in the config file)
+4. `sample_sheet.txt` (necessary when using the `seqs_from_raw_data: true` option in the config file)
 
 These files are the necessary inputs for the FLASH pipeline. You can then proceed to fill out the `dataset_table.csv` file with the path to the SPLASH output folder containing these files and to the metadata file associated with your samples. The metadata file should have a column named `sample_name` that matches the sample names used in the SPLASH run.
 
@@ -215,7 +220,9 @@ CLUSTER_TYPES = ["noCluster"]
 
 An example dataset containing SPLASH results and metadata for H5N1 samples is provided in the `resources/metadata/` folder. There are several utility scripts in the project root that will download the example data and run SPLASH. FLASH can then be run on this example data by following the instructions above and modifying the `dataset_table.csv` file to point to the example data paths and the included metadata file.
 
-The script `generate_example_data.sh` will download the example data into a folder `example_data/` and generate a file `sample_sheet.txt` for running SPLASH. The script `run_splash_example.sh` will run SPLASH on the example data (provided SPLASH has been installed and the path to the binaries has been set correctly in the script). After running SPLASH, you can modify the `dataset_table.csv` file to point to the location of the SPLASH output folder and the metadata file `resources/metadata/H5N1_example_metadata.csv`. You can then run FLASH using Snakemake as described above.
+The script `generate_example_data.sh` will download the example data into a folder `example_data/` and generate a file `sample_sheet.txt` for running SPLASH. This script requires the SRA toolkit to be installed. See [https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit](https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit) for more details. **Note: There may be a conflict between the python version installed in the snakemake conda environment and the python version these tools require in which case use a different version of python, probably one local to your machine, for this step.*
+
+The script `run_splash_example.sh` will run SPLASH on the example data (provided SPLASH has been installed and the path to the binaries has been set correctly in the script). After running SPLASH, you can modify the `dataset_table.csv` file to point to the location of the SPLASH output folder and the metadata file `resources/metadata/H5N1_example_metadata.csv`. You can then run FLASH using Snakemake as described above.
 
 ## Types of data that can be analyzed
 In principal FLASH has been written to run on any data with sturctured phenotype/metadata labels provided. However, there are some caveats to this. 
