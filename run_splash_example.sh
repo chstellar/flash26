@@ -21,13 +21,15 @@ if [ ! -f "example_data/sample_sheet.txt" ]; then
     exit 1
 fi
 
-mdkir -p H5N1-splash-results
+mkdir -p H5N1-splash-results
 
-cp example_data/sample_sheet.txt 
+cp example_data/sample_sheet.txt H5N1-splash-results
+
+cd H5N1-splash-results
 
 # Run SPLASH with the provided parameters
-./splash-2.11.6/splash \
-    --outname_prefix H5N1-splash-results/result \
+../splash-2.11.6/splash \
+    --outname_prefix result \
     --anchor_len 27 \
     --gap_len 0 \
     --target_len 27 \
@@ -41,4 +43,4 @@ cp example_data/sample_sheet.txt
     --n_most_freq_targets 10 \
     --dump_sample_anchor_target_count_binary \
     --satc_merge_dump_format satc \
-    example_data/sample_sheet.txt
+    sample_sheet.txt
