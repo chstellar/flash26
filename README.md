@@ -233,3 +233,146 @@ This can be changed by adjusting the paramater `min_samples_adelie` in the `exte
 
 #### Data where SPLASH has very few significant anchors or anchors that pass the threshold 
 If SPLASH does not provide a good insight into the structure encoded in your set of samples, it will not provide many anchors with hgih effect size. Because we use a default of 0.6 to filter for high effect size anchors, this could mean too few anchors enter into the analysis in the first place. This can be dropped in the `config.yaml` by adjusting the `effect_size_cutoff` praramter under `extended_options`. 
+
+## Resource Management, Threads, and Profiles
+
+Snakemake determines how many jobs run in parallel and how many threads each rule can use through a combination of **rule definitions**, **command-line arguments**, and **execution profiles**.
+
+### How threads are defined in the workflow
+
+Each rule in the `Snakefile` may specify a `threads:` directive. This value represents the *maximum* number of CPU threads that a single job of that rule is allowed to use. For example:
+
+```python
+rule example:
+    threads: 8
+```
+
+This does **not** guarantee that 8 threads will always be used. Instead, it defines an upper bound that Snakemake and the execution backend will respect.
+
+### Global core limits (`-j` / `--cores`)
+
+When running locally, the `-j` (or `--cores`) argument controls the total number of CPU cores available across all jobs:
+
+```bash
+snakemake -j 16
+```
+
+Snakemake will schedule jobs so that the sum of allocated threads does not exceed this limit. For example, two jobs requiring 8 threads each could run in parallel under `-j 16`.
+
+### Profiles override and extend resource behavior
+
+When using a profile (e.g., the provided Slurm profile in `slurm_profile/`), resource handling is largely delegated to the scheduler. Profiles can:
+
+* Override `threads`
+* Define additional resources (e.g., `mem_mb`, `time`, `gpus`)
+* Map Snakemake resources to scheduler submission parameters (e.g., `sbatch` flags)
+* Control job parallelism independently of the local `-j` flag
+
+For example, a Slurm profile may include entries such as:
+
+```yaml
+set-threads:
+  some_rule: 16
+
+resources:
+  some_rule:
+    mem_mb: 64000
+    runtime: 120
+```
+
+In this case, the profile—not the `Snakefile`—determines the actual resources requested at runtime.
+
+### Using the provided Slurm profile
+
+The example profile in `slurm_profile/` demonstrates how to:
+
+* Submit jobs via `sbatch`
+* Request CPUs, memory, and GPUs per rule
+* Scale execution across a cluster
+
+**Important:** This profile is cluster-specific. You must modify it to match:
+
+* Available partitions/queues
+* Memory and runtime limits
+* GPU availability and constraints
+
+### Adapting for local execution
+
+If you are running FLASH on a local machine (no scheduler), you should:
+
+1. Use the `-j` flag to reflect your available CPU cores.
+2. Review the `threads:` directives in the `Snakefile`.
+3. Optionally reduce thread counts for memory-intensive rules.
+4. Avoid overcommitting resources (e.g., running too many high-thread jobs in parallel).
+
+If needed, you can also define a simple local profile by copying relevant sections (such as `set-threads` and `resources`) from the Slurm profile and removing scheduler-specific fields.
+
+### Key takeaway
+
+* **`threads:` in rules** → defines per-job maximums
+* **`-j / --cores`** → defines total parallelism (local execution)
+* **Profiles** → dynamically override and map resources to your execution environment
+
+For most users:
+
+* On a cluster → use and adapt a profile (e.g., Slurm)
+* On a workstation → tune `-j` and adjust rule threads as needed
+
+
+### Example for a local machine
+Here’s a minimal local profile you can drop into something like profiles/local/. This avoids any cluster or executor plugin logic and just helps you centrally manage threads and resource scaling for a single machine.
+
+`profiles/local/config.yaml`:
+
+```
+# Maximum number of cores available to Snakemake
+cores: 8
+
+# Keep Snakemake from overloading your system
+jobs: 8
+
+# Use conda environments defined in envs/
+use-conda: true
+
+# Optional: rerun incomplete jobs
+rerun-incomplete: true
+
+# Print shell commands (useful for debugging)
+printshellcmds: true
+
+# Latency wait for filesystem (useful on network filesystems)
+latency-wait: 60
+
+# Default resources applied to rules that don't specify them
+default-resources:
+  - mem_mb=4000
+  - disk_mb=10000
+
+# Override threads for specific heavy rules (example)
+set-threads:
+  all_embeddings: 4
+  all_genomes: 4
+
+# You can also cap resources per rule if needed
+set-resources:
+  all_embeddings:
+    mem_mb: 16000
+  all_genomes:
+    mem_mb: 16000
+How to use it
+snakemake --profile profiles/local all_ohe
+```
+
+This replaces the need to manually pass `-j`, `--cores`, and other flags every time.
+
+#### How to adapt it to your machine
+
+`cores / jobs`: Set this to the number of CPU cores you actually want Snakemake to use (not necessarily the maximum your system has—leave some headroom).
+
+`set-threads`: Use this to downscale rules that are too aggressive by default. For example, if a rule asks for 16 threads but your machine only has 8 cores, cap it here.
+
+`default-resources`: Prevents too many memory-heavy jobs from running simultaneously. Increase mem_mb if you see jobs getting killed.
+
+#### Philosophy vs. the Slurm profile
+
+The Slurm profile translates Snakemake jobs into scheduler submissions. This local profile simply constrains and balances execution within a single machine. It contains no submission commands, no plugins and no external dependencies.
