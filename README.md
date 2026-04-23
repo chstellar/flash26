@@ -1,5 +1,49 @@
 # *FLASH*: FunctionaL Assigning Sequence Homing
 
+## Table of Contents
+
+* [Description](#description)
+
+### Running the workflow
+
+* [1. Install mamba, snakemake, and SPLASH](#1-install-mamba-snakemake-and-splash)
+* [2. Ensure dataset_table.csv is filled out correctly](#2-ensure-dataset_tablecsv-is-filled-out-correctly)
+* [3. Configure parameters in config.yaml](#3-configure-parameters-in-configyaml)
+* [4. Update all paths in config.yaml](#4-update-all-paths-in-the-config-file-configyaml)
+* [5. Run snakemake](#5-run-snakemake)
+
+### Execution modes
+
+* [One Hot Encoding](#one-hot-encoding)
+* [Embedding mode or genome predictions](#embedding-mode-or-genome-predictions)
+
+### Inputs and outputs
+
+* [Input Files](#input-files)
+* [Target rules and output files](#target-rules-and-output-files)
+
+### Guides and examples
+
+* [Guide: Running SPLASH and preparing inputs for FLASH](#guide-running-splash-and-preparing-inputs-for-flash)
+* [Required Outputs](#required-outputs)
+* [Running FLASH](#running-flash)
+* [Example Run of FLASH on H5N1 Sample Data](#example-run-of-flash-on-h5n1-sample-data)
+
+### Data considerations
+
+* [Types of data that can be analyzed](#types-of-data-that-can-be-analyzed)
+* [Very small datasets](#very-small-datasets)
+* [Data where SPLASH has few significant anchors](#data-where-splash-has-very-few-significant-anchors-or-anchors-that-pass-the-threshold)
+
+### Resource management
+
+* [Resource Management, Threads, and Profiles](#resource-management-threads-and-profiles)
+* [Global core limits (-j / --cores)](#global-core-limits--j----cores)
+* [Using the provided Slurm profile](#using-the-provided-slurm-profile)
+* [Adapting for local execution](#adapting-for-local-execution)
+* [Example for a local machine](#example-for-a-local-machine)
+
+
 ## Description
 
 The following pipeline uses `Snakemake` to run metadata-driven prediction and attribution on SPLASH results. Once SPLASH has been run on data and Snakemake has been installed, it should take *5-10 minutes* to configure the metadata table and check on input files, to prepare FLASH to run on a new dataset.
