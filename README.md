@@ -15,7 +15,7 @@ This pipeline has been modified to run locally but it requires extensive resourc
 You must have conda installed with the `mamba` package manager. See [https://github.com/conda-forge/miniforge](https://github.com/conda-forge/miniforge) for info on how to install mamba. After that, create a snakemake environment using the following command:
 
 ```{bash}
-mamba create -c conda-forge -c bioconda -n snakemake snakemake
+mamba create -n snakemake python=3.12 snakemake -c conda-forge -c bioconda
 ```
 
 To use the executor profile for cluster job submission (with sbatch) you also must run the following while the new conda environment is active (to activate: `conda activate snakemake`):
