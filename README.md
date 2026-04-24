@@ -65,7 +65,7 @@ mamba create -n snakemake python=3.12 snakemake -c conda-forge -c bioconda
 To use the executor profile for cluster job submission (with sbatch) you also must run the following while the new conda environment is active (to activate: `conda activate snakemake`):
 
 ```{bash}
-mamba install snakemake-executor-plugin-cluster-generic
+mamba install snakemake-executor-plugin-cluster-generic -c bioconda
 ```
 
 #### Installing SPLASH
