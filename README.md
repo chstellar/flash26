@@ -8,7 +8,7 @@
 
 * [1. Install mamba, snakemake, and SPLASH](#1-install-mamba-snakemake-and-splash)
 * [2. Ensure dataset_table.csv is filled out correctly](#2-ensure-dataset_tablecsv-is-filled-out-correctly)
-* [3. Configure parameters in config.yaml](#3-configure-parameters-in-configyaml)
+* [3. Configure parameters in config.yaml](#3-ensure-that-the-parameters-you-want-to-use-are-specified-in-the-configyaml-file-snakemake-will-use-these-to-fill-out-the-wildcards-in-the-snakefile)
 * [4. Update all paths in config.yaml](#4-update-all-paths-in-the-config-file-configyaml)
 * [5. Run snakemake](#5-run-snakemake)
 
@@ -27,7 +27,7 @@
 * [Guide: Running SPLASH and preparing inputs for FLASH](#guide-running-splash-and-preparing-inputs-for-flash)
 * [Required Outputs](#required-outputs)
 * [Running FLASH](#running-flash)
-* [Example Run of FLASH on H5N1 Sample Data](#example-run-of-flash-on-h5n1-sample-data)
+* [Example Run of FLASH on H5N1 Sample Data](#example-run-of-flash-on-h5n1-sample-data-step-by-step)
 
 ### Data considerations
 
@@ -170,7 +170,6 @@ If you want to run FLASH using the embedding mode or genome prediction mode, you
 
 **The keyword `genomes` is arbitrary and this mode can be used to perform predictions across any type of external data not used to run SPLASH or train the FLASH model. We have used this mode to run predictions on other short-read datasets, on genomes, and on long-read datasets.**
 
----
 
 The command for running the code in an interactive environment (where a GPU is present if running embeddings) is similar to above:
 
@@ -260,13 +259,157 @@ TARGET_LENGTH = 27
 CLUSTER_TYPES = ["noCluster"]
 ```
 
-## Example Run of FLASH on H5N1 Sample Data
+## Example Run of FLASH on H5N1 Sample Data (Step-by-Step)
 
-An example dataset containing SPLASH results and metadata for H5N1 samples is provided in the `resources/metadata/` folder. There are several utility scripts in the project root that will download the example data and run SPLASH. FLASH can then be run on this example data by following the instructions above and modifying the `dataset_table.csv` file to point to the example data paths and the included metadata file.
+This section walks through a complete, reproducible example using the provided H5N1 dataset. The goal is to go from raw data → SPLASH → FLASH predictions.
 
-The script `generate_example_data.sh` will download the example data into a folder `example_data/` and generate a file `sample_sheet.txt` for running SPLASH. This script requires the SRA toolkit to be installed. See [https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit](https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit) for more details. **Note: The included `envs/data_env.yml` contains the dependencies necessary to run this install script and has the SRA toolkit installed. If you already have it installed or available as a module, you can use that instead. The snakemake workflow itself does not automate downloading of data and requires data to be downloaded and SPLASH to be run before executing.*
+### Step 0: Create and activate environment
 
-The script `run_splash_example.sh` will run SPLASH on the example data (provided SPLASH has been installed and the path to the binaries has been set correctly in the script). After running SPLASH, you can modify the `dataset_table.csv` file to point to the location of the SPLASH output folder and the metadata file `resources/metadata/H5N1_example_metadata.csv`. You can then run FLASH using Snakemake as described above.
+```bash
+mamba create -n flash_env python=3.12 snakemake -c conda-forge -c bioconda
+conda activate flash_env
+mamba install snakemake-executor-plugin-cluster-generic
+```
+
+
+### Step 1: Download example data
+
+```bash
+bash generate_example_data.sh
+```
+
+This will:
+
+* Download H5N1 sequencing data into `example_data/`
+* Generate `sample_sheet.txt` for SPLASH
+
+> Requires SRA Toolkit (included in `envs/data_env.yml`)
+
+
+### Step 2: Run SPLASH on the example data
+
+```bash
+bash run_splash_example.sh
+```
+
+After completion, confirm the SPLASH output folder contains:
+
+* `result.after_correction.scores.tsv`
+* `sample_name_to_id.mapping.txt`
+* `result_satc/`
+* `sample_sheet.txt`
+
+
+### Step 3: Set up dataset table
+
+Edit `dataset_table.csv` and add/update a row like:
+
+```
+dataset_short_name,SPLASH_results,metadata_file,lookup_table,translation_table,taxid
+H5N1_example,example_data/splash_output,resources/metadata/H5N1_example_metadata.csv,resources/lookup_tables/default_lookup.tsv,1,11320
+```
+
+
+### Step 4: Configure `config.yaml`
+
+At minimum, verify:
+
+```yaml
+splash_bin: /path/to/SPLASH/bin
+temp_dir: /path/to/fast/storage
+```
+
+Optional but recommended:
+
+```yaml
+generate_plots: false
+```
+
+
+### Step 5: Download model container (REQUIRED for embeddings)
+
+```bash
+bash containers/setup.sh
+```
+
+This pulls the required Singularity container into `containers/`.
+
+
+### Step 6: Create a local execution profile
+
+Create:
+
+```
+profiles/local/config.yaml
+```
+
+With the following contents:
+
+```yaml
+cores: 8
+jobs: 8
+use-conda: true
+
+rerun-incomplete: true
+printshellcmds: true
+latency-wait: 60
+
+default-resources:
+  - mem_mb=4000
+  - disk_mb=10000
+
+set-threads:
+  all_ohe: 4
+  all_embeddings: 4
+
+set-resources:
+  all_embeddings:
+    mem_mb: 16000
+```
+
+
+### Step 7: Run FLASH
+
+#### Option A: CPU-only (One Hot Encoding)
+
+```bash
+snakemake --profile profiles/local --sdm conda all_ohe
+```
+
+#### Option B: Embedding mode (requires GPU + container)
+
+```bash
+snakemake --profile profiles/local --sdm conda all_embeddings
+```
+
+
+### Step 8: Inspect outputs
+
+Results will appear in:
+
+```
+results/H5N1_example/
+```
+
+Key outputs include:
+
+* Model predictions
+* Feature importance summaries
+* Clustered anchor outputs
+
+### Notes & Common Pitfalls
+
+* **Container step is mandatory** for embedding mode — missing this will cause runtime failures.
+* **Paths must be absolute or correct relative paths** in both `dataset_table.csv` and `config.yaml`.
+* If jobs fail due to memory:
+
+  * Reduce `cores` / `jobs`
+  * Increase `mem_mb` in profile
+* If SPLASH anchors are sparse:
+
+  * Lower `effect_size_cutoff` in `config.yaml`
+
+--- 
 
 ## Types of data that can be analyzed
 In principal FLASH has been written to run on any data with sturctured phenotype/metadata labels provided. However, there are some caveats to this. 
