@@ -14,5 +14,6 @@ benchmarks/*
 .Rproj.user
 *.Rhistory
 *.Rproj
+*.out
 example_data/
 containers/hyena_embedder.sif
