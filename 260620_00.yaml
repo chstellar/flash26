@@ -1,5 +1,5 @@
 # main files
-data_table: 260621_00_temnothorax_challenge.csv
+data_table: 260620_00_bschlosseri_ss3.csv
 temp_dir: results/
 splash_bin: /oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/
 satc_util_bin: /oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/
@@ -31,9 +31,9 @@ options:
   feature_processing:
    method: "top_variance" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
    recode_missing: false # set to true to recode missing values to 0 after processing the embeddings by either method (i.e. top variance or pca) prior to glmnet modeling. # This circumvents the problem where the NNNN embedding can be a large outlier.
-  grouped_model: false # set to true to use cluster groups for glmnet modeling instead of individual embeddings or PCs
+  grouped_model: true # set to true to use cluster groups for glmnet modeling instead of individual embeddings or PCs
   generate_plots: true # set to true to generate plots after model training
-  num_clusters: 20000 # number of clusters to use for clustering anchors
+  num_clusters: 2000 # number of clusters to use for clustering anchors
   filters: ["filter1"] # define which anchor selection filters to use
   cluster_types: ["shiftDist-levFilter"] # define which clustering methods to use # see scripts section for available options
   models: ["hyena"] # currently only 'hyena' is supported
@@ -60,7 +60,7 @@ extended_options:
     umap: 1 # number of top variance embedding features to keep for UMAP
   num_PCs_umap: 10 # number of principal components to use for UMAP plotting
   min_samples_adelie: 28 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
-  adelie_alpha: 0.5 # alpha parameter for elastic net regularization in adelie (0 = ridge, 1 = lasso)
+  adelie_alpha: 1 # alpha parameter for elastic net regularization in adelie (0 = ridge, 1 = lasso)
 
 
 # define all scripts and parameters used in the pipeline

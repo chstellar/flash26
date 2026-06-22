@@ -15,7 +15,7 @@ import csv
 
 ## Define the config files for the pipeline
 # you can define different config files for different runs of the pipeline
-configfile: "26062100.yaml" 
+configfile: "260621_00.yaml" 
 dataset_table_path = Path(config["data_table"])
 TEMP_DIR = Path(config["temp_dir"])
 
