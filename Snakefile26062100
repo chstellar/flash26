@@ -15,9 +15,8 @@ import csv
 
 ## Define the config files for the pipeline
 # you can define different config files for different runs of the pipeline
-configfile: "config.yaml" 
-# dataset_table_path = Path(config["data_table"])
-dataset_table_path = Path("260621_00_temnothorax_challenge.csv")
+configfile: "26062100.yaml" 
+dataset_table_path = Path(config["data_table"])
 TEMP_DIR = Path(config["temp_dir"])
 
 ## read the dataset table with the short names as indices
