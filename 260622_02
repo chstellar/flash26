@@ -10,15 +10,13 @@ The pipeline is written in snakemake and is best run using resources from a high
 
 ## Importing necessary modules
 from pathlib import Path
+import glob
 import pandas as pd
 import csv
-import glob
 
 ## Define the config files for the pipeline
 # you can define different config files for different runs of the pipeline
-# configfile: "260622_00.yaml" 
 configfile: f"{Path(workflow.snakefile).stem}.yaml"
-# dataset_table_path = Path(config["data_table"])
 dataset_table_path = Path(glob.glob(f"{Path(workflow.configfiles[0]).stem}*.csv")[0])
 TEMP_DIR = Path(config["temp_dir"])
 

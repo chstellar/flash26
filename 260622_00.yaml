@@ -58,8 +58,8 @@ extended_options:
     by_pca: 5 # number of principal components to keep for GLMnet
     umap: 1 # number of top variance embedding features to keep for UMAP
   num_PCs_umap: 10 # number of principal components to use for UMAP plotting
-  min_samples_adelie: 28 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
-  adelie_alpha: 0.5 # alpha parameter for elastic net regularization in adelie (0 = ridge, 1 = lasso)
+  min_samples_adelie: 4 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
+  adelie_alpha: 1 # alpha parameter for elastic net regularization in adelie (0 = ridge, 1 = lasso)
 
 
 # define all scripts and parameters used in the pipeline
