@@ -1,0 +1,10 @@
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_CAT_R1_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_CAT_R1_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_CAT_R2_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_CAT_R2_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L001_R1_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L001_R1_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L001_R2_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L001_R2_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L002_R1_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L002_R1_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L002_R2_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L002_R2_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L003_R1_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L003_R1_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L003_R2_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L003_R2_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L004_R1_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L004_R1_001.fastq.gz
+2371-5432b1-test-naive-StageAtoB-IL5944_S7_L004_R2_001	/scratch/users/jiamuyu/proj_botryllus/dast_bschlosseri_bulk_redownload0626/2371-5432b1-test-naive-StageAtoB-IL5944_S7_L004_R2_001.fastq.gz

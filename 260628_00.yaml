@@ -1,5 +1,5 @@
 # main files
-data_table: 260620_00_bschlosseri_ss3.csv
+data_table: 260628_00_bschlosseri_fusion.csv
 temp_dir: results/
 splash_bin: /oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/
 satc_util_bin: /oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/
