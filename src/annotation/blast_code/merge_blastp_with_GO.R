@@ -41,35 +41,21 @@ plan(multisession, workers=opt$max_workers)
 # Read in the data
 blast_files <- list.files(path=opt$blast_folder, pattern="blastout.tsv", full.names = T)
 
-blast_dfs <- future_map(blast_files, \(x) {
-  if (ncol(fread(x, sep = "\t", nrow = 5)) == 19) {
-    fread(x, sep = "\t", col.names = c("query", "subject", "identity", "alignment_length",
-                                       "mismatches", "gap_opens", "q_start", "q_end",
-                                       "s_start", "s_end", "sstrand", "evalue", "qcovs", "qframe",
-                                       "sgi", "sacc", "slen", "staxids", "stitle"))
-  } else {
-    fread(x, sep = "\t", col.names = c("query", "subject", "identity", "alignment_length",
-                                       "mismatches", "gap_opens", "q_start", "q_end",
-                                       "s_start", "s_end", "sstrand", "evalue", "qcovs",
-                                       "sgi", "sacc", "slen", "staxids", "stitle")) %>% mutate(qframe = "-")
-  }
-})
+blast_dfs <- future_map(blast_files, \(x) ifelse(ncol(fread(x, sep="\t", nrow=5)) == 19, return(fread(x, sep="\t", col.names = c("query", "subject", "identity", "alignment_length", 
+                                                   "mismatches", "gap_opens", "q_start", "q_end",
+                                                   "s_start", "s_end", "sstrand", "evalue", "qcovs", "qframe",
+                                                   "sgi", "sacc", "slen", "staxids", "stitle"))),
+                                                 return(fread(x, sep="\t", col.names = c("query", "subject", "identity", "alignment_length", 
+                                                                        "mismatches", "gap_opens", "q_start", "q_end",
+                                                                        "s_start", "s_end", "sstrand", "evalue", "qcovs",
+                                                                        "sgi", "sacc", "slen", "staxids", "stitle")) %>% mutate(qframe="-"))))
 
 # remove any data frames that had no data 
-valid_blast_dfs <- map_vec(blast_dfs, \(x) nrow(x) > 0)
+valid_blast_dfs <- map_vec(blast_dfs, \(x) nrow(x)>1)
 blast_files <- blast_files[valid_blast_dfs]
 blast_dfs <- blast_dfs[valid_blast_dfs]
 
 df_lengths <- map(blast_dfs, \(x) nrow(x)) %>% unlist()
-
-if (length(df_lengths) == 0) {
-  data.frame(query = character(), identity = numeric(), evalue = numeric(), qcovs = numeric(),
-             qframe = character(), staxids = character(), stitle = character(),
-             NCBI_protein_accession = character(), UniProt_accession = character(),
-             method = character(), GO = character()) %>%
-    write_tsv(opt$output_file, col_names = T, quote = "needed")
-  quit(save = "no")
-}
 
 if (mean(df_lengths) > 350) {
   plan(multisession, workers=4)
