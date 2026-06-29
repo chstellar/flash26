@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument(
         "--min_samples",
         type=int,
-        default=100,
+        default=28,
         help="Minimum number of samples per category to keep",
     )
     parser.add_argument(
@@ -174,7 +174,7 @@ def merge_data(data, metadata, metadata_col, min_samples=50, even_samples=False)
 
     X = merged_data.drop(["sample_name", metadata_col], axis=1)
     y = merged_data[metadata_col].to_numpy()
-    return np.asfortranarray(X), y, X.columns
+    return np.asfortranarray(np.asarray(X, dtype=np.float64)), y, X.columns
 
 
 def get_group_ids(column_names):
