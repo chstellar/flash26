@@ -23,12 +23,19 @@ option_list <- list(
   make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
               help = "default to using products for column names instead of genes"),
   make_option(c("--num_hits"), type="numeric", default=10,
-              help = "num nonzero coefficients to plot", metavar = "numeric")
+              help = "num nonzero coefficients to plot", metavar = "numeric"),
+  make_option(c("--cluster_length"), type="integer", default=NULL,
+              help = "Length of each concatenated anchor-target sequence. Defaults to k value parsed from input filename, then 54.", metavar = "integer")
 )
 
 # Parse command line options
 opt_parser <- OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
+
+if (is.null(opt$cluster_length)) {
+  inferred_cluster_length <- suppressWarnings(as.integer(str_extract(opt$nonzero_annotations, "_k(\\d+)_s", group = 1)))
+  opt$cluster_length <- ifelse(is.na(inferred_cluster_length), 54L, inferred_cluster_length)
+}
 
 # Check if all required arguments are provided
 if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
@@ -103,9 +110,8 @@ get_nth_class <- function(x,n=1) {
 }
 
 # function to read the nth cluster out of the sample sequences file 
-read_nth_cluster <- function(file_path, n) {
+read_nth_cluster <- function(file_path, n, cluster_length) {
   # Calculate start and end positions for the nth cluster
-  cluster_length <- 54
   start <- n * cluster_length + 1  # n is now 0-indexed
   end <- (n + 1) * cluster_length
   
@@ -341,7 +347,7 @@ for (category in categories) {
       first_class = unique(dt_sub$first_class)
       all_classes = dt_sub[1,]$classes %>% unlist()
       
-      seq_sub <- read_nth_cluster(opt$sample_seqs, as.numeric(str_extract(my_cluster, "\\d+")))
+      seq_sub <- read_nth_cluster(opt$sample_seqs, as.numeric(str_extract(my_cluster, "\\d+")), opt$cluster_length)
       emb_sub <- feather_dt %>% select(sample_name, !!my_feature)
       
       seq_sub <- seq_sub %>% 
