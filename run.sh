@@ -13,7 +13,7 @@ eval "$(/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/bin/conda shell
 eval "$(mamba shell hook --shell bash)"
 mamba activate flash
 
-SNAKEMAKE_FILE="${1:-260620_00}"
+SNAKEMAKE_FILE="${1:-}"
 FORCE_RULE="${2:-}"
 
 snakemake --unlock -s $SNAKEMAKE_FILE
