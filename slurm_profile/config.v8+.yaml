@@ -43,7 +43,7 @@ set-threads: # set specific threads for each rule
     run_adelie: 64
     prepare_data_for_prediction_ohe: 4
     run_adelie_ohe: 32
-    process_genome_to_sample_sequences: 16
+    process_genome_to_sample_sequences: 4
     decompose_kmers_genomes: 4
     embed_kmers_hyena_genomes: 8
     prepare_data_for_prediction_genomes: 32
