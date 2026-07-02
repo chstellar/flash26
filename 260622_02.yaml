@@ -100,6 +100,6 @@ scripts:
   run_blast: src/annotation/blast_code/run_blast.sh
   run_blastp: src/annotation/blast_code/run_blastp.sh
   merge_blast_results: src/annotation/merge_coefs_with_blast.R
-  plot_blast_results: src/annotation/blast_code/plot_blast_annotations_each_feature.R
+  plot_blast_results: src/annotation/blast_code/plot_blast_annotations_each_feature_split_species.R
   plot_blast_heatmaps: src/annotation/blast_code/plot_nonzero_features_heatmap.R
   plot_embeddings_umap: src/umap/plot_embeddings_umap.R
