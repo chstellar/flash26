@@ -164,7 +164,7 @@ def parse_residual_options(target_vars, confound_vars):
     target_vars = str(target_vars).strip().strip("\"'").strip()
     confound_vars = str(confound_vars).strip().strip("\"'").strip()
     if not target_vars or not confound_vars:
-        return [], False
+        return [], [], False
 
     targets = [item.strip() for item in target_vars.split(";") if item.strip()]
     confound_groups = [item.strip() for item in confound_vars.split(";")]
@@ -172,14 +172,18 @@ def parse_residual_options(target_vars, confound_vars):
         confound_groups.extend([""] * (len(targets) - len(confound_groups)))
 
     residual_specs = []
+    raw_targets = []
     include_all = False
     for target, confound_group in zip(targets, confound_groups):
         if target.lower() == "all":
             include_all = True
             continue
         confounds = [item.strip() for item in confound_group.split(",") if item.strip()]
-        residual_specs.append((target, confounds))
-    return residual_specs, include_all
+        if confounds:
+            residual_specs.append((target, confounds))
+        else:
+            raw_targets.append(target)
+    return residual_specs, raw_targets, include_all
 
 
 def residualize_series(target, confound_matrix):
@@ -201,10 +205,26 @@ def residualize_series(target, confound_matrix):
     return residual
 
 
+def resolve_confound_columns(metadata, target_col, confound_cols):
+    if any(confound_col.lower() == "all" for confound_col in confound_cols):
+        resolved = [
+            col
+            for col in metadata.columns
+            if col != "sample_name" and col != target_col and "__residual" not in col
+        ]
+        print(
+            f"Residual target {target_col}: expanding confounder 'all' to {len(resolved)} metadata columns."
+        )
+        return resolved
+    return confound_cols
+
+
 def add_residual_targets(metadata, target_vars, confound_vars):
-    residual_specs, include_all = parse_residual_options(target_vars, confound_vars)
+    residual_specs, raw_targets, include_all = parse_residual_options(
+        target_vars, confound_vars
+    )
     if not residual_specs:
-        return metadata, {}, include_all
+        return metadata, {}, raw_targets, include_all
 
     metadata = metadata.copy()
     residual_columns_by_target = {}
@@ -216,6 +236,7 @@ def add_residual_targets(metadata, target_vars, confound_vars):
             print(f"Skipping residual target {target_col}: no confounders were provided.")
             continue
 
+        confound_cols = resolve_confound_columns(metadata, target_col, confound_cols)
         confound_matrix = []
         missing_confounds = []
         for confound_col in confound_cols:
@@ -248,7 +269,7 @@ def add_residual_targets(metadata, target_vars, confound_vars):
                 f"Created residual target {residual_col} from {target_col} after adjusting for {', '.join(confound_cols)} ({complete} complete samples)."
             )
 
-    return metadata, residual_columns_by_target, include_all
+    return metadata, residual_columns_by_target, raw_targets, include_all
 
 
 def get_metadata_columns(metadata, min_samples=50):
@@ -492,9 +513,12 @@ def main():
     # Load teh data and metadata
     data = read_feather_data(args.data)
     metadata = read_metadata(args.metadata)
-    metadata, residual_columns_by_target, include_all_metadata = add_residual_targets(
-        metadata, args.target_vars, args.confound_vars
-    )
+    (
+        metadata,
+        residual_columns_by_target,
+        raw_target_columns,
+        include_all_metadata,
+    ) = add_residual_targets(metadata, args.target_vars, args.confound_vars)
     # Get the metadata columns that have more than 2 unique values
     # and more than 50 samples per category
     original_metadata = metadata.drop(
@@ -511,14 +535,27 @@ def main():
     continuous_metadata_columns = {
         col for residual_cols in residual_columns_by_target.values() for col in residual_cols
     }
-    if residual_columns_by_target:
+    if residual_columns_by_target or raw_target_columns or include_all_metadata:
         residual_targets = set(residual_columns_by_target)
+        raw_targets_seen = set()
         selected_columns = []
         for target_col, residual_cols in residual_columns_by_target.items():
             selected_columns.extend(residual_cols)
+        for target_col in raw_target_columns:
+            if target_col not in metadata.columns:
+                print(f"Skipping raw target {target_col}: column not found in metadata.")
+                continue
+            if target_col in raw_targets_seen:
+                continue
+            selected_columns.append(target_col)
+            raw_targets_seen.add(target_col)
         if include_all_metadata:
             selected_columns.extend(
-                [col for col in metadata_columns if col not in residual_targets]
+                [
+                    col
+                    for col in metadata_columns
+                    if col not in residual_targets and col not in raw_targets_seen
+                ]
             )
         metadata_columns = selected_columns
 
