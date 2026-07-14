@@ -37,8 +37,10 @@ KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps 
 MODELS = config["options"]["models"]
 NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
-TARGET_VARS = str(config["options"].get("TARGET_VARS", "")).strip()
-CONFOUND_VARS = str(config["options"].get("CONFOUND_VARS", "")).strip()
+# Residual fitting options for run_adelie.
+# Leave either string empty to disable residual fitting.
+TARGET_VARS = "infection_status;all"
+CONFOUND_VARS = "societal,zt_time,timepoint_code;"
 RESIDUAL_FITTING_ARGS = (
     f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
     if TARGET_VARS and CONFOUND_VARS
