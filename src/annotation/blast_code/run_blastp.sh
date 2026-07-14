@@ -36,7 +36,7 @@ python src/annotation/blast_code/run_blastp.py \
   --split_folder $SPLIT_TEMP_FOLDER \
   --blast_folder $BLAST_OUTPUT_FOLDER \
   --max_workers $THREADS \
-  --taxid $TAXID \
+  --taxid "$TAXID" \
   --translation_table $TRANSLATION_TABLE ${LOCAL_BLAST_DB} \
   $PROTEIN_DB_FLAG # flag will be provided as --protein_db "/path/to/db" or will be empty # flag will be provided as --local_blast_db "/path/to/db" or will be empty
  

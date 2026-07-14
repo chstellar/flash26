@@ -12,6 +12,27 @@ SPLIT_THRESH = 20  # 100
 SPLIT_EACH = 10  # 50
 
 
+def format_taxids(taxid):
+    taxid = str(taxid).strip().strip("\"'").strip()
+    if taxid in {"", "0", "NA", "NaN", "nan", "None", "none"}:
+        return ""
+
+    taxid = taxid.strip("{}[]()")
+    taxids = [
+        item.strip().strip("\"'").strip()
+        for item in taxid.replace(";", ",").split(",")
+        if item.strip()
+    ]
+    if not taxids:
+        return ""
+
+    invalid_taxids = [item for item in taxids if not item.isdigit()]
+    if invalid_taxids:
+        raise ValueError(f"Invalid taxid value(s): {', '.join(invalid_taxids)}")
+
+    return f"-taxids {','.join(taxids)}"
+
+
 def read_fasta(fasta_file, output_type="dict"):
     """
     Read a fasta file and return a dictionary with the sequence id as key and the sequence as value.
@@ -63,7 +84,7 @@ def split_fasta(fasta_file, output_dir, num_seq=1):
 
 def run_blast(splitted_fasta, blast_folder, max_workers, taxid, local_blast_db=""):
     fmt = "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send sstrand evalue qcovs sgi sacc slen staxids stitle"
-    taxid = f"-taxids {str(taxid)}" if taxid != 0 else ""
+    taxid = format_taxids(taxid)
     if local_blast_db:
         remote_flag = ""
         local_db_export = f"export BLASTDB={local_blast_db}; "
@@ -131,8 +152,8 @@ def parse_args():
     )
     parser.add_argument(
         "--taxid",
-        type=int,
-        default=0,
+        type=str,
+        default="0",
         help="What tax id to restrict to when searching BLAST",
     )
     parser.add_argument(

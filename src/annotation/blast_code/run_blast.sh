@@ -35,7 +35,7 @@ python src/annotation/blast_code/run_blast.py \
   --split_folder $SPLIT_TEMP_FOLDER \
   --blast_folder $BLAST_OUTPUT_FOLDER \
   --max_workers $THREADS \
-  --taxid $TAXID \
+  --taxid "$TAXID" \
   $LOCAL_BLAST_DB # flag will be provided as --local_blast_db "/path/to/db" or will be empty
 
 python src/annotation/blast_code/blast_features.py \

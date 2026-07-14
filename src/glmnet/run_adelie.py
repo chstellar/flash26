@@ -1,5 +1,5 @@
 # from sklearn.model_selection import train_test_split
-# from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score
 from sklearn.metrics import confusion_matrix
 from sklearn.preprocessing import OneHotEncoder
 
@@ -81,6 +81,18 @@ def parse_args():
         default=1,
         help="Alpha parameter for elastic net regularization (0 = ridge, 1 = lasso)",
     )
+    parser.add_argument(
+        "--target_vars",
+        type=str,
+        default="",
+        help="Semicolon-delimited target variables to residualize. Use 'all' as the last field to also fit other metadata columns normally.",
+    )
+    parser.add_argument(
+        "--confound_vars",
+        type=str,
+        default="",
+        help="Semicolon-delimited confounder groups corresponding to --target_vars; confounders within a group are comma-delimited.",
+    )
     return parser.parse_args()
 
 
@@ -92,9 +104,151 @@ def read_metadata(file_path):
     metadata = pd.read_table(file_path)
     if "sample_name" not in metadata.columns:
         raise ValueError("Metadata file must contain a sample_name column")
-    # mutate all columns to strings for categorical analysis
-    metadata = metadata.apply(lambda x: x.astype(str))
+    metadata = metadata.copy()
+    metadata["sample_name"] = metadata["sample_name"].astype(str)
     return metadata
+
+
+def clean_metadata_series(series):
+    series = series.copy()
+    if series.dtype == object:
+        series = series.astype(str).str.strip()
+        series = series.replace(
+            {"": np.nan, "nan": np.nan, "NaN": np.nan, "NA": np.nan, "None": np.nan}
+        )
+    return series
+
+
+def numericize_metadata_column(metadata, column, prefix=None, drop_first=True):
+    values = clean_metadata_series(metadata[column])
+    numeric = pd.to_numeric(values, errors="coerce")
+    nonmissing = values.notna()
+
+    if nonmissing.sum() == numeric.notna().sum():
+        return pd.DataFrame({prefix or column: numeric.astype(float)})
+
+    dummies = pd.get_dummies(values, prefix=prefix or column, dummy_na=False)
+    if drop_first and dummies.shape[1] > 1:
+        dummies = dummies.iloc[:, 1:]
+    dummies = dummies.astype(float)
+    dummies.loc[~nonmissing, :] = np.nan
+    return dummies
+
+
+def numericize_target_column(metadata, column):
+    values = clean_metadata_series(metadata[column])
+    numeric = pd.to_numeric(values, errors="coerce")
+    nonmissing = values.notna()
+
+    if nonmissing.sum() == numeric.notna().sum():
+        return {f"{column}__residual": numeric.astype(float)}
+
+    categories = sorted(values.dropna().unique())
+    if len(categories) == 2:
+        mapping = {categories[0]: 0.0, categories[1]: 1.0}
+        print(f"Residual target {column}: encoding {mapping}")
+        return {f"{column}__residual": values.map(mapping).astype(float)}
+
+    targets = {}
+    for category in categories:
+        safe_category = str(category).replace(" ", "_").replace("/", "_")
+        target_name = f"{column}__residual__{safe_category}"
+        targets[target_name] = (values == category).where(nonmissing, np.nan).astype(float)
+    print(
+        f"Residual target {column}: created {len(targets)} one-vs-rest residual targets for multiclass metadata."
+    )
+    return targets
+
+
+def parse_residual_options(target_vars, confound_vars):
+    target_vars = str(target_vars).strip().strip("\"'").strip()
+    confound_vars = str(confound_vars).strip().strip("\"'").strip()
+    if not target_vars or not confound_vars:
+        return [], False
+
+    targets = [item.strip() for item in target_vars.split(";") if item.strip()]
+    confound_groups = [item.strip() for item in confound_vars.split(";")]
+    if len(confound_groups) < len(targets):
+        confound_groups.extend([""] * (len(targets) - len(confound_groups)))
+
+    residual_specs = []
+    include_all = False
+    for target, confound_group in zip(targets, confound_groups):
+        if target.lower() == "all":
+            include_all = True
+            continue
+        confounds = [item.strip() for item in confound_group.split(",") if item.strip()]
+        residual_specs.append((target, confounds))
+    return residual_specs, include_all
+
+
+def residualize_series(target, confound_matrix):
+    residual = target.astype(float).copy()
+    for confound_name, confound_df in confound_matrix:
+        valid = residual.notna() & confound_df.notna().all(axis=1)
+        if valid.sum() < 2:
+            print(f"Skipping residual adjustment for {confound_name}: fewer than 2 complete samples.")
+            residual.loc[~valid] = np.nan
+            continue
+
+        x = confound_df.loc[valid].to_numpy(dtype=np.float64)
+        x = np.column_stack([np.ones(x.shape[0]), x])
+        y = residual.loc[valid].to_numpy(dtype=np.float64)
+        beta, *_ = np.linalg.lstsq(x, y, rcond=None)
+        fitted = x @ beta
+        residual.loc[valid] = y - fitted
+        residual.loc[~valid] = np.nan
+    return residual
+
+
+def add_residual_targets(metadata, target_vars, confound_vars):
+    residual_specs, include_all = parse_residual_options(target_vars, confound_vars)
+    if not residual_specs:
+        return metadata, {}, include_all
+
+    metadata = metadata.copy()
+    residual_columns_by_target = {}
+    for target_col, confound_cols in residual_specs:
+        if target_col not in metadata.columns:
+            print(f"Skipping residual target {target_col}: column not found in metadata.")
+            continue
+        if not confound_cols:
+            print(f"Skipping residual target {target_col}: no confounders were provided.")
+            continue
+
+        confound_matrix = []
+        missing_confounds = []
+        for confound_col in confound_cols:
+            if confound_col not in metadata.columns:
+                missing_confounds.append(confound_col)
+                continue
+            confound_matrix.append(
+                (
+                    confound_col,
+                    numericize_metadata_column(
+                        metadata, confound_col, prefix=f"confound__{confound_col}"
+                    ),
+                )
+            )
+
+        if missing_confounds:
+            print(
+                f"Residual target {target_col}: missing confounder columns ignored: {', '.join(missing_confounds)}"
+            )
+        if not confound_matrix:
+            print(f"Skipping residual target {target_col}: no valid confounders remain.")
+            continue
+
+        residual_columns_by_target[target_col] = []
+        for residual_col, numeric_target in numericize_target_column(metadata, target_col).items():
+            metadata[residual_col] = residualize_series(numeric_target, confound_matrix)
+            residual_columns_by_target[target_col].append(residual_col)
+            complete = metadata[residual_col].notna().sum()
+            print(
+                f"Created residual target {residual_col} from {target_col} after adjusting for {', '.join(confound_cols)} ({complete} complete samples)."
+            )
+
+    return metadata, residual_columns_by_target, include_all
 
 
 def get_metadata_columns(metadata, min_samples=50):
@@ -103,7 +257,8 @@ def get_metadata_columns(metadata, min_samples=50):
     Filters the columns so it will only return metadata that have more than two
     discrete values with greater than min_samples per category
     """
-    filtered_metadata = metadata.loc[:, metadata.columns != "sample_name"]
+    filtered_metadata = metadata.loc[:, metadata.columns != "sample_name"].copy()
+    filtered_metadata = filtered_metadata.apply(clean_metadata_series)
     # filter out columns with less than 2 unique values
     filtered_metadata = filtered_metadata.loc[
         :, filtered_metadata.apply(lambda x: len(x.unique()) >= 2, axis=0)
@@ -119,11 +274,43 @@ def get_metadata_columns(metadata, min_samples=50):
 
 
 def merge_and_split_data(
-    data, metadata, metadata_col, min_samples=50, train_prop=0.5, balanced_test=False
+    data,
+    metadata,
+    metadata_col,
+    min_samples=50,
+    train_prop=0.5,
+    balanced_test=False,
+    continuous=False,
 ):
     metadata = metadata[["sample_name", metadata_col]]
     merged_data = pd.merge(data, metadata, on="sample_name", how="left")
     merged_data = merged_data.dropna(subset=[metadata_col])
+
+    if continuous:
+        if len(merged_data) < max(2, min_samples):
+            return None, None, None, None, None
+        train_size = len(merged_data) if train_prop == 1 else floor(len(merged_data) * train_prop)
+        if train_prop < 1:
+            train_size = min(max(train_size, 1), len(merged_data) - 1)
+        indices_to_keep = merged_data.sample(n=train_size, replace=False).index
+        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[
+            indices_to_keep
+        ]
+        model_features = X_train.columns
+        y_train = merged_data[metadata_col].loc[indices_to_keep].astype(float).to_numpy()
+        if train_prop == 1:
+            return np.asfortranarray(X_train), None, y_train, None, model_features
+        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(
+            indices_to_keep
+        )
+        y_test = merged_data[metadata_col].drop(indices_to_keep).astype(float).to_numpy()
+        return (
+            np.asfortranarray(np.asarray(X_train, dtype=np.float64)),
+            np.asfortranarray(np.asarray(X_test, dtype=np.float64)),
+            y_train,
+            y_test,
+            model_features,
+        )
 
     # Check the distribution of classes for this metadata category
     class_counts = merged_data[metadata_col].value_counts()
@@ -269,6 +456,33 @@ def train_adelie_model(
     return model, oh
 
 
+def train_adelie_regression_model(
+    X_train, y_train, n_threads=1, group_ids=None, max_iters=1e5, tol=1e-7, alpha=0.5
+):
+    X_train_wrap = ad.matrix.dense(
+        np.asarray(X_train, dtype=np.float64), method="naive", n_threads=n_threads
+    )
+
+    max_iters = int(max_iters)
+    model = ad.GroupElasticNet(solver="cv_grpnet", family="gaussian")
+    fit_kwargs = dict(
+        n_threads=n_threads,
+        max_iters=max_iters,
+        tol=tol,
+        alpha=alpha,
+    )
+    if group_ids is not None:
+        fit_kwargs["groups"] = group_ids
+    model.fit(X_train_wrap, np.asarray(y_train, dtype=np.float64), **fit_kwargs)
+    return model
+
+
+def flatten_coefficients(coef):
+    if hasattr(coef, "toarray"):
+        return coef.toarray().flatten()
+    return np.asarray(coef).flatten()
+
+
 def main():
     args = parse_args()
     output_prefix = args.output_prefix
@@ -278,9 +492,35 @@ def main():
     # Load teh data and metadata
     data = read_feather_data(args.data)
     metadata = read_metadata(args.metadata)
+    metadata, residual_columns_by_target, include_all_metadata = add_residual_targets(
+        metadata, args.target_vars, args.confound_vars
+    )
     # Get the metadata columns that have more than 2 unique values
     # and more than 50 samples per category
-    metadata_columns = get_metadata_columns(metadata, min_samples=args.min_samples)
+    original_metadata = metadata.drop(
+        columns=[
+            col
+            for residual_cols in residual_columns_by_target.values()
+            for col in residual_cols
+        ],
+        errors="ignore",
+    )
+    metadata_columns = list(
+        get_metadata_columns(original_metadata, min_samples=args.min_samples)
+    )
+    continuous_metadata_columns = {
+        col for residual_cols in residual_columns_by_target.values() for col in residual_cols
+    }
+    if residual_columns_by_target:
+        residual_targets = set(residual_columns_by_target)
+        selected_columns = []
+        for target_col, residual_cols in residual_columns_by_target.items():
+            selected_columns.extend(residual_cols)
+        if include_all_metadata:
+            selected_columns.extend(
+                [col for col in metadata_columns if col not in residual_targets]
+            )
+        metadata_columns = selected_columns
 
     all_model_features = None
 
@@ -289,6 +529,7 @@ def main():
         for metadata_col in metadata_columns:
             print(f"Processing metadata column: {metadata_col}")
             print()
+            continuous_target = metadata_col in continuous_metadata_columns
 
             X_train, X_test, y_train, y_test, model_features = merge_and_split_data(
                 data,
@@ -297,6 +538,7 @@ def main():
                 min_samples=args.min_samples,
                 balanced_test=args.balanced_test,
                 train_prop=args.train_prop,
+                continuous=continuous_target,
             )
 
             # skip the column if the merge and split function returns None
@@ -304,6 +546,109 @@ def main():
                 print(
                     f"Skipping {metadata_col} as there are not enough samples after merging and filtering..."
                 )
+                print()
+                continue
+
+            if continuous_target:
+                print(f"Fitting continuous residual target for {metadata_col}.")
+                if args.grouped:
+                    group_ids = get_group_ids(model_features)
+                    print(f"Using grouped elastic net with {len(group_ids)} groups.")
+                else:
+                    print("Not using grouped elastic net.")
+                    group_ids = None
+
+                try:
+                    model = train_adelie_regression_model(
+                        X_train,
+                        y_train,
+                        n_threads=args.n_threads,
+                        group_ids=group_ids,
+                        tol=args.tol,
+                        max_iters=args.max_iters,
+                        alpha=args.alpha,
+                    )
+                except Exception as e:
+                    print(f"Failed to train model for {metadata_col}: {e}")
+                    continue
+
+                yhat_train = np.asarray(model.predict(X_train.astype(np.float64))).flatten()
+                train_r2 = r2_score(y_train, yhat_train)
+                print(f"Train R2 for {metadata_col}: {train_r2:.4f}")
+
+                if args.train_prop == 1:
+                    test_r2 = None
+                    print("Not calculating test R2 as we are not using test data...")
+                else:
+                    yhat = np.asarray(model.predict(X_test.astype(np.float64))).flatten()
+                    test_r2 = r2_score(y_test, yhat)
+                    print(f"Test R2 for {metadata_col}: {test_r2:.4f}")
+
+                coef = flatten_coefficients(model.coef_)
+                model_features = pd.DataFrame(
+                    {"feature": model_features, "coefficient": coef}
+                )
+                model_features = model_features[model_features["coefficient"] != 0]
+                model_features["metadata_category"] = metadata_col
+                model_features["accuracy"] = test_r2 if test_r2 is not None else "NA"
+                model_features["train_accuracy"] = train_r2
+                model_features["sensitivity"] = "NA"
+                model_features["specificity"] = "NA"
+                model_features["confusion_matrix"] = "NA"
+                model_features["classes"] = "[residual]"
+                model_features["coefficients"] = model_features["coefficient"].apply(
+                    lambda x: f"[{x}]"
+                )
+                model_features = model_features[
+                    [
+                        "metadata_category",
+                        "feature",
+                        "accuracy",
+                        "train_accuracy",
+                        "sensitivity",
+                        "specificity",
+                        "confusion_matrix",
+                        "classes",
+                        "coefficients",
+                    ]
+                ]
+
+                if all_model_features is None:
+                    all_model_features = model_features
+                else:
+                    all_model_features = pd.concat(
+                        [all_model_features, model_features], axis=0
+                    )
+
+                plt.figure()
+                plt.scatter(y_train, yhat_train, alpha=0.8)
+                min_value = min(np.min(y_train), np.min(yhat_train))
+                max_value = max(np.max(y_train), np.max(yhat_train))
+                plt.plot([min_value, max_value], [min_value, max_value], color="black")
+                plt.title(f"{metadata_col}\nTrain R2: {train_r2:.2f}")
+                plt.xlabel("Observed residual")
+                plt.ylabel("Predicted residual")
+                plt.tight_layout()
+                pdf.savefig()
+                plt.close()
+
+                if args.train_prop < 1:
+                    plt.figure()
+                    plt.scatter(y_test, yhat, alpha=0.8)
+                    min_value = min(np.min(y_test), np.min(yhat))
+                    max_value = max(np.max(y_test), np.max(yhat))
+                    plt.plot(
+                        [min_value, max_value],
+                        [min_value, max_value],
+                        color="black",
+                    )
+                    plt.title(f"{metadata_col}\nTest R2: {test_r2:.2f}")
+                    plt.xlabel("Observed residual")
+                    plt.ylabel("Predicted residual")
+                    plt.tight_layout()
+                    pdf.savefig()
+                    plt.close()
+
                 print()
                 continue
 
@@ -419,7 +764,7 @@ def main():
 
             # get the names and values of the nonzero coefficients
             model_features = pd.DataFrame(model_features, columns=["feature"])
-            model_features["coefficient"] = coef.toarray().flatten()
+            model_features["coefficient"] = flatten_coefficients(coef)
             model_features = model_features[model_features["coefficient"] != 0]
 
             # separate the feature names into the feature and category
