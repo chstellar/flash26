@@ -1,2 +1,2 @@
 dataset_short_name,SPLASH_results,metadata_file,translation_table,genomes_folder,genome_list,genome_metadata_file,taxid
-260713-00-3ants-challenge,/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/a10t31g0r10s10d10/,/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/metadata.tsv,1,,,,0
+260713-00-3ants-challenge,/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/a10t31g0r10s10d10/,/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/metadata.tsv,1,,,,{300111,102681,104421}
