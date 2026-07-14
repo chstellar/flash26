@@ -24,8 +24,8 @@ if [ -n "$FORCE_RULE" ]; then
     SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD -R $FORCE_RULE"
 fi
 
-# eval "$SNAKEMAKE_EMBED_CMD all_embeddings -s $SNAKEMAKE_FILE"
-eval "$SNAKEMAKE_CMD all_genomes -s $SNAKEMAKE_FILE"
+eval "$SNAKEMAKE_EMBED_CMD all_embeddings -s $SNAKEMAKE_FILE"
+# eval "$SNAKEMAKE_CMD all_genomes -s $SNAKEMAKE_FILE"
 
 # SNAKEMAKE_CMD="$SNAKEMAKE_CMD all_embeddings -s $SNAKEMAKE_FILE"
 # eval $SNAKEMAKE_CMD
