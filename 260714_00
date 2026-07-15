@@ -39,12 +39,7 @@ NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
 TARGET_VARS = "infection_status;infection_status;infection_status;infection_status;fungus;fungus;fungus;fungus;host_species;host_species;lps;lps;tissue;tissue"
 CONFOUND_VARS = "all;cestode,fungus,lps,fungus_species,societal,zt_time,timepoint_code;cestode,fungus,lps,fungus_species;societal,zt_time,timepoint_code;;all;fungus_species,societal,zt_time,timepoint_code;societal,zt_time,timepoint_code;;all;;all;;all;"
-RESIDUAL_FITTING_ARGS = (
-    f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
-    if TARGET_VARS and CONFOUND_VARS
-    else ""
-)
-BLAST_SELECTION_MODE = "plot_selected_and_top" # all, top_n_per_cluster, plot_selected, or plot_selected_and_top
+BLAST_SELECTION_MODE = "all" # all, top_n_per_cluster, plot_selected, or plot_selected_and_top
 BLAST_TOP_N_SEQUENCES_PER_CLUSTER = 10 # used by top_n_per_cluster and as fallback for plot_selected_and_top
 BLAST_NUM_PLOT_HITS = 10 # should match plot_blast_annotations_each_feature.R --num_hits default
 raw_target_rank = config["options"]["target_rank"] # this is the rank of the target to use for prediction (1 = top target, 2 = second target, etc.)
@@ -489,7 +484,11 @@ rule run_adelie:
         min_samples = config["extended_options"]["min_samples_adelie"],
         grouped_flag = "--grouped" if config["options"]["grouped_model"] else "",
         alpha = config["extended_options"]["adelie_alpha"],
-        residual_fitting_args = RESIDUAL_FITTING_ARGS
+        residual_fitting_args = (
+            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
+            if TARGET_VARS and CONFOUND_VARS
+            else ""
+        )
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -532,7 +531,11 @@ rule run_adelie_ohe:
         min_samples = config["extended_options"]["min_samples_adelie"],
         grouped_flag = "--grouped" if config["options"]["grouped_model"] else "",
         alpha = config["extended_options"]["adelie_alpha"],
-        residual_fitting_args = RESIDUAL_FITTING_ARGS
+        residual_fitting_args = (
+            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
+            if TARGET_VARS and CONFOUND_VARS
+            else ""
+        )
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
