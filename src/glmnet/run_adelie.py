@@ -19,6 +19,8 @@ from math import floor
 # from os.path import basename
 import argparse
 from pathlib import Path
+import re
+import textwrap
 
 np.random.seed(42)
 
@@ -257,18 +259,18 @@ def numericize_target_column(metadata, column):
     nonmissing = values.notna()
 
     if nonmissing.sum() == numeric.notna().sum():
-        return {f"{column}__residual": numeric.astype(float)}
+        return {f"{column}_residual": numeric.astype(float)}
 
     categories = sorted(values.dropna().unique())
     if len(categories) == 2:
         mapping = {categories[0]: 0.0, categories[1]: 1.0}
         print(f"Residual target {column}: encoding {mapping}")
-        return {f"{column}__residual": values.map(mapping).astype(float)}
+        return {f"{column}_residual": values.map(mapping).astype(float)}
 
     targets = {}
     for category in categories:
-        safe_category = str(category).replace(" ", "_").replace("/", "_")
-        target_name = f"{column}__residual__{safe_category}"
+        safe_category = make_safe_label(category)
+        target_name = f"{column}_residual_{safe_category}"
         targets[target_name] = (values == category).where(nonmissing, np.nan).astype(float)
     print(
         f"Residual target {column}: created {len(targets)} one-vs-rest residual targets for multiclass metadata."
@@ -289,11 +291,112 @@ def make_unique_column_name(base_name, existing_names):
         existing_names.add(base_name)
         return base_name
     suffix = 2
-    while f"{base_name}__{suffix}" in existing_names:
+    while f"{base_name}_{suffix}" in existing_names:
         suffix += 1
-    unique_name = f"{base_name}__{suffix}"
+    unique_name = f"{base_name}_{suffix}"
     existing_names.add(unique_name)
     return unique_name
+
+
+def strip_residual_adjustment_suffix(metadata_col):
+    display_name = metadata_col.replace("__", "_")
+    display_name = re.sub(r"_adjustment\d+(?:_\d+)?$", "", display_name)
+    return display_name
+
+
+def residual_title_font_size(confound_label):
+    label_length = len(confound_label or "")
+    if label_length > 140:
+        return 6
+    if label_length > 90:
+        return 7
+    if label_length > 50:
+        return 8
+    return 9
+
+
+def add_regression_plot_title(metadata_col, metric_label, confound_label=""):
+    ax = plt.gca()
+    display_name = strip_residual_adjustment_suffix(metadata_col)
+    if not confound_label:
+        ax.set_title(f"{display_name}\n{metric_label}")
+        return
+
+    ax.set_title(f"{display_name}\n{metric_label}", fontsize=11, pad=30)
+    wrapped_label = textwrap.fill(
+        f"Residualized against: {confound_label}",
+        width=115,
+        break_long_words=False,
+    )
+    ax.text(
+        0.5,
+        1.01,
+        wrapped_label,
+        transform=ax.transAxes,
+        ha="center",
+        va="bottom",
+        fontsize=residual_title_font_size(confound_label),
+    )
+
+
+def plot_regression_predictions(
+    y_true,
+    y_pred,
+    metadata_col,
+    metric_label,
+    confound_label="",
+):
+    fig, ax = plt.subplots(figsize=(6.5, 6.2))
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+
+    min_value = min(np.nanmin(y_true), np.nanmin(y_pred))
+    max_value = max(np.nanmax(y_true), np.nanmax(y_pred))
+    padding = (max_value - min_value) * 0.06
+    if padding == 0:
+        padding = 0.5
+    axis_min = min_value - padding
+    axis_max = max_value + padding
+
+    ax.scatter(
+        y_true,
+        y_pred,
+        alpha=0.78,
+        s=34,
+        color="#2f6f9f",
+        edgecolors="white",
+        linewidths=0.45,
+    )
+    ax.plot(
+        [axis_min, axis_max],
+        [axis_min, axis_max],
+        color="#222222",
+        linewidth=1.2,
+        linestyle="--",
+    )
+    ax.set_xlim(axis_min, axis_max)
+    ax.set_ylim(axis_min, axis_max)
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(True, color="#d9d9d9", linewidth=0.6, alpha=0.75)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.text(
+        0.04,
+        0.96,
+        f"n = {len(y_true)}",
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.25", facecolor="white", edgecolor="#bdbdbd", alpha=0.9),
+    )
+    add_regression_plot_title(metadata_col, metric_label, confound_label)
+    x_label = "Observed residual" if confound_label else "Observed value"
+    y_label = "Predicted residual" if confound_label else "Predicted value"
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    fig.tight_layout()
+    return fig
 
 
 def parse_residual_options(target_vars, confound_vars):
@@ -345,7 +448,9 @@ def resolve_confound_columns(metadata, target_col, confound_cols):
         resolved = [
             col
             for col in metadata.columns
-            if col != "sample_name" and col != target_col and "__residual" not in col
+            if col != "sample_name"
+            and col != target_col
+            and "_residual" not in col.replace("__", "_")
         ]
         print(
             f"Residual target {target_col}: expanding confounder 'all' to {len(resolved)} metadata columns."
@@ -403,10 +508,7 @@ def add_residual_targets(metadata, target_vars, confound_vars):
         for residual_col, numeric_target in numericize_target_column(metadata, target_col).items():
             base_residual_col = residual_col
             if len([spec for spec in residual_specs if spec[0] == target_col]) > 1:
-                base_residual_col = (
-                    f"{residual_col}__adjustment{spec_index}_"
-                    f"{make_safe_label(confound_label)[:80]}"
-                )
+                base_residual_col = f"{residual_col}_adjustment{spec_index}"
             unique_residual_col = make_unique_column_name(
                 base_residual_col, existing_residual_names
             )
@@ -972,44 +1074,16 @@ def main():
                         [all_model_features, model_features], axis=0
                     )
 
-                plt.figure()
-                plt.scatter(y_train, yhat_train, alpha=0.8)
-                min_value = min(np.min(y_train), np.min(yhat_train))
-                max_value = max(np.max(y_train), np.max(yhat_train))
-                plt.plot([min_value, max_value], [min_value, max_value], color="black")
-                title = f"{metadata_col}\nTrain R2: {train_r2:.2f}"
-                if confound_label:
-                    title += f"\nResidualized against: {confound_label}"
-                plt.title(title)
-                x_label = "Observed residual" if confound_label else "Observed value"
-                y_label = "Predicted residual" if confound_label else "Predicted value"
-                plt.xlabel(x_label)
-                plt.ylabel(y_label)
-                plt.tight_layout()
-                pdf.savefig()
-                plt.close()
-
                 if args.train_prop < 1:
-                    plt.figure()
-                    plt.scatter(y_test, yhat, alpha=0.8)
-                    min_value = min(np.min(y_test), np.min(yhat))
-                    max_value = max(np.max(y_test), np.max(yhat))
-                    plt.plot(
-                        [min_value, max_value],
-                        [min_value, max_value],
-                        color="black",
+                    fig = plot_regression_predictions(
+                        y_test,
+                        yhat,
+                        metadata_col,
+                        f"Test R2: {test_r2:.2f}",
+                        confound_label,
                     )
-                    title = f"{metadata_col}\nTest R2: {test_r2:.2f}"
-                    if confound_label:
-                        title += f"\nResidualized against: {confound_label}"
-                    plt.title(title)
-                    x_label = "Observed residual" if confound_label else "Observed value"
-                    y_label = "Predicted residual" if confound_label else "Predicted value"
-                    plt.xlabel(x_label)
-                    plt.ylabel(y_label)
-                    plt.tight_layout()
-                    pdf.savefig()
-                    plt.close()
+                    pdf.savefig(fig)
+                    plt.close(fig)
 
                 print()
                 continue
@@ -1108,16 +1182,15 @@ def main():
                 cm_train = confusion_matrix(
                     y_train, y_train_pred, labels=oh.categories_[0]
                 )
-                if args.train_prop == 1:
-                    append_confusion_log_rows(
-                        confusion_log_rows,
-                        raw_metadata,
-                        metadata_col,
-                        "train",
-                        y_train,
-                        y_train_pred,
-                        train_sample_names,
-                    )
+                append_confusion_log_rows(
+                    confusion_log_rows,
+                    raw_metadata,
+                    metadata_col,
+                    "train",
+                    y_train,
+                    y_train_pred,
+                    train_sample_names,
+                )
                 train_accuracy = np.trace(cm_train) / np.sum(cm_train)
                 print(f"Train confusion matrix for {metadata_col}")
                 print(cm_train)
@@ -1130,16 +1203,15 @@ def main():
                 try:
                     y_train_pred = oh.inverse_transform(yhat_train).flatten()
                     cm_train = confusion_matrix(y_train, y_train_pred)
-                    if args.train_prop == 1:
-                        append_confusion_log_rows(
-                            confusion_log_rows,
-                            raw_metadata,
-                            metadata_col,
-                            "train",
-                            y_train,
-                            y_train_pred,
-                            train_sample_names,
-                        )
+                    append_confusion_log_rows(
+                        confusion_log_rows,
+                        raw_metadata,
+                        metadata_col,
+                        "train",
+                        y_train,
+                        y_train_pred,
+                        train_sample_names,
+                    )
                     print(f"Train confusion matrix for {metadata_col}")
                     print(cm_train)
                     train_accuracy = np.trace(cm_train) / np.sum(cm_train)
@@ -1288,32 +1360,6 @@ def main():
                 plt.xticks(range(cm.shape[1]), metadata_categories, rotation=45)
                 # these need to start from the bottom
                 plt.yticks(range(cm.shape[0]), metadata_categories, rotation=45)
-                plt.tight_layout()
-                pdf.savefig()
-                plt.close()
-            else:
-                plt.figure()
-                plt.imshow(
-                    cm_train / cm_train.sum(axis=1)[:, np.newaxis],
-                    cmap="viridis",
-                    vmin=0,
-                    vmax=1,
-                )
-                plt.colorbar()
-                for i in range(cm_train.shape[0]):
-                    for j in range(cm_train.shape[1]):
-                        plt.text(j, i, f"{cm_train[i, j]}", ha="center", va="center")
-                if cm_train.shape[0] > 2:
-                    plt.title(f"{metadata_col}\nTrain Accuracy: {train_accuracy:.2f}")
-                else:
-                    plt.title(
-                        f"{metadata_col}\nTrain Accuracy: {train_accuracy:.2f}, Specificity: {specificity:.2f}, Sensitivity: {sensitivity:.2f}"
-                    )
-                plt.xlabel("Predicted")
-                plt.ylabel("True")
-                plt.xticks(range(cm_train.shape[1]), metadata_categories, rotation=45)
-                # these need to start from the bottom
-                plt.yticks(range(cm_train.shape[0]), metadata_categories, rotation=45)
                 plt.tight_layout()
                 pdf.savefig()
                 plt.close()

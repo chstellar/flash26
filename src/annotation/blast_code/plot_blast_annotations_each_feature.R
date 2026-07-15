@@ -391,8 +391,8 @@ for (category in categories) {
     # filter metadata for only current category. Regression residual names may not
     # exist in the raw metadata sheet, so infer the raw source column when possible.
     metadata_source_col <- category
-    if (!metadata_source_col %in% colnames(all_metadata) && str_detect(category, "__residual")) {
-      inferred_col <- str_replace(category, "__residual.*$", "")
+    if (!metadata_source_col %in% colnames(all_metadata) && str_detect(category, "_+residual")) {
+      inferred_col <- str_replace(category, "_+residual.*$", "")
       if (inferred_col %in% colnames(all_metadata)) {
         metadata_source_col <- inferred_col
       }
