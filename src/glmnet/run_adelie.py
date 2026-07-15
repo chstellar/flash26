@@ -296,10 +296,11 @@ def add_residual_targets(metadata, target_vars, confound_vars):
         target_vars, confound_vars
     )
     if not residual_specs:
-        return metadata, {}, raw_targets, include_all
+        return metadata, {}, raw_targets, include_all, {}
 
     metadata = metadata.copy()
     residual_columns_by_target = {}
+    residual_confound_labels = {}
     for target_col, confound_cols in residual_specs:
         if target_col not in metadata.columns:
             print(f"Skipping residual target {target_col}: column not found in metadata.")
@@ -309,6 +310,7 @@ def add_residual_targets(metadata, target_vars, confound_vars):
             continue
 
         confound_cols = resolve_confound_columns(metadata, target_col, confound_cols)
+        confound_label = ", ".join(confound_cols)
         confound_matrix = []
         missing_confounds = []
         for confound_col in confound_cols:
@@ -336,12 +338,19 @@ def add_residual_targets(metadata, target_vars, confound_vars):
         for residual_col, numeric_target in numericize_target_column(metadata, target_col).items():
             metadata[residual_col] = residualize_series(numeric_target, confound_matrix)
             residual_columns_by_target[target_col].append(residual_col)
+            residual_confound_labels[residual_col] = confound_label
             complete = metadata[residual_col].notna().sum()
             print(
                 f"Created residual target {residual_col} from {target_col} after adjusting for {', '.join(confound_cols)} ({complete} complete samples)."
             )
 
-    return metadata, residual_columns_by_target, raw_targets, include_all
+    return (
+        metadata,
+        residual_columns_by_target,
+        raw_targets,
+        include_all,
+        residual_confound_labels,
+    )
 
 
 def get_metadata_columns(metadata, min_samples=50):
@@ -364,6 +373,20 @@ def get_metadata_columns(metadata, min_samples=50):
         ),
     ]
     return filtered_metadata.columns
+
+
+def get_numeric_metadata_columns(metadata, min_samples=50):
+    columns = []
+    for column in metadata.columns:
+        if column == "sample_name":
+            continue
+        values = clean_metadata_series(metadata[column])
+        numeric = pd.to_numeric(values, errors="coerce")
+        if values.notna().sum() != numeric.notna().sum():
+            continue
+        if numeric.notna().sum() >= max(2, min_samples) and numeric.nunique(dropna=True) >= 2:
+            columns.append(column)
+    return columns
 
 
 def merge_and_split_data(
@@ -619,6 +642,7 @@ def main():
         residual_columns_by_target,
         raw_target_columns,
         include_all_metadata,
+        residual_confound_labels,
     ) = add_residual_targets(metadata, args.target_vars, args.confound_vars)
     # Get the metadata columns that have more than 2 unique values
     # and more than 50 samples per category
@@ -633,9 +657,17 @@ def main():
     metadata_columns = list(
         get_metadata_columns(original_metadata, min_samples=args.min_samples)
     )
+    numeric_metadata_columns = get_numeric_metadata_columns(
+        original_metadata, min_samples=args.min_samples
+    )
+    numeric_metadata_column_set = set(numeric_metadata_columns)
+    metadata_columns = [
+        col for col in metadata_columns if col not in numeric_metadata_column_set
+    ]
     continuous_metadata_columns = {
         col for residual_cols in residual_columns_by_target.values() for col in residual_cols
     }
+    continuous_metadata_columns.update(numeric_metadata_column_set)
     if residual_columns_by_target or raw_target_columns or include_all_metadata:
         residual_targets = set(residual_columns_by_target)
         raw_targets_seen = set()
@@ -654,11 +686,13 @@ def main():
             selected_columns.extend(
                 [
                     col
-                    for col in metadata_columns
+                    for col in metadata_columns + numeric_metadata_columns
                     if col not in residual_targets and col not in raw_targets_seen
                 ]
             )
         metadata_columns = selected_columns
+    else:
+        metadata_columns = metadata_columns + numeric_metadata_columns
 
     all_model_features = None
     confusion_log_rows = []
@@ -697,7 +731,8 @@ def main():
                 continue
 
             if continuous_target:
-                print(f"Fitting continuous residual target for {metadata_col}.")
+                print(f"Fitting continuous target for {metadata_col}.")
+                confound_label = residual_confound_labels.get(metadata_col, "")
                 if args.grouped:
                     group_ids = get_group_ids(model_features)
                     print(f"Using grouped elastic net with {len(group_ids)} groups.")
@@ -772,9 +807,14 @@ def main():
                 min_value = min(np.min(y_train), np.min(yhat_train))
                 max_value = max(np.max(y_train), np.max(yhat_train))
                 plt.plot([min_value, max_value], [min_value, max_value], color="black")
-                plt.title(f"{metadata_col}\nTrain R2: {train_r2:.2f}")
-                plt.xlabel("Observed residual")
-                plt.ylabel("Predicted residual")
+                title = f"{metadata_col}\nTrain R2: {train_r2:.2f}"
+                if confound_label:
+                    title += f"\nResidualized against: {confound_label}"
+                plt.title(title)
+                x_label = "Observed residual" if confound_label else "Observed value"
+                y_label = "Predicted residual" if confound_label else "Predicted value"
+                plt.xlabel(x_label)
+                plt.ylabel(y_label)
                 plt.tight_layout()
                 pdf.savefig()
                 plt.close()
@@ -789,9 +829,14 @@ def main():
                         [min_value, max_value],
                         color="black",
                     )
-                    plt.title(f"{metadata_col}\nTest R2: {test_r2:.2f}")
-                    plt.xlabel("Observed residual")
-                    plt.ylabel("Predicted residual")
+                    title = f"{metadata_col}\nTest R2: {test_r2:.2f}"
+                    if confound_label:
+                        title += f"\nResidualized against: {confound_label}"
+                    plt.title(title)
+                    x_label = "Observed residual" if confound_label else "Observed value"
+                    y_label = "Predicted residual" if confound_label else "Predicted value"
+                    plt.xlabel(x_label)
+                    plt.ylabel(y_label)
                     plt.tight_layout()
                     pdf.savefig()
                     plt.close()

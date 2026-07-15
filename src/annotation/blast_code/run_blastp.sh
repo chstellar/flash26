@@ -8,7 +8,16 @@ THREADS=$5
 TAXID=$6
 TRANSLATION_TABLE=$7
 LOCAL_BLAST_DB=$8
-PROTEIN_DB=$9
+PROTEIN_DB=${9:-}
+TOP_N_SEQUENCES_PER_CLUSTER=${10:-0}
+
+# Backward-compatible argument parsing:
+#   run_blastp.sh ... LOCAL_BLAST_DB TOP_N
+#   run_blastp.sh ... LOCAL_BLAST_DB PROTEIN_DB TOP_N
+if [[ -z ${10:-} && $PROTEIN_DB =~ ^[0-9]+$ ]] ; then
+  TOP_N_SEQUENCES_PER_CLUSTER=$PROTEIN_DB
+  PROTEIN_DB=""
+fi
 
 if [[ -z $TAXID ]] ; then
   TAXID=0
@@ -37,6 +46,7 @@ python src/annotation/blast_code/run_blastp.py \
   --blast_folder $BLAST_OUTPUT_FOLDER \
   --max_workers $THREADS \
   --taxid "$TAXID" \
+  --top_n_sequences_per_cluster "$TOP_N_SEQUENCES_PER_CLUSTER" \
   --translation_table $TRANSLATION_TABLE ${LOCAL_BLAST_DB} \
   $PROTEIN_DB_FLAG # flag will be provided as --protein_db "/path/to/db" or will be empty # flag will be provided as --local_blast_db "/path/to/db" or will be empty
  

@@ -4,12 +4,14 @@ import subprocess
 import shutil
 import sys
 import argparse
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from Bio import SeqIO
 import pandas as pd
 
 SPLIT_THRESH = 20  # 100
 SPLIT_EACH = 10  # 50
+NUCLEOTIDE_SUFFIX_RE = re.compile(r"^(?P<cluster>.+)_[ACGTNacgtn]+$")
 
 
 def format_taxids(taxid):
@@ -20,7 +22,7 @@ def format_taxids(taxid):
     taxid = taxid.strip("{}[]()")
     taxids = [
         item.strip().strip("\"'").strip()
-        for item in taxid.replace(";", ",").split(",")
+        for item in taxid.replace(";", ",").replace("+", ",").split(",")
         if item.strip()
     ]
     if not taxids:
@@ -60,6 +62,40 @@ def read_fasta(fasta_file, output_type="dict"):
         )
 
 
+def get_record_cluster(record):
+    match = NUCLEOTIDE_SUFFIX_RE.match(record.id)
+    if match:
+        return match.group("cluster")
+    cluster_match = re.search(r"(cluster_\d+)", record.id)
+    if cluster_match:
+        return cluster_match.group(1)
+    return record.id
+
+
+def filter_top_n_per_cluster(fasta_file, output_file, top_n):
+    records = list(SeqIO.parse(fasta_file, "fasta"))
+    total = len(records)
+    if top_n is None or top_n <= 0:
+        print(f"Sending {total}/{total} sequences to BLAST query (no per-cluster cap).")
+        return fasta_file, total, total
+
+    cluster_counts = {}
+    selected = []
+    for record in records:
+        cluster = get_record_cluster(record)
+        count = cluster_counts.get(cluster, 0)
+        if count < top_n:
+            selected.append(record)
+        cluster_counts[cluster] = count + 1
+
+    SeqIO.write(selected, output_file, "fasta")
+    print(
+        f"Sending {len(selected)}/{total} sequences to BLAST query "
+        f"(top {top_n} per cluster; {len(cluster_counts)} clusters observed)."
+    )
+    return output_file, len(selected), total
+
+
 def split_fasta(fasta_file, output_dir, num_seq=1):
     """
     Split a fasta file into multiple files.
@@ -73,11 +109,10 @@ def split_fasta(fasta_file, output_dir, num_seq=1):
                 f.write(str(record.seq) + "\n")
     else:
         records = list(SeqIO.parse(fasta_file, "fasta"))
-        num_files = len(records) // num_seq
-        for i in range(num_files):
+        for i in range(0, len(records), num_seq):
             output_file = os.path.join(output_dir, f"split_{i}.fasta")
             with open(output_file, "w") as f:
-                for record in records[i * num_seq : (i + 1) * num_seq]:
+                for record in records[i : i + num_seq]:
                     f.write(">" + record.description + "\n")
                     f.write(str(record.seq) + "\n")
 
@@ -182,6 +217,12 @@ def parse_args():
         default="refseq_protein",
         help="Which protein database to use for BLAST (default: refseq_protein)",
     )
+    parser.add_argument(
+        "--top_n_sequences_per_cluster",
+        type=int,
+        default=0,
+        help="Only BLAST the first N significant sequences per cluster. 0 means no cap.",
+    )
     return parser.parse_args()
 
 
@@ -190,10 +231,22 @@ if __name__ == "__main__":
     if not os.path.exists(args.blast_folder):
         print("Not running blast as the blast folder does not exist")
         sys.exit(0)
-    if len(read_fasta(args.input_file)) > SPLIT_THRESH:
-        split_fasta(args.input_file, args.split_folder, SPLIT_EACH)
+
+    query_fasta = args.input_file
+    if args.top_n_sequences_per_cluster > 0:
+        query_fasta = os.path.join(args.split_folder, "top_n_per_cluster_query.fasta")
+        os.makedirs(args.split_folder, exist_ok=True)
+    query_fasta, _, _ = filter_top_n_per_cluster(
+        args.input_file, query_fasta, args.top_n_sequences_per_cluster
+    )
+
+    if len(read_fasta(query_fasta)) > SPLIT_THRESH:
+        split_fasta(query_fasta, args.split_folder, SPLIT_EACH)
+        if query_fasta != args.input_file and os.path.exists(query_fasta):
+            os.remove(query_fasta)
     else:
-        shutil.copy(args.input_file, args.split_folder)
+        if os.path.dirname(os.path.abspath(query_fasta)) != os.path.abspath(args.split_folder):
+            shutil.copy(query_fasta, args.split_folder)
     splitted_fasta = [
         join(args.split_folder, f)
         for f in os.listdir(args.split_folder)

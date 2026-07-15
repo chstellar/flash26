@@ -8,6 +8,7 @@ TAXID=$6
 ENTREZ_EMAIL=$7
 TEMP_DIR=$8
 LOCAL_BLAST_DB=$9
+TOP_N_SEQUENCES_PER_CLUSTER=${10:-0}
 
 if [[ -z $TAXID ]] ; then
   TAXID=0
@@ -36,6 +37,7 @@ python src/annotation/blast_code/run_blast.py \
   --blast_folder $BLAST_OUTPUT_FOLDER \
   --max_workers $THREADS \
   --taxid "$TAXID" \
+  --top_n_sequences_per_cluster "$TOP_N_SEQUENCES_PER_CLUSTER" \
   $LOCAL_BLAST_DB # flag will be provided as --local_blast_db "/path/to/db" or will be empty
 
 python src/annotation/blast_code/blast_features.py \
