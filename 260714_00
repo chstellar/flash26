@@ -37,8 +37,8 @@ KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps 
 MODELS = config["options"]["models"]
 NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
-TARGET_VARS = "infection_status;infection_status;infection_status;infection_status;infection_status;fungus;fungus;fungus;fungus;host_species;host_species"
-CONFOUND_VARS = "all;cestode,fungus,lps,fungus_species,societal,zt_time,timepoint_code;cestode,fungus,lps,fungus_species;societal,zt_time,timepoint_code;;all;fungus_species,societal,zt_time,timepoint_code;societal,zt_time,timepoint_code;;all;"
+TARGET_VARS = "infection_status;infection_status;infection_status;infection_status;fungus;fungus;fungus;fungus;host_species;host_species;lps;lps;tissue;tissue"
+CONFOUND_VARS = "all;cestode,fungus,lps,fungus_species,societal,zt_time,timepoint_code;cestode,fungus,lps,fungus_species;societal,zt_time,timepoint_code;;all;fungus_species,societal,zt_time,timepoint_code;societal,zt_time,timepoint_code;;all;;all;;all;"
 RESIDUAL_FITTING_ARGS = (
     f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
     if TARGET_VARS and CONFOUND_VARS
