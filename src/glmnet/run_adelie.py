@@ -181,6 +181,50 @@ def append_confusion_log_rows(
                 rows.append(sample_row)
 
 
+def append_regression_log_rows(
+    rows,
+    raw_metadata,
+    metadata_col,
+    matrix_name,
+    y_true,
+    y_pred,
+    sample_names,
+):
+    if sample_names is None:
+        return
+
+    raw_lookup = raw_metadata.set_index("sample_name", drop=False)
+    rows.append(
+        {
+            "row_type": "regression_table",
+            "metadata_category": metadata_col,
+            "matrix": matrix_name,
+            "true_label": "",
+            "predicted_label": "",
+            "n_samples": len(sample_names),
+        }
+    )
+
+    for sample_name, observed, predicted in zip(sample_names, y_true, y_pred):
+        sample_row = {
+            "row_type": "prediction",
+            "metadata_category": metadata_col,
+            "matrix": matrix_name,
+            "true_label": observed,
+            "predicted_label": predicted,
+            "n_samples": "",
+        }
+        sample_name = str(sample_name)
+        if sample_name in raw_lookup.index:
+            raw_row = raw_lookup.loc[sample_name]
+            if isinstance(raw_row, pd.DataFrame):
+                raw_row = raw_row.iloc[0]
+            sample_row.update(raw_row.to_dict())
+        else:
+            sample_row["sample_name"] = sample_name
+        rows.append(sample_row)
+
+
 def clean_metadata_series(series):
     series = series.copy()
     if series.dtype == object:
@@ -230,6 +274,26 @@ def numericize_target_column(metadata, column):
         f"Residual target {column}: created {len(targets)} one-vs-rest residual targets for multiclass metadata."
     )
     return targets
+
+
+def make_safe_label(value):
+    label = str(value)
+    label = label.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    label = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in label)
+    label = "_".join(part for part in label.split("_") if part)
+    return label or "value"
+
+
+def make_unique_column_name(base_name, existing_names):
+    if base_name not in existing_names:
+        existing_names.add(base_name)
+        return base_name
+    suffix = 2
+    while f"{base_name}__{suffix}" in existing_names:
+        suffix += 1
+    unique_name = f"{base_name}__{suffix}"
+    existing_names.add(unique_name)
+    return unique_name
 
 
 def parse_residual_options(target_vars, confound_vars):
@@ -301,7 +365,8 @@ def add_residual_targets(metadata, target_vars, confound_vars):
     metadata = metadata.copy()
     residual_columns_by_target = {}
     residual_confound_labels = {}
-    for target_col, confound_cols in residual_specs:
+    existing_residual_names = set(metadata.columns)
+    for spec_index, (target_col, confound_cols) in enumerate(residual_specs, start=1):
         if target_col not in metadata.columns:
             print(f"Skipping residual target {target_col}: column not found in metadata.")
             continue
@@ -334,14 +399,25 @@ def add_residual_targets(metadata, target_vars, confound_vars):
             print(f"Skipping residual target {target_col}: no valid confounders remain.")
             continue
 
-        residual_columns_by_target[target_col] = []
+        residual_columns_by_target.setdefault(target_col, [])
         for residual_col, numeric_target in numericize_target_column(metadata, target_col).items():
-            metadata[residual_col] = residualize_series(numeric_target, confound_matrix)
-            residual_columns_by_target[target_col].append(residual_col)
-            residual_confound_labels[residual_col] = confound_label
-            complete = metadata[residual_col].notna().sum()
+            base_residual_col = residual_col
+            if len([spec for spec in residual_specs if spec[0] == target_col]) > 1:
+                base_residual_col = (
+                    f"{residual_col}__adjustment{spec_index}_"
+                    f"{make_safe_label(confound_label)[:80]}"
+                )
+            unique_residual_col = make_unique_column_name(
+                base_residual_col, existing_residual_names
+            )
+            metadata[unique_residual_col] = residualize_series(
+                numeric_target, confound_matrix
+            )
+            residual_columns_by_target[target_col].append(unique_residual_col)
+            residual_confound_labels[unique_residual_col] = confound_label
+            complete = metadata[unique_residual_col].notna().sum()
             print(
-                f"Created residual target {residual_col} from {target_col} after adjusting for {', '.join(confound_cols)} ({complete} complete samples)."
+                f"Created residual target {unique_residual_col} from {target_col} after adjusting for {', '.join(confound_cols)} ({complete} complete samples)."
             )
 
     return (
@@ -757,6 +833,15 @@ def main():
                 yhat_train = np.asarray(model.predict(X_train.astype(np.float64))).flatten()
                 train_r2 = r2_score(y_train, yhat_train)
                 print(f"Train R2 for {metadata_col}: {train_r2:.4f}")
+                append_regression_log_rows(
+                    confusion_log_rows,
+                    raw_metadata,
+                    metadata_col,
+                    "train",
+                    y_train,
+                    yhat_train,
+                    train_sample_names,
+                )
 
                 if args.train_prop == 1:
                     test_r2 = None
@@ -765,6 +850,15 @@ def main():
                     yhat = np.asarray(model.predict(X_test.astype(np.float64))).flatten()
                     test_r2 = r2_score(y_test, yhat)
                     print(f"Test R2 for {metadata_col}: {test_r2:.4f}")
+                    append_regression_log_rows(
+                        confusion_log_rows,
+                        raw_metadata,
+                        metadata_col,
+                        "test",
+                        y_test,
+                        yhat,
+                        test_sample_names,
+                    )
 
                 coef = flatten_coefficients(model.coef_)
                 model_features = pd.DataFrame(
