@@ -39,7 +39,7 @@ NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
 TARGET_VARS = "infection_status;infection_status;infection_status;infection_status;fungus;fungus;fungus;fungus;host_species;host_species;lps;lps;tissue;tissue"
 CONFOUND_VARS = "all;cestode,fungus,lps,fungus_species,societal,zt_time,timepoint_code;cestode,fungus,lps,fungus_species;societal,zt_time,timepoint_code;;all;fungus_species,societal,zt_time,timepoint_code;societal,zt_time,timepoint_code;;all;;all;;all;"
-BLAST_SELECTION_MODE = "all" # all, top_n_per_cluster, plot_selected, or plot_selected_and_top
+BLAST_SELECTION_MODE = "plot_selected" # all, top_n_per_cluster, plot_selected, or plot_selected_and_top
 BLAST_TOP_N_SEQUENCES_PER_CLUSTER = 10 # used by top_n_per_cluster and as fallback for plot_selected_and_top
 BLAST_NUM_PLOT_HITS = 10 # should match plot_blast_annotations_each_feature.R --num_hits default
 raw_target_rank = config["options"]["target_rank"] # this is the rank of the target to use for prediction (1 = top target, 2 = second target, etc.)
