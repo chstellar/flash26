@@ -328,7 +328,6 @@ def residualize_series(target, confound_matrix):
         valid = residual.notna() & confound_df.notna().all(axis=1)
         if valid.sum() < 2:
             print(f"Skipping residual adjustment for {confound_name}: fewer than 2 complete samples.")
-            residual.loc[~valid] = np.nan
             continue
 
         x = confound_df.loc[valid].to_numpy(dtype=np.float64)
@@ -360,11 +359,12 @@ def add_residual_targets(metadata, target_vars, confound_vars):
         target_vars, confound_vars
     )
     if not residual_specs:
-        return metadata, {}, raw_targets, include_all, {}
+        return metadata, {}, raw_targets, include_all, {}, {}
 
     metadata = metadata.copy()
     residual_columns_by_target = {}
     residual_confound_labels = {}
+    residual_split_columns = {}
     existing_residual_names = set(metadata.columns)
     for spec_index, (target_col, confound_cols) in enumerate(residual_specs, start=1):
         if target_col not in metadata.columns:
@@ -415,6 +415,7 @@ def add_residual_targets(metadata, target_vars, confound_vars):
             )
             residual_columns_by_target[target_col].append(unique_residual_col)
             residual_confound_labels[unique_residual_col] = confound_label
+            residual_split_columns[unique_residual_col] = target_col
             complete = metadata[unique_residual_col].notna().sum()
             print(
                 f"Created residual target {unique_residual_col} from {target_col} after adjusting for {', '.join(confound_cols)} ({complete} complete samples)."
@@ -426,6 +427,7 @@ def add_residual_targets(metadata, target_vars, confound_vars):
         raw_targets,
         include_all,
         residual_confound_labels,
+        residual_split_columns,
     )
 
 
@@ -473,19 +475,91 @@ def merge_and_split_data(
     train_prop=0.5,
     balanced_test=False,
     continuous=False,
+    continuous_split_col=None,
 ):
-    metadata = metadata[["sample_name", metadata_col]]
+    metadata_cols = ["sample_name", metadata_col]
+    if continuous_split_col and continuous_split_col in metadata.columns:
+        metadata_cols.append(continuous_split_col)
+    metadata = metadata[metadata_cols]
     merged_data = pd.merge(data, metadata, on="sample_name", how="left")
     merged_data = merged_data.dropna(subset=[metadata_col])
 
     if continuous:
+        split_col = continuous_split_col if continuous_split_col in merged_data.columns else None
+        if split_col:
+            merged_data = merged_data.dropna(subset=[split_col])
+            split_values = clean_metadata_series(merged_data[split_col])
+            split_numeric = pd.to_numeric(split_values, errors="coerce")
+            use_categorical_split = split_values.notna().sum() != split_numeric.notna().sum()
+            if not use_categorical_split and split_numeric.nunique(dropna=True) <= 10:
+                use_categorical_split = True
+
+            if use_categorical_split:
+                class_counts = split_values.value_counts()
+                class_counts = class_counts[class_counts >= min_samples]
+                classes_to_keep = class_counts.index
+                classes_to_keep = classes_to_keep[~pd.isna(classes_to_keep)]
+                classes_to_keep = classes_to_keep[classes_to_keep != "nan"]
+                if len(classes_to_keep) < 2:
+                    return None, None, None, None, None, None, None
+                merged_data = merged_data[split_values.isin(classes_to_keep)].copy()
+                split_values = clean_metadata_series(merged_data[split_col])
+                num_to_keep = floor(class_counts.min() * train_prop)
+                if train_prop < 1 and num_to_keep < 1:
+                    return None, None, None, None, None, None, None
+                if train_prop == 1:
+                    indices_to_keep = merged_data.index
+                else:
+                    indices_to_keep = (
+                        merged_data.assign(__split_label=split_values)
+                        .groupby("__split_label")
+                        .apply(
+                            lambda x: x.sample(n=num_to_keep, replace=False).index,
+                            include_groups=False,
+                        )
+                        .explode()
+                    )
+
+                drop_cols = ["sample_name", metadata_col]
+                if split_col not in drop_cols:
+                    drop_cols.append(split_col)
+                X_train = merged_data.drop(drop_cols, axis=1).loc[indices_to_keep]
+                model_features = X_train.columns
+                y_train = merged_data[metadata_col].loc[indices_to_keep].astype(float).to_numpy()
+                train_sample_names = merged_data["sample_name"].loc[indices_to_keep].to_numpy()
+                if train_prop == 1:
+                    return (
+                        np.asfortranarray(np.asarray(X_train, dtype=np.float64)),
+                        None,
+                        y_train,
+                        None,
+                        model_features,
+                        train_sample_names,
+                        None,
+                    )
+                X_test = merged_data.drop(drop_cols, axis=1).drop(indices_to_keep)
+                y_test = merged_data[metadata_col].drop(indices_to_keep).astype(float).to_numpy()
+                test_sample_names = merged_data["sample_name"].drop(indices_to_keep).to_numpy()
+                return (
+                    np.asfortranarray(np.asarray(X_train, dtype=np.float64)),
+                    np.asfortranarray(np.asarray(X_test, dtype=np.float64)),
+                    y_train,
+                    y_test,
+                    model_features,
+                    train_sample_names,
+                    test_sample_names,
+                )
+
         if len(merged_data) < max(2, min_samples):
             return None, None, None, None, None, None, None
         train_size = len(merged_data) if train_prop == 1 else floor(len(merged_data) * train_prop)
         if train_prop < 1:
             train_size = min(max(train_size, 1), len(merged_data) - 1)
         indices_to_keep = merged_data.sample(n=train_size, replace=False).index
-        X_train = merged_data.drop(["sample_name", metadata_col], axis=1).loc[
+        drop_cols = ["sample_name", metadata_col]
+        if split_col and split_col not in drop_cols:
+            drop_cols.append(split_col)
+        X_train = merged_data.drop(drop_cols, axis=1).loc[
             indices_to_keep
         ]
         model_features = X_train.columns
@@ -501,7 +575,7 @@ def merge_and_split_data(
                 train_sample_names,
                 None,
             )
-        X_test = merged_data.drop(["sample_name", metadata_col], axis=1).drop(
+        X_test = merged_data.drop(drop_cols, axis=1).drop(
             indices_to_keep
         )
         y_test = merged_data[metadata_col].drop(indices_to_keep).astype(float).to_numpy()
@@ -719,6 +793,7 @@ def main():
         raw_target_columns,
         include_all_metadata,
         residual_confound_labels,
+        residual_split_columns,
     ) = add_residual_targets(metadata, args.target_vars, args.confound_vars)
     # Get the metadata columns that have more than 2 unique values
     # and more than 50 samples per category
@@ -796,6 +871,7 @@ def main():
                 balanced_test=args.balanced_test,
                 train_prop=args.train_prop,
                 continuous=continuous_target,
+                continuous_split_col=residual_split_columns.get(metadata_col),
             )
 
             # skip the column if the merge and split function returns None
