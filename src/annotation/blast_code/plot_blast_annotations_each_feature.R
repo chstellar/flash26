@@ -131,7 +131,7 @@ collapse_blast_labels <- function(x) {
 }
 
 extract_feature_qualifier <- function(features, qualifier) {
-  pattern <- paste0("['\"]", qualifier, "['\"]:\\s*(?:\\[(['\"][^\\]]+['\"])\\]|(['\"][^'\"]+['\"]|None))")
+  pattern <- paste0("['\"]", qualifier, "['\"]:\\s*(?:\\[([^\\]]*)\\]|([^,}\\]]+))")
   matches <- str_match_all(replace_na(features, ""), pattern)
   map_chr(matches, function(match) {
     if (nrow(match) == 0) {
@@ -305,17 +305,24 @@ for (category in categories) {
     summ_dt_blastp_only <- summ_dt
 
     if (TRUE) {
+      if (!"qcovs" %in% colnames(dt2)) {
+        dt2$qcovs <- NA
+      }
+      if (!"features_all" %in% colnames(dt2)) {
+        dt2$features_all <- NA
+      }
       summ_dt2 <- dt2 %>% filter(metadata_category==category) %>%
-        separate_longer_delim(features, delim = "},") %>%
-        mutate(products=extract_feature_qualifier(features, "product")) %>%
-        mutate(genes=extract_feature_qualifier(features, "gene")) %>%
-        select(-features) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>%
+        mutate(feature_text = paste(replace_na(features, ""), replace_na(features_all, ""), sep=";")) %>%
+        separate_longer_delim(feature_text, delim = "},") %>%
+        mutate(products=extract_feature_qualifier(feature_text, "product")) %>%
+        mutate(genes=extract_feature_qualifier(feature_text, "gene")) %>%
+        select(-feature_text) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>%
         arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
         rowwise() %>%
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
-        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, products, genes) %>%
-        mutate(query = str_remove(query, "cluster_\\d+_")) %>%
+        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, products, genes) %>%
+        mutate(query = str_remove(query, "^cluster_\\d+_")) %>%
         group_by(cluster) %>%
         ungroup() %>%
         distinct(cluster,products,query,genes,.keep_all = T) %>% group_by(cluster)
@@ -325,9 +332,6 @@ for (category in categories) {
         group_by(cluster,query) %>%
         mutate(label=ifelse(!is_empty(unique(na.omit(label))), paste0(unique(na.omit(label)),collapse=";"), NA)) %>%
         distinct(cluster, query, label, .keep_all=T) %>% ungroup()
-      if (!"qcovs" %in% colnames(summ_dt2)) {
-        summ_dt2$qcovs <- NA
-      }
       summ_dt2 <- summ_dt2 %>% select(cluster, query, identity, qcovs, label) %>% dplyr::rename(label2=label)
       summ_dt <- summ_dt %>% left_join(summ_dt2 %>%
                                          select(cluster, query, identity, qcovs, label2), by=c("cluster", "query")) %>%
