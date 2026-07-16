@@ -19,7 +19,6 @@ from math import floor
 # from os.path import basename
 import argparse
 from pathlib import Path
-import re
 import textwrap
 
 np.random.seed(42)
@@ -298,10 +297,8 @@ def make_unique_column_name(base_name, existing_names):
     return unique_name
 
 
-def strip_residual_adjustment_suffix(metadata_col):
-    display_name = metadata_col.replace("__", "_")
-    display_name = re.sub(r"_adjustment\d+(?:_\d+)?$", "", display_name)
-    return display_name
+def make_display_metadata_name(metadata_col):
+    return metadata_col.replace("__", "_")
 
 
 def residual_title_font_size(confound_label):
@@ -317,7 +314,7 @@ def residual_title_font_size(confound_label):
 
 def add_regression_plot_title(metadata_col, metric_label, confound_label=""):
     ax = plt.gca()
-    display_name = strip_residual_adjustment_suffix(metadata_col)
+    display_name = make_display_metadata_name(metadata_col)
     if not confound_label:
         ax.set_title(f"{display_name}\n{metric_label}")
         return
