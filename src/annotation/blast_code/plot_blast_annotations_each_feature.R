@@ -173,6 +173,25 @@ combine_blast_labels <- function(blastp_label, blast_label) {
   })
 }
 
+format_model_metric <- function(metric_value, classes, train_only = FALSE) {
+  is_regression <- any(map_lgl(classes, \(x) length(x) == 1 && x[1] == "residual"))
+  metric_value <- suppressWarnings(as.numeric(metric_value))
+  metric_value <- metric_value[!is.na(metric_value)]
+  if (length(metric_value) == 0) {
+    metric_value <- NA_real_
+  } else {
+    metric_value <- unique(metric_value)[1]
+  }
+  if (is_regression) {
+    label <- ifelse(train_only, "Train R2:", "Test R2:")
+    value <- ifelse(is.na(metric_value), "NA", sprintf("%.3f", metric_value))
+  } else {
+    label <- ifelse(train_only, "Train Accuracy:", "Accuracy:")
+    value <- ifelse(is.na(metric_value), "NA", scales::label_percent(accuracy = 0.01)(metric_value))
+  }
+  paste(label, value)
+}
+
 # function to read the nth cluster out of the sample sequences file
 read_nth_cluster <- function(file_path, n, cluster_length) {
   # Calculate start and end positions for the nth cluster
@@ -261,9 +280,6 @@ categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arra
 
 if (str_detect(opt$nonzero_annotations, "adelie-train-only")) {
   dt <- dt %>% mutate(accuracy=train_accuracy)
-  acc_label = "Train Accuracy:"
-} else {
-  acc_label = "Accuracy:"
 }
 
 #category = "ampicillin_RIS"
@@ -308,11 +324,16 @@ for (category in categories) {
       if (!"qcovs" %in% colnames(dt2)) {
         dt2$qcovs <- NA
       }
+      if (!"features" %in% colnames(dt2)) {
+        dt2$features <- NA
+      }
       if (!"features_all" %in% colnames(dt2)) {
         dt2$features_all <- NA
       }
       summ_dt2 <- dt2 %>% filter(metadata_category==category) %>%
-        mutate(feature_text = paste(replace_na(features, ""), replace_na(features_all, ""), sep=";")) %>%
+        mutate(feature_text = paste(replace_na(as.character(features), ""),
+                                    replace_na(as.character(features_all), ""),
+                                    sep=";")) %>%
         separate_longer_delim(feature_text, delim = "},") %>%
         mutate(products=extract_feature_qualifier(feature_text, "product")) %>%
         mutate(genes=extract_feature_qualifier(feature_text, "gene")) %>%
@@ -399,7 +420,11 @@ for (category in categories) {
       mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 25)) %>%
       mutate(label = replace_na(label, ""))
 
-    accuracy <- summ_dt$accuracy %>% unique()
+    metric_subtitle <- format_model_metric(
+      summ_dt$accuracy,
+      summ_dt$classes,
+      str_detect(opt$nonzero_annotations, "adelie-train-only")
+    )
 
     dataset <- str_extract(opt$nonzero_annotations, "results/([A-Za-z\\d-]+)/filter", group=1)
     make_title <- paste(category, "in", dataset)
@@ -417,7 +442,7 @@ for (category in categories) {
                         labels=c("Known Cause", "Blast hit", NA)) +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
-              subtitle = paste(acc_label, scales::label_percent(accuracy = 0.01)(accuracy))) +
+              subtitle = metric_subtitle) +
       theme_pubr() +
       theme(legend.position="none")
 
@@ -623,6 +648,10 @@ for (category in categories) {
 }
 
 dev.off()
+
+if (!"metadata_category" %in% colnames(all_features_summary)) {
+  stop("No feature plot summary rows were generated; check category-level errors above.", call. = FALSE)
+}
 
 all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$output, ".pdf", "_summary.tsv"))
 all_blastp_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$nonzero_annotations, "blastp_annotated.tsv$", "blastp_all.tsv"))
