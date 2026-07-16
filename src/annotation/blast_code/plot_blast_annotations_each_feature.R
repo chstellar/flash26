@@ -164,13 +164,26 @@ combine_blast_labels <- function(blastp_label, blast_label) {
   pmap_chr(list(blastp_label, blast_label), function(x, y) {
     labels <- c(x, y)
     labels <- labels[!is.na(labels)]
-    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "BLAST HIT; NO ANNOTATION")]
+    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED")]
     collapsed <- collapse_blast_labels(paste(labels, collapse=";"))
     if (is.na(collapsed)) {
       return(NA_character_)
     }
     collapsed
   })
+}
+
+make_histogram_label <- function(labels) {
+  labels <- clean_blast_label(labels)
+  labels <- labels[!is.na(labels) & nchar(labels) > 1]
+  labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED")]
+  labels <- unique(labels)
+  if (length(labels) == 0) {
+    return(NA_character_)
+  }
+  generic <- str_detect(labels, "(?i)hypothetical|uncharacterized|predicted protein|unnamed")
+  labels <- labels[order(generic, nchar(labels), labels)]
+  paste(head(labels, 6), collapse=", ")
 }
 
 format_model_metric <- function(metric_value, classes, train_only = FALSE) {
@@ -199,6 +212,13 @@ first_numeric_or_na <- function(x) {
     return(NA_real_)
   }
   x[1]
+}
+
+single_line_text <- function(x) {
+  x <- replace_na(as.character(x), "")
+  x <- str_replace_all(x, "[\r\n\t]+", " ")
+  x <- str_squish(x)
+  ifelse(nchar(x) == 0, NA_character_, x)
 }
 
 # function to read the nth cluster out of the sample sequences file
@@ -403,7 +423,7 @@ for (category in categories) {
       mutate(label = ifelse(is.na(label) & !is.na(label_blast), label_blast, label)) %>%
       mutate(label = ifelse(is.na(label) & !is.na(label_blastp), label_blastp, label)) %>%
       mutate(label = ifelse(is.na(label) & (!is.na(`identity.y`) | !is.na(`qcovs.y`)),
-                            "BLAST HIT; NO ANNOTATION", label)) %>%
+                            "UNANNOTATED", label)) %>%
       mutate(label = ifelse(is.na(label), "NO MATCH", label)) %>%
       mutate(classes = map_chr(classes, \(x) paste(x, collapse=","))) %>%
       select(any_of(c("metadata_category", "accuracy", "classes", "first_class", "first_coef", "second_coef", "second_class",
@@ -413,14 +433,31 @@ for (category in categories) {
     all_blastp_summary <- bind_rows(all_blastp_summary, blastp_all_dt)
     all_blast_summary <- bind_rows(all_blast_summary, blast_all_dt)
 
-    plot_dt <- summ_dt %>%
-      mutate(label=ifelse(label=="",annotation,label)) %>%
+    hist_direct_label_dt <- dt2 %>%
+      filter(metadata_category == category) %>%
+      mutate(feature_text = paste(replace_na(as.character(features), ""),
+                                  replace_na(as.character(features_all), ""),
+                                  sep=";")) %>%
+      mutate(hist_products = extract_feature_qualifier(feature_text, "product")) %>%
+      mutate(hist_genes = extract_feature_qualifier(feature_text, "gene")) %>%
+      mutate(hist_label = choose_feature_label(hist_products, hist_genes, opt$products)) %>%
+      mutate(first_coef=get_first_coef(coefficients)) %>%
+      mutate(max_coefficient=abs(first_coef)) %>%
+      select(cluster, feature, max_coefficient, label=hist_label)
+
+    hist_label_dt <- bind_rows(
+      summ_dt %>%
+        mutate(label=ifelse(label=="",annotation,label)) %>%
+        select(cluster, feature, max_coefficient, label),
+      hist_direct_label_dt
+    )
+
+    plot_dt <- hist_label_dt %>%
       mutate(largest_coef=max(max_coefficient)) %>%
       mutate(coef_mag=max_coefficient/largest_coef) %>%
-      group_by(cluster, coef_mag) %>%
-      summarise(label=paste(unique(label), collapse=",")) %>%
+      group_by(cluster, feature, coef_mag) %>%
+      summarise(label=make_histogram_label(label), .groups="drop") %>%
       mutate(label = str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")) %>%
-      ungroup() %>%
       arrange(-coef_mag) %>%
       mutate(rank=row_number()) %>%
       mutate(color=NA) %>%
@@ -573,11 +610,11 @@ for (category in categories) {
         mutate(label = ifelse((is.na(label) | nchar(label)<3) & !is.na(label2) & nchar(label2)>3,
                               label2, label)) %>%
         mutate(label = ifelse(str_detect(sequence, "NNNNNNNN"), "NO TARGET", label)) %>%
-        mutate(label = ifelse(is.na(label) & has_blast_hit, "BLAST HIT; NO ANNOTATION", label)) %>%
+        mutate(label = ifelse(is.na(label) & has_blast_hit, "UNANNOTATED", label)) %>%
         ungroup() %>%
         mutate(label = map_chr(label, collapse_blast_labels)) %>%
-        mutate(label = str_wrap(label, width = 40)) %>%
         mutate(label=gsub(",Pbp5","",label)) %>%
+        mutate(label = single_line_text(label)) %>%
         mutate(label=ifelse(is.na(label), "NO MATCH", label)) %>%
         dplyr::rename(`Blast Label` = label) %>%
         mutate(label_identity = ifelse(identity == 100 | is.na(identity), "-", paste0(round(identity,2), "%"))) %>%
@@ -590,9 +627,9 @@ for (category in categories) {
                                              "; C:", str_replace(label_coverage, "-", "100%")), "")) %>%
         mutate(point_label = case_when(
           `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ as.character(`Blast Label`),
-          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "BLAST HIT; NO ANNOTATION") &
+          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "UNANNOTATED") &
             nchar(label_quality) > 0 ~ paste(`Blast Label`, label_quality, sep="\n"),
-          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "BLAST HIT; NO ANNOTATION") ~ as.character(`Blast Label`),
+          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "UNANNOTATED") ~ as.character(`Blast Label`),
           TRUE ~ as.character(`Blast Label`)
         )) %>%
         mutate(point_label = str_wrap(str_trunc(point_label, width=80), width=28)) %>%
@@ -683,6 +720,13 @@ dev.off()
 if (!"metadata_category" %in% colnames(all_features_summary)) {
   stop("No feature plot summary rows were generated; check category-level errors above.", call. = FALSE)
 }
+
+all_features_summary <- all_features_summary %>%
+  mutate(across(where(is.character), single_line_text))
+all_blastp_summary <- all_blastp_summary %>%
+  mutate(across(where(is.character), single_line_text))
+all_blast_summary <- all_blast_summary %>%
+  mutate(across(where(is.character), single_line_text))
 
 all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$output, ".pdf", "_summary.tsv"))
 all_blastp_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$nonzero_annotations, "blastp_annotated.tsv$", "blastp_all.tsv"))
