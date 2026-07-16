@@ -131,8 +131,23 @@ collapse_blast_labels <- function(x) {
 }
 
 extract_feature_qualifier <- function(features, qualifier) {
-  pattern <- paste0("'", qualifier, "': \\['([^']+)'\\]")
-  str_extract(features, pattern, group=1) %>% clean_blast_label()
+  pattern <- paste0("['\"]", qualifier, "['\"]:\\s*(?:\\[(['\"][^\\]]+['\"])\\]|(['\"][^'\"]+['\"]|None))")
+  matches <- str_match_all(replace_na(features, ""), pattern)
+  map_chr(matches, function(match) {
+    if (nrow(match) == 0) {
+      return(NA_character_)
+    }
+    values <- c(match[, 2], match[, 3])
+    values <- values[!is.na(values)]
+    values <- unlist(str_extract_all(values, "(?<=['\"])[^'\"]+(?=['\"])"))
+    values <- values[!values %in% c("None", "NA", "")]
+    values <- clean_blast_label(values)
+    values <- values[!is.na(values) & nchar(values) > 1]
+    if (length(values) == 0) {
+      return(NA_character_)
+    }
+    paste(unique(values), collapse=";")
+  })
 }
 
 choose_feature_label <- function(products, genes, prefer_products = FALSE) {
@@ -143,6 +158,19 @@ choose_feature_label <- function(products, genes, prefer_products = FALSE) {
   label <- ifelse(use_products & !is.na(products) & nchar(products) > 1, products, genes)
   label <- ifelse((is.na(label) | nchar(label) < 2) & !is.na(products), products, label)
   clean_blast_label(label)
+}
+
+combine_blast_labels <- function(blastp_label, blast_label) {
+  pmap_chr(list(blastp_label, blast_label), function(x, y) {
+    labels <- c(x, y)
+    labels <- labels[!is.na(labels)]
+    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "BLAST HIT; NO ANNOTATION")]
+    collapsed <- collapse_blast_labels(paste(labels, collapse=";"))
+    if (is.na(collapsed)) {
+      return(NA_character_)
+    }
+    collapsed
+  })
 }
 
 # function to read the nth cluster out of the sample sequences file
@@ -306,7 +334,10 @@ for (category in categories) {
         dplyr::rename(identity=`identity.x`, qcovs=`qcovs.x`) %>%
         mutate(identity = ifelse(is.na(label) & !is.na(label2), `identity.y`, identity)) %>%
         mutate(qcovs = ifelse(is.na(label) & !is.na(label2), `qcovs.y`, qcovs)) %>%
-        mutate(label = ifelse(is.na(label) & !is.na(label2), label2, label)) %>%
+        mutate(label_blastp = label, label_blast = label2) %>%
+        mutate(label = combine_blast_labels(label_blastp, label_blast)) %>%
+        mutate(label = ifelse(is.na(label) & !is.na(label_blast), label_blast, label)) %>%
+        mutate(label = ifelse(is.na(label) & !is.na(label_blastp), label_blastp, label)) %>%
         mutate(label = ifelse(is.na(label) | nchar(label)<2, NA, label))
     }
 
@@ -334,7 +365,11 @@ for (category in categories) {
 
     blast_all_dt <- summ_dt %>%
       mutate(blast_source = "blast") %>%
-      mutate(label = ifelse(is.na(label2) | nchar(label2) < 2, label, label2)) %>%
+      mutate(label = combine_blast_labels(label_blastp, label_blast)) %>%
+      mutate(label = ifelse(is.na(label) & !is.na(label_blast), label_blast, label)) %>%
+      mutate(label = ifelse(is.na(label) & !is.na(label_blastp), label_blastp, label)) %>%
+      mutate(label = ifelse(is.na(label) & (!is.na(`identity.y`) | !is.na(`qcovs.y`)),
+                            "BLAST HIT; NO ANNOTATION", label)) %>%
       mutate(label = ifelse(is.na(label), "NO MATCH", label)) %>%
       mutate(classes = map_chr(classes, \(x) paste(x, collapse=","))) %>%
       select(any_of(c("metadata_category", "accuracy", "classes", "first_class", "first_coef", "second_coef", "second_class",
@@ -439,7 +474,15 @@ for (category in categories) {
       seq_sub$aligned_sequence <- distances$aligned_seq
       seq_sub$lev_dist <- distances$distances
 
-      label_dt <- dt_sub %>% select(query,accuracy,identity,qcovs,label,label2) %>%
+      label_dt <- dt_sub %>%
+        mutate(any_identity = coalesce(`identity.y`, identity),
+               any_qcovs = coalesce(`qcovs.y`, qcovs)) %>%
+        mutate(combined_label = combine_blast_labels(label_blastp, label_blast)) %>%
+        mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blast), label_blast, combined_label)) %>%
+        mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blastp), label_blastp, combined_label)) %>%
+        select(query, accuracy, any_identity, any_qcovs, combined_label, label2) %>%
+        dplyr::rename(label=combined_label) %>%
+        dplyr::rename(identity=any_identity, qcovs=any_qcovs) %>%
         dplyr::rename(sequence=query)
 
       if (is_quantitative_target) {
@@ -464,8 +507,13 @@ for (category in categories) {
       summ_sub_dt <- summ_sub_dt %>% left_join(label_dt, by="sequence")
 
       p_sub <- summ_sub_dt %>%
-        mutate(label = ifelse(nchar(label)<3 & nchar(label2)>3, label2, label)) %>%
+        mutate(has_blast_hit = !is.na(identity) | !is.na(qcovs) |
+                 (!is.na(label) & label != "NO MATCH") |
+                 (!is.na(label2) & nchar(label2) > 1)) %>%
+        mutate(label = ifelse((is.na(label) | nchar(label)<3) & !is.na(label2) & nchar(label2)>3,
+                              label2, label)) %>%
         mutate(label = ifelse(str_detect(sequence, "NNNNNNNN"), "NO TARGET", label)) %>%
+        mutate(label = ifelse(is.na(label) & has_blast_hit, "BLAST HIT; NO ANNOTATION", label)) %>%
         ungroup() %>%
         mutate(label = map_chr(label, collapse_blast_labels)) %>%
         mutate(label = str_wrap(label, width = 40)) %>%
@@ -480,8 +528,13 @@ for (category in categories) {
         mutate(label_quality = ifelse(label_coverage != "-" | label_identity != "-",
                                       paste0("I:", str_replace(label_identity, "-", "100%"),
                                              "; C:", str_replace(label_coverage, "-", "100%")), "")) %>%
-        mutate(point_label = ifelse(!(`Blast Label` %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "NO TARGET")),
-                                    as.character(`Blast Label`), label_quality)) %>%
+        mutate(point_label = case_when(
+          `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ as.character(`Blast Label`),
+          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "BLAST HIT; NO ANNOTATION") &
+            nchar(label_quality) > 0 ~ paste(`Blast Label`, label_quality, sep="\n"),
+          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "BLAST HIT; NO ANNOTATION") ~ as.character(`Blast Label`),
+          TRUE ~ as.character(`Blast Label`)
+        )) %>%
         mutate(point_label = str_wrap(str_trunc(point_label, width=80), width=28)) %>%
         ungroup()
 
@@ -496,7 +549,10 @@ for (category in categories) {
           scale_size_continuous(trans = "log", name = "Total Samples",
                                 breaks = c(1, 10, 100, 1000, 10000),
                                 limits = c(1, 10000), labels = scales::label_log()) +
-          ggrepel::geom_text_repel(size=3.2, color="black", max.overlaps=20) +
+          ggrepel::geom_text_repel(size=3.2, color="black", max.overlaps=Inf,
+                                   min.segment.length=0, segment.color="grey45",
+                                   segment.size=0.25, box.padding=0.35,
+                                   point.padding=0.25, force=2) +
           scale_color_gradient(paste0("Mean\n", metadata_source_col),
                                low = "blue", high = "red") +
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
@@ -534,7 +590,10 @@ for (category in categories) {
             scale_size_continuous(trans = "log", name = "Total Samples",
                                   breaks = c(1, 10, 100, 1000, 10000),
                                   limits = c(1, 10000), labels = scales::label_log()) +
-            ggrepel::geom_text_repel(size=3.2, color="black", max.overlaps=20) +
+            ggrepel::geom_text_repel(size=3.2, color="black", max.overlaps=Inf,
+                                     min.segment.length=0, segment.color="grey45",
+                                     segment.size=0.25, box.padding=0.35,
+                                     point.padding=0.25, force=2) +
             scale_color_gradient(paste0("Proportion\n", class_to_plot),
                                  low = "blue", high = "red", limits = c(0, 1)) +
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
