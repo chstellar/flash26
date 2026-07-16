@@ -192,6 +192,15 @@ format_model_metric <- function(metric_value, classes, train_only = FALSE) {
   paste(label, value)
 }
 
+first_numeric_or_na <- function(x) {
+  x <- suppressWarnings(as.numeric(x))
+  x <- x[!is.na(x)]
+  if (length(x) == 0) {
+    return(NA_real_)
+  }
+  x[1]
+}
+
 # function to read the nth cluster out of the sample sequences file
 read_nth_cluster <- function(file_path, n, cluster_length) {
   # Calculate start and end positions for the nth cluster
@@ -503,6 +512,21 @@ for (category in categories) {
       seq_sub$aligned_sequence <- distances$aligned_seq
       seq_sub$lev_dist <- distances$distances
 
+      direct_blast_label_dt <- dt2 %>%
+        filter(metadata_category == category, cluster == my_cluster, feature == my_feature) %>%
+        mutate(sequence = str_remove(query, "^cluster_\\d+_")) %>%
+        mutate(feature_text = paste(replace_na(as.character(features), ""),
+                                    replace_na(as.character(features_all), ""),
+                                    sep=";")) %>%
+        mutate(direct_products = extract_feature_qualifier(feature_text, "product")) %>%
+        mutate(direct_genes = extract_feature_qualifier(feature_text, "gene")) %>%
+        mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, opt$products)) %>%
+        group_by(sequence) %>%
+        summarise(direct_blast_label = collapse_blast_labels(paste(unique(na.omit(direct_blast_label)), collapse=";")),
+                  direct_identity = first_numeric_or_na(identity),
+                  direct_qcovs = first_numeric_or_na(qcovs),
+                  .groups="drop")
+
       label_dt <- dt_sub %>%
         mutate(any_identity = coalesce(`identity.y`, identity),
                any_qcovs = coalesce(`qcovs.y`, qcovs)) %>%
@@ -533,9 +557,16 @@ for (category in categories) {
           relocate(aligned_sequence, .after="sequence")
       }
 
-      summ_sub_dt <- summ_sub_dt %>% left_join(label_dt, by="sequence")
+      summ_sub_dt <- summ_sub_dt %>%
+        left_join(label_dt, by="sequence") %>%
+        left_join(direct_blast_label_dt, by="sequence")
 
       p_sub <- summ_sub_dt %>%
+        mutate(label = ifelse((is.na(label) | label == "NO MATCH") &
+                                !is.na(direct_blast_label) & nchar(direct_blast_label) > 1,
+                              direct_blast_label, label)) %>%
+        mutate(identity = coalesce(identity, direct_identity),
+               qcovs = coalesce(qcovs, direct_qcovs)) %>%
         mutate(has_blast_hit = !is.na(identity) | !is.na(qcovs) |
                  (!is.na(label) & label != "NO MATCH") |
                  (!is.na(label2) & nchar(label2) > 1)) %>%
