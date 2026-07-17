@@ -751,13 +751,16 @@ rule run_blast_nonzero_features:
         blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
         cluster_length = lambda wildcards: wildcards.kmer_width
     output:
-        Path(TEMP_DIR, 
-             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
+        blast = Path(TEMP_DIR,
+                     "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                     "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
+        reblast = Path(TEMP_DIR,
+                       "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                       "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} "{params.taxid}" {params.entrez_email} {params.temp_dir} {params.blast_db_path} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output.blast} {threads} "{params.taxid}" {params.entrez_email} {params.temp_dir} {params.blast_db_path} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length} {output.reblast}
     """
 
 
@@ -781,13 +784,16 @@ rule run_blastp_nonzero_features:
         blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
         cluster_length = lambda wildcards: wildcards.kmer_width
     output:
-        Path(TEMP_DIR, 
-             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
+        blastp = Path(TEMP_DIR,
+                      "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                      "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
+        reblastp = Path(TEMP_DIR,
+                        "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                        "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} "{params.taxid}" {params.translation_table} {params.blast_db_path} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output.blastp} {threads} "{params.taxid}" {params.translation_table} {params.blast_db_path} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length} {output.reblastp}
     """
 
 
@@ -841,6 +847,25 @@ rule merge_blast_results:
     """
 
 
+rule merge_reblast_results:
+    """
+    Merge unrestricted reblast results for sequences that lacked restricted BLAST annotation.
+    """
+    input:
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblast.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"]
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblast_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
+    """
+
+
 rule merge_blastp_results:
     """
     Merge the blast results with the annotated sequences
@@ -854,6 +879,26 @@ rule merge_blastp_results:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
+    conda:
+        config["envs"]["default_r"]
+    shell:"""
+        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
+    """
+
+
+rule merge_reblastp_results:
+    """
+    Merge unrestricted reblastp results for sequences that lacked restricted BLASTP annotation.
+    """
+    input:
+        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblastp.tsv"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
+    params:
+        script = config["scripts"]["merge_blast_results"],
+        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
+    output:
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -1027,6 +1072,8 @@ rule plot_blast_features:
     input:
         nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
+        reblastp_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblastp_annotated.tsv"),
+        reblast_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblast_annotated.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
@@ -1046,6 +1093,8 @@ rule plot_blast_features:
         --feather_file {input.feather} \
         --sample_seqs {input.sequences} \
         --metadata {input.metadata} \
+        --reblastp_annotations {input.reblastp_features} \
+        --reblast_annotations {input.reblast_features} \
         --output {output}
     """
 

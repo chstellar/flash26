@@ -15,6 +15,7 @@ COEFFICIENTS_FILE=${12:-}
 NUM_PLOT_HITS=${13:-10}
 SAMPLE_SEQUENCES=${14:-}
 CLUSTER_LENGTH=${15:-0}
+REBLAST_OUTPUT_FILE=${16:-}
 
 # Backward-compatible argument parsing:
 #   run_blastp.sh ... LOCAL_BLAST_DB TOP_N
@@ -31,6 +32,7 @@ if [[ ${10:-} =~ ^(all|top_n_per_cluster|plot_selected|plot_selected_and_top)$ ]
   NUM_PLOT_HITS=${12:-10}
   SAMPLE_SEQUENCES=${13:-}
   CLUSTER_LENGTH=${14:-0}
+  REBLAST_OUTPUT_FILE=${15:-}
 fi
 
 if [[ -z $TAXID ]] ; then
@@ -74,6 +76,42 @@ Rscript --vanilla src/annotation/blast_code/merge_blastp_with_GO.R \
   --blast_folder $BLAST_OUTPUT_FOLDER \
   --output_file $OUTPUT_FILE \
   --max_workers $THREADS
+
+if [[ -n "$REBLAST_OUTPUT_FILE" ]] ; then
+  REBLAST_QUERY_FASTA="${SPLIT_TEMP_FOLDER}_reblast_query.fasta"
+  REBLAST_SPLIT_FOLDER="${SPLIT_TEMP_FOLDER}_reblast"
+  REBLAST_BLAST_FOLDER="${BLAST_OUTPUT_FOLDER}_reblast"
+
+  python src/annotation/blast_code/select_reblast_queries.py \
+    --query_folder "$SPLIT_TEMP_FOLDER" \
+    --annotations "$OUTPUT_FILE" \
+    --output_fasta "$REBLAST_QUERY_FASTA" \
+    --mode blastp
+
+  if [[ -s "$REBLAST_QUERY_FASTA" ]] ; then
+    mkdir -p "$REBLAST_SPLIT_FOLDER"
+    mkdir -p "$REBLAST_BLAST_FOLDER"
+    python src/annotation/blast_code/run_blastp.py \
+      --input "$REBLAST_QUERY_FASTA" \
+      --split_folder "$REBLAST_SPLIT_FOLDER" \
+      --blast_folder "$REBLAST_BLAST_FOLDER" \
+      --max_workers "$THREADS" \
+      --taxid "0" \
+      --translation_table "$TRANSLATION_TABLE" ${LOCAL_BLAST_DB} \
+      $PROTEIN_DB_FLAG
+
+    Rscript --vanilla src/annotation/blast_code/merge_blastp_with_GO.R \
+      --blast_folder "$REBLAST_BLAST_FOLDER" \
+      --output_file "$REBLAST_OUTPUT_FILE" \
+      --max_workers "$THREADS"
+  else
+    printf "query\tidentity\tevalue\tqcovs\tqframe\tstaxids\tstitle\tNCBI_protein_accession\tUniProt_accession\tmethod\tGO\n" > "$REBLAST_OUTPUT_FILE"
+  fi
+
+  rm -f "$REBLAST_QUERY_FASTA"
+  rm -rf "$REBLAST_SPLIT_FOLDER"
+  rm -rf "$REBLAST_BLAST_FOLDER"
+fi
 
 rm -r $SPLIT_TEMP_FOLDER
 rm -r $BLAST_OUTPUT_FOLDER

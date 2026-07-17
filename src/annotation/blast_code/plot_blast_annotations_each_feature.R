@@ -18,6 +18,10 @@ option_list <- list(
               help = "Path to the sample sequences file", metavar = "character"),
   make_option(c("--metadata"), type = "character", default = NULL,
               help = "Path to the metadata tsv file", metavar = "character"),
+  make_option(c("--reblastp_annotations"), type = "character", default = NULL,
+              help = "Optional unrestricted reblastp annotated TSV", metavar = "character"),
+  make_option(c("--reblast_annotations"), type = "character", default = NULL,
+              help = "Optional unrestricted reblast annotated TSV", metavar = "character"),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Path to set of output plots", metavar = "character"),
   make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
@@ -282,6 +286,55 @@ metadata_entropy_stats <- function(metadata_string, total_samples) {
   )
 }
 
+read_optional_tsv <- function(path) {
+  if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
+    return(data.table())
+  }
+  fread(path)
+}
+
+has_restricted_label <- function(label) {
+  !is.na(label) & nchar(label) > 1 &
+    !label %in% c("NO MATCH", "NO TARGET", "UNANNOTATED", "NO PROTEIN/GENE HIT")
+}
+
+make_reblastp_label_dt <- function(reblastp_dt, category) {
+  if (nrow(reblastp_dt) == 0 || !"query" %in% colnames(reblastp_dt)) {
+    return(tibble(sequence=character(), outside_taxid_label=character(),
+                  outside_taxid_identity=numeric(), outside_taxid_qcovs=numeric()))
+  }
+  reblastp_dt %>%
+    filter(metadata_category == category) %>%
+    mutate(sequence = str_remove(query, "^cluster_\\d+_")) %>%
+    mutate(outside_taxid_label = clean_blast_label(str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial"))) %>%
+    group_by(sequence) %>%
+    summarise(outside_taxid_label = collapse_blast_labels(paste(unique(na.omit(outside_taxid_label)), collapse=";")),
+              outside_taxid_identity = first_numeric_or_na(identity),
+              outside_taxid_qcovs = first_numeric_or_na(qcovs),
+              .groups="drop")
+}
+
+make_reblast_label_dt <- function(reblast_dt, category) {
+  if (nrow(reblast_dt) == 0 || !"query" %in% colnames(reblast_dt)) {
+    return(tibble(sequence=character(), outside_taxid_label=character(),
+                  outside_taxid_identity=numeric(), outside_taxid_qcovs=numeric()))
+  }
+  reblast_dt %>%
+    filter(metadata_category == category) %>%
+    mutate(sequence = str_remove(query, "^cluster_\\d+_")) %>%
+    mutate(feature_text = paste(replace_na(as.character(features), ""),
+                                replace_na(as.character(features_all), ""),
+                                sep=";")) %>%
+    mutate(outside_products = extract_feature_qualifier(feature_text, "product")) %>%
+    mutate(outside_genes = extract_feature_qualifier(feature_text, "gene")) %>%
+    mutate(outside_taxid_label = choose_feature_label(outside_products, outside_genes, opt$products)) %>%
+    group_by(sequence) %>%
+    summarise(outside_taxid_label = collapse_blast_labels(paste(unique(na.omit(outside_taxid_label)), collapse=";")),
+              outside_taxid_identity = first_numeric_or_na(identity),
+              outside_taxid_qcovs = first_numeric_or_na(qcovs),
+              .groups="drop")
+}
+
 # function to read the nth cluster out of the sample sequences file
 read_nth_cluster <- function(file_path, n, cluster_length) {
   # Calculate start and end positions for the nth cluster
@@ -362,6 +415,16 @@ calculate_distance_and_align <- function(sequences) {
 # read in input files
 dt <- fread(opt$nonzero_annotations)
 if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
+dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
+dt_reblast <- read_optional_tsv(opt$reblast_annotations)
+if (nrow(dt_reblastp) > 0 && !"qcovs" %in% colnames(dt_reblastp)) {
+  dt_reblastp$qcovs <- NA
+}
+if (nrow(dt_reblast) > 0) {
+  if (!"qcovs" %in% colnames(dt_reblast)) dt_reblast$qcovs <- NA
+  if (!"features" %in% colnames(dt_reblast)) dt_reblast$features <- NA
+  if (!"features_all" %in% colnames(dt_reblast)) dt_reblast$features_all <- NA
+}
 all_clusters <- fread(opt$clusters) %>% select(-kmer)
 feather_dt <- feather::read_feather(opt$feather)
 all_metadata <- fread(opt$metadata)
@@ -467,6 +530,22 @@ for (category in categories) {
       mutate(label = map2_vec(label, hypothetical, \(x,y) if (y) {str_c(str_trim(unlist(str_split(x, ";"))[str_detect(unlist(str_split(x, ";")), "(?i)hypothetical|uncharact", negate=T)]),sep = ",", collapse=",")} else {x})) %>%
       ungroup()
 
+    reblastp_label_dt <- make_reblastp_label_dt(dt_reblastp, category) %>%
+      dplyr::rename(outside_taxid_label_blastp = outside_taxid_label,
+                    outside_taxid_identity_blastp = outside_taxid_identity,
+                    outside_taxid_qcovs_blastp = outside_taxid_qcovs)
+    reblast_label_dt <- make_reblast_label_dt(dt_reblast, category) %>%
+      dplyr::rename(outside_taxid_label_blast = outside_taxid_label,
+                    outside_taxid_identity_blast = outside_taxid_identity,
+                    outside_taxid_qcovs_blast = outside_taxid_qcovs)
+    outside_taxid_label_dt <- full_join(reblastp_label_dt, reblast_label_dt, by="sequence") %>%
+      mutate(outside_taxid_label = combine_blast_labels(outside_taxid_label_blastp, outside_taxid_label_blast)) %>%
+      mutate(outside_taxid_label = ifelse(is.na(outside_taxid_label) & !is.na(outside_taxid_label_blast), outside_taxid_label_blast, outside_taxid_label)) %>%
+      mutate(outside_taxid_label = ifelse(is.na(outside_taxid_label) & !is.na(outside_taxid_label_blastp), outside_taxid_label_blastp, outside_taxid_label)) %>%
+      mutate(outside_taxid_identity = coalesce(outside_taxid_identity_blastp, outside_taxid_identity_blast),
+             outside_taxid_qcovs = coalesce(outside_taxid_qcovs_blastp, outside_taxid_qcovs_blast)) %>%
+      select(sequence, outside_taxid_label, outside_taxid_identity, outside_taxid_qcovs)
+
     blastp_all_dt <- summ_dt_blastp_only %>%
       group_by(feature) %>%
       mutate(label = ifelse(rep(sum(!is.na(label))==0, length(label)) & (is.na(label)) & !is.na(identity), "NO PROTEIN/GENE HIT", label)) %>%
@@ -515,9 +594,12 @@ for (category in categories) {
     hist_label_dt <- bind_rows(
       summ_dt %>%
         mutate(label=ifelse(label=="",annotation,label)) %>%
+        mutate(sequence = query) %>%
+        left_join(outside_taxid_label_dt, by="sequence") %>%
         mutate(label = case_when(
           str_detect(query, "NNNNNNNN") ~ "NO TARGET",
           !is.na(label) & nchar(label) > 1 ~ label,
+          !is.na(outside_taxid_label) & nchar(outside_taxid_label) > 1 ~ outside_taxid_label,
           !is.na(identity) | !is.na(qcovs) | !is.na(`identity.y`) | !is.na(`qcovs.y`) ~ "UNANNOTATED",
           TRUE ~ "NO MATCH"
         )) %>%
@@ -670,7 +752,8 @@ for (category in categories) {
 
       summ_sub_dt <- summ_sub_dt %>%
         left_join(label_dt, by="sequence") %>%
-        left_join(direct_blast_label_dt, by="sequence")
+        left_join(direct_blast_label_dt, by="sequence") %>%
+        left_join(outside_taxid_label_dt, by="sequence")
 
       p_sub <- summ_sub_dt %>%
         mutate(label = ifelse((is.na(label) | label == "NO MATCH") &
@@ -678,6 +761,11 @@ for (category in categories) {
                               direct_blast_label, label)) %>%
         mutate(identity = coalesce(identity, direct_identity),
                qcovs = coalesce(qcovs, direct_qcovs)) %>%
+        mutate(outside_taxid_only = !has_restricted_label(label) &
+                 !is.na(outside_taxid_label) & nchar(outside_taxid_label) > 1) %>%
+        mutate(label = ifelse(outside_taxid_only, outside_taxid_label, label)) %>%
+        mutate(identity = ifelse(outside_taxid_only & is.na(identity), outside_taxid_identity, identity),
+               qcovs = ifelse(outside_taxid_only & is.na(qcovs), outside_taxid_qcovs, qcovs)) %>%
         mutate(has_blast_hit = !is.na(identity) | !is.na(qcovs) |
                  (!is.na(label) & label != "NO MATCH") |
                  (!is.na(label2) & nchar(label2) > 1)) %>%
@@ -706,7 +794,11 @@ for (category in categories) {
           `Blast Label` %in% c("NO PROTEIN/GENE HIT", "UNANNOTATED") ~ as.character(`Blast Label`),
           TRUE ~ as.character(`Blast Label`)
         )) %>%
+        mutate(point_label = ifelse(outside_taxid_only,
+                                    paste(point_label, "outside taxid", sep="\n"),
+                                    point_label)) %>%
         mutate(point_label = str_wrap(str_trunc(point_label, width=80), width=28)) %>%
+        mutate(point_label_color = ifelse(outside_taxid_only, "outside_taxid", "regular")) %>%
         ungroup()
 
       if (is_quantitative_target) {
@@ -720,7 +812,13 @@ for (category in categories) {
           scale_size_continuous(trans = "log", name = "Total Samples",
                                 breaks = c(1, 10, 100, 1000, 10000),
                                 limits = c(1, 10000), labels = scales::label_log()) +
-          ggrepel::geom_text_repel(size=3.2, color="black", max.overlaps=Inf,
+          ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
+                                   size=3.2, color="black", max.overlaps=Inf,
+                                   min.segment.length=0, segment.color="grey45",
+                                   segment.size=0.25, box.padding=0.35,
+                                   point.padding=0.25, force=2) +
+          ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
+                                   size=3.2, color="grey25", max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
                                    segment.size=0.25, box.padding=0.35,
                                    point.padding=0.25, force=2) +
@@ -761,7 +859,13 @@ for (category in categories) {
             scale_size_continuous(trans = "log", name = "Total Samples",
                                   breaks = c(1, 10, 100, 1000, 10000),
                                   limits = c(1, 10000), labels = scales::label_log()) +
-            ggrepel::geom_text_repel(size=3.2, color="black", max.overlaps=Inf,
+            ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
+                                     size=3.2, color="black", max.overlaps=Inf,
+                                     min.segment.length=0, segment.color="grey45",
+                                     segment.size=0.25, box.padding=0.35,
+                                     point.padding=0.25, force=2) +
+            ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
+                                     size=3.2, color="grey25", max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
                                      segment.size=0.25, box.padding=0.35,
                                      point.padding=0.25, force=2) +

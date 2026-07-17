@@ -14,6 +14,7 @@ COEFFICIENTS_FILE=${12:-}
 NUM_PLOT_HITS=${13:-10}
 SAMPLE_SEQUENCES=${14:-}
 CLUSTER_LENGTH=${15:-0}
+REBLAST_OUTPUT_FILE=${16:-}
 
 if [[ -z $TAXID ]] ; then
   TAXID=0
@@ -55,6 +56,42 @@ python src/annotation/blast_code/blast_features.py \
   --output_file $OUTPUT_FILE \
   --entrez_email $ENTREZ_EMAIL \
   --temp_dir $TEMP_DIR
+
+if [[ -n "$REBLAST_OUTPUT_FILE" ]] ; then
+  REBLAST_QUERY_FASTA="${SPLIT_TEMP_FOLDER}_reblast_query.fasta"
+  REBLAST_SPLIT_FOLDER="${SPLIT_TEMP_FOLDER}_reblast"
+  REBLAST_BLAST_FOLDER="${BLAST_OUTPUT_FOLDER}_reblast"
+
+  python src/annotation/blast_code/select_reblast_queries.py \
+    --query_folder "$SPLIT_TEMP_FOLDER" \
+    --annotations "$OUTPUT_FILE" \
+    --output_fasta "$REBLAST_QUERY_FASTA" \
+    --mode blast
+
+  if [[ -s "$REBLAST_QUERY_FASTA" ]] ; then
+    mkdir -p "$REBLAST_SPLIT_FOLDER"
+    mkdir -p "$REBLAST_BLAST_FOLDER"
+    python src/annotation/blast_code/run_blast.py \
+      --input "$REBLAST_QUERY_FASTA" \
+      --split_folder "$REBLAST_SPLIT_FOLDER" \
+      --blast_folder "$REBLAST_BLAST_FOLDER" \
+      --max_workers "$THREADS" \
+      --taxid "0" \
+      $LOCAL_BLAST_DB
+
+    python src/annotation/blast_code/blast_features.py \
+      --blast_folder "$REBLAST_BLAST_FOLDER" \
+      --output_file "$REBLAST_OUTPUT_FILE" \
+      --entrez_email "$ENTREZ_EMAIL" \
+      --temp_dir "$TEMP_DIR"
+  else
+    printf "query\tsubject\tidentity\talignment_length\tmismatches\tgap_opens\tq_start\tq_end\ts_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tstitle\tfeatures\tfeatures_10000_window\n" > "$REBLAST_OUTPUT_FILE"
+  fi
+
+  rm -f "$REBLAST_QUERY_FASTA"
+  rm -rf "$REBLAST_SPLIT_FOLDER"
+  rm -rf "$REBLAST_BLAST_FOLDER"
+fi
 
 rm -r $SPLIT_TEMP_FOLDER
 rm -r $BLAST_OUTPUT_FOLDER
