@@ -221,6 +221,57 @@ single_line_text <- function(x) {
   ifelse(nchar(x) == 0, NA_character_, x)
 }
 
+metadata_count_vector <- function(metadata_string) {
+  entries <- unlist(str_split(replace_na(metadata_string, ""), "/"))
+  entries <- entries[nchar(entries) > 0]
+  if (length(entries) == 0) {
+    return(numeric())
+  }
+  parsed <- str_match(entries, "^(.+):([-+]?\\d*\\.?\\d+(?:[eE][-+]?\\d+)?)$")
+  parsed <- parsed[!is.na(parsed[, 1]), , drop=FALSE]
+  if (nrow(parsed) == 0) {
+    return(numeric())
+  }
+  names <- parsed[, 2]
+  values <- suppressWarnings(as.numeric(parsed[, 3]))
+  keep <- !is.na(values) &
+    !str_detect(names, "^(mean_|median_|sd_|n$|n_)")
+  values <- values[keep]
+  names(values) <- names[keep]
+  values
+}
+
+metadata_entropy_stats <- function(metadata_string, total_samples) {
+  counts <- metadata_count_vector(metadata_string)
+  counts <- counts[counts > 0]
+  total <- suppressWarnings(as.numeric(total_samples))
+  if (length(total) == 0 || is.na(total)) {
+    total <- sum(counts)
+  }
+  if (length(counts) == 0 || total <= 0) {
+    return(tibble(
+      metadata_entropy = NA_real_,
+      metadata_normalized_entropy = NA_real_,
+      metadata_specificity_score = NA_real_,
+      dominant_metadata = NA_character_,
+      dominant_metadata_count = NA_real_,
+      dominant_metadata_fraction = NA_real_
+    ))
+  }
+  probs <- counts / sum(counts)
+  entropy <- -sum(probs * log(probs))
+  normalized_entropy <- ifelse(length(counts) > 1, entropy / log(length(counts)), 0)
+  dominant_idx <- which.max(counts)
+  tibble(
+    metadata_entropy = entropy,
+    metadata_normalized_entropy = normalized_entropy,
+    metadata_specificity_score = (1 - normalized_entropy) * total,
+    dominant_metadata = names(counts)[dominant_idx],
+    dominant_metadata_count = as.numeric(counts[dominant_idx]),
+    dominant_metadata_fraction = as.numeric(counts[dominant_idx]) / sum(counts)
+  )
+}
+
 # function to read the nth cluster out of the sample sequences file
 read_nth_cluster <- function(file_path, n, cluster_length) {
   # Calculate start and end positions for the nth cluster
@@ -728,6 +779,16 @@ all_blastp_summary <- all_blastp_summary %>%
 all_blast_summary <- all_blast_summary %>%
   mutate(across(where(is.character), single_line_text))
 
+unannotated_summary <- all_features_summary %>%
+  filter(is.na(`Blast Label`) |
+           `Blast Label` %in% c("NO MATCH", "UNANNOTATED", "NO PROTEIN/GENE HIT")) %>%
+  mutate(total_samples = suppressWarnings(as.numeric(total_samples))) %>%
+  mutate(entropy_stats = map2(metadata, total_samples, metadata_entropy_stats)) %>%
+  unnest(entropy_stats) %>%
+  arrange(desc(metadata_specificity_score), desc(total_samples), metadata_normalized_entropy) %>%
+  relocate(metadata_category, feature, cluster)
+
 all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$output, ".pdf", "_summary.tsv"))
+unannotated_summary %>% write_tsv(file = str_replace(opt$output, ".pdf", "_unannotated.tsv"))
 all_blastp_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$nonzero_annotations, "blastp_annotated.tsv$", "blastp_all.tsv"))
 all_blast_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations), "blast_annotated.tsv$", "blast_all.tsv"))
