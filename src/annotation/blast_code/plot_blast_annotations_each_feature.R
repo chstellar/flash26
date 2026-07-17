@@ -179,7 +179,7 @@ make_histogram_label <- function(labels) {
   labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED")]
   labels <- unique(labels)
   if (length(labels) == 0) {
-    return(NA_character_)
+    return("NO MATCH")
   }
   generic <- str_detect(labels, "(?i)hypothetical|uncharacterized|predicted protein|unnamed")
   labels <- labels[order(generic, nchar(labels), labels)]
