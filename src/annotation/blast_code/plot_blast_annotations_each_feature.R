@@ -176,14 +176,24 @@ combine_blast_labels <- function(blastp_label, blast_label) {
 make_histogram_label <- function(labels) {
   labels <- clean_blast_label(labels)
   labels <- labels[!is.na(labels) & nchar(labels) > 1]
-  labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED")]
-  labels <- unique(labels)
-  if (length(labels) == 0) {
-    return("NO MATCH")
+  labels <- str_replace(labels, "^NO PROTEIN/GENE HIT$", "UNANNOTATED")
+  labels <- str_replace(labels, "^NO BLAST$", "NO MATCH")
+  special_labels <- intersect(c("NO TARGET", "NO MATCH", "UNANNOTATED"), unique(labels))
+  real_labels <- labels[!labels %in% c("NO TARGET", "NO MATCH", "UNANNOTATED")]
+  if (length(real_labels) > 0) {
+    label_keys <- str_to_lower(str_replace_all(real_labels, "[^[:alnum:]]+", " "))
+    real_labels <- real_labels[!duplicated(str_squish(label_keys))]
   }
-  generic <- str_detect(labels, "(?i)hypothetical|uncharacterized|predicted protein|unnamed")
-  labels <- labels[order(generic, nchar(labels), labels)]
-  paste(head(labels, 6), collapse=", ")
+  if (length(real_labels) == 0) {
+    if (length(special_labels) == 0) {
+      return("NO MATCH")
+    }
+    return(paste(special_labels, collapse=", "))
+  }
+  generic <- str_detect(real_labels, "(?i)hypothetical|uncharacterized|predicted protein|unnamed")
+  real_labels <- real_labels[order(generic, nchar(real_labels), real_labels)]
+  labels_to_show <- c(head(real_labels, 6), head(special_labels, max(0, 6 - length(real_labels))))
+  paste(labels_to_show, collapse=", ")
 }
 
 format_model_metric <- function(metric_value, classes, train_only = FALSE) {
@@ -492,6 +502,12 @@ for (category in categories) {
       mutate(hist_products = extract_feature_qualifier(feature_text, "product")) %>%
       mutate(hist_genes = extract_feature_qualifier(feature_text, "gene")) %>%
       mutate(hist_label = choose_feature_label(hist_products, hist_genes, opt$products)) %>%
+      mutate(hist_label = case_when(
+        str_detect(query, "NNNNNNNN") ~ "NO TARGET",
+        !is.na(hist_label) & nchar(hist_label) > 1 ~ hist_label,
+        !is.na(identity) | !is.na(qcovs) ~ "UNANNOTATED",
+        TRUE ~ NA_character_
+      )) %>%
       mutate(first_coef=get_first_coef(coefficients)) %>%
       mutate(max_coefficient=abs(first_coef)) %>%
       select(cluster, feature, max_coefficient, label=hist_label)
@@ -499,6 +515,12 @@ for (category in categories) {
     hist_label_dt <- bind_rows(
       summ_dt %>%
         mutate(label=ifelse(label=="",annotation,label)) %>%
+        mutate(label = case_when(
+          str_detect(query, "NNNNNNNN") ~ "NO TARGET",
+          !is.na(label) & nchar(label) > 1 ~ label,
+          !is.na(identity) | !is.na(qcovs) | !is.na(`identity.y`) | !is.na(`qcovs.y`) ~ "UNANNOTATED",
+          TRUE ~ "NO MATCH"
+        )) %>%
         select(cluster, feature, max_coefficient, label),
       hist_direct_label_dt
     )
@@ -511,8 +533,9 @@ for (category in categories) {
       mutate(label = str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")) %>%
       arrange(-coef_mag) %>%
       mutate(rank=row_number()) %>%
-      mutate(color=NA) %>%
-      mutate(color=ifelse(nchar(label)>1, "blast", color)) %>%
+      mutate(color="no_blast") %>%
+      mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED))*$")) %>%
+      mutate(color=ifelse(has_real_label, "blast", color)) %>%
       mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
       mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 25)) %>%
       mutate(label = replace_na(label, ""))
@@ -535,8 +558,8 @@ for (category in categories) {
                          labels=scales::label_percent(), breaks=seq(0,1,0.25),
                          expand=c(0,0)) +
       xlab("Rank of nonzero coefficient (by magnitude)") +
-      scale_fill_manual(breaks=c("known_cause","blast",NA), values=c("forestgreen", "pink", "grey"),
-                        labels=c("Known Cause", "Blast hit", NA)) +
+      scale_fill_manual(breaks=c("known_cause","blast","no_blast"), values=c("forestgreen", "pink", "grey"),
+                        labels=c("Known Cause", "Blast hit", "No blast/annotation")) +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
               subtitle = metric_subtitle) +
