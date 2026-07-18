@@ -682,7 +682,7 @@ for (category in categories) {
       my_feature = interesting_clusters[j,]$feature
 
 
-      dt_sub <- summ_dt %>% filter(cluster==my_cluster)
+      dt_sub <- summ_dt %>% filter(cluster==my_cluster, feature==my_feature)
 
       first_beta = unique(dt_sub$first_coef)
       first_class = unique(dt_sub$first_class)
@@ -826,7 +826,8 @@ for (category in categories) {
                                low = "blue", high = "red") +
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
           ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
-          ggtitle(my_cluster, subtitle=paste("Color: mean observed", metadata_source_col))
+          ggtitle(paste(category, my_cluster, sep=" | "),
+                  subtitle=paste("Color: mean observed", metadata_source_col))
         print(p2)
         summ_out_dt <- p_sub %>% select(-label2) %>%
           mutate(metadata = paste0("mean_", metadata_source_col, ":", round(mean_metadata, 6),
@@ -873,7 +874,8 @@ for (category in categories) {
                                  low = "blue", high = "red", limits = c(0, 1)) +
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
             ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
-            ggtitle(my_cluster, subtitle=paste("Color: proportion", class_to_plot))
+            ggtitle(paste(category, my_cluster, sep=" | "),
+                    subtitle=paste("Color: proportion", class_to_plot))
           print(p2)
         }
 
