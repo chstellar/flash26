@@ -22,6 +22,10 @@ option_list <- list(
               help = "Optional unrestricted reblastp annotated TSV", metavar = "character"),
   make_option(c("--reblast_annotations"), type = "character", default = NULL,
               help = "Optional unrestricted reblast annotated TSV", metavar = "character"),
+  make_option(c("--target_vars"), type = "character", default = "",
+              help = "Optional semicolon-delimited residual target settings used by run_adelie", metavar = "character"),
+  make_option(c("--confound_vars"), type = "character", default = "",
+              help = "Optional semicolon-delimited residual confounder settings used by run_adelie", metavar = "character"),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Path to set of output plots", metavar = "character"),
   make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
@@ -217,6 +221,119 @@ format_model_metric <- function(metric_value, classes, train_only = FALSE) {
     value <- ifelse(is.na(metric_value), "NA", scales::label_percent(accuracy = 0.01)(metric_value))
   }
   paste(label, value)
+}
+
+format_residual_adjustment <- function(confounders) {
+  if (is.null(confounders)) {
+    return("")
+  }
+  confounders <- unique(na.omit(as.character(confounders)))
+  confounders <- confounders[confounders != "" & confounders != "NA"]
+  if (length(confounders) == 0) {
+    return("")
+  }
+  str_wrap(paste("Adjusted for:", paste(confounders, collapse="; ")), width=115)
+}
+
+make_plotmath_other_taxa_label <- function(label) {
+  label <- replace_na(label, "")
+  label <- str_replace_all(label, "\\s*\\(OTHER TAXA\\)\\s*$", "")
+  label <- str_replace_all(label, "\n", " ")
+  label <- str_squish(label)
+  label <- str_replace_all(label, "\\\\", "\\\\\\\\")
+  label <- str_replace_all(label, "\"", "\\\\\"")
+  paste0("atop(\"", label, "\", italic(\"(OTHER TAXA)\"))")
+}
+
+make_safe_label <- function(value) {
+  label <- as.character(value)
+  label <- str_replace_all(label, "[ /\\\\]", "_")
+  label <- str_replace_all(label, "[^[:alnum:]._-]", "_")
+  label <- paste(unlist(str_split(label, "_"))[unlist(str_split(label, "_")) != ""], collapse="_")
+  ifelse(nchar(label) == 0, "value", label)
+}
+
+make_unique_name <- function(base_name, existing_names) {
+  if (!base_name %in% existing_names) {
+    return(base_name)
+  }
+  suffix <- 2
+  candidate <- paste0(base_name, "_", suffix)
+  while (candidate %in% existing_names) {
+    suffix <- suffix + 1
+    candidate <- paste0(base_name, "_", suffix)
+  }
+  candidate
+}
+
+target_residual_names <- function(metadata, target_col) {
+  if (!target_col %in% colnames(metadata)) {
+    return(character())
+  }
+  values <- metadata[[target_col]]
+  values_chr <- str_trim(as.character(values))
+  values_chr[values_chr %in% c("", "nan", "NaN", "NA", "None")] <- NA_character_
+  values_num <- suppressWarnings(as.numeric(values_chr))
+  nonmissing <- !is.na(values_chr)
+  is_numeric <- any(nonmissing) && all(!is.na(values_num[nonmissing]))
+  if (is_numeric) {
+    return(paste0(target_col, "_residual"))
+  }
+  categories <- sort(unique(na.omit(values_chr)))
+  if (length(categories) <= 2) {
+    return(paste0(target_col, "_residual"))
+  }
+  paste0(target_col, "_residual_", map_chr(categories, make_safe_label))
+}
+
+parse_residual_adjustment_map <- function(target_vars, confound_vars, metadata) {
+  target_vars <- str_trim(str_remove_all(replace_na(target_vars, ""), "^['\"]|['\"]$"))
+  confound_vars <- str_trim(str_remove_all(replace_na(confound_vars, ""), "^['\"]|['\"]$"))
+  if (target_vars == "" || confound_vars == "") {
+    return(tibble(metadata_category=character(), confounders=character()))
+  }
+  targets <- str_split(target_vars, ";", simplify=FALSE)[[1]] %>% str_trim()
+  confound_groups <- str_split(confound_vars, ";", simplify=FALSE)[[1]] %>% str_trim()
+  if (length(confound_groups) < length(targets)) {
+    confound_groups <- c(confound_groups, rep("", length(targets) - length(confound_groups)))
+  }
+  residual_specs <- tibble(target=character(), confounds=list())
+  for (i in seq_along(targets)) {
+    target <- targets[[i]]
+    if (target == "" || str_to_lower(target) == "all") {
+      next
+    }
+    confounds <- str_split(confound_groups[[i]], ",", simplify=FALSE)[[1]] %>% str_trim()
+    confounds <- confounds[confounds != ""]
+    if (length(confounds) > 0) {
+      residual_specs <- bind_rows(residual_specs, tibble(target=target, confounds=list(confounds)))
+    }
+  }
+  if (nrow(residual_specs) == 0) {
+    return(tibble(metadata_category=character(), confounders=character()))
+  }
+  repeated_targets <- residual_specs %>% count(target) %>% filter(n > 1) %>% pull(target)
+  existing_names <- colnames(metadata)
+  out <- tibble(metadata_category=character(), confounders=character())
+  for (i in seq_len(nrow(residual_specs))) {
+    target <- residual_specs$target[[i]]
+    confounds <- residual_specs$confounds[[i]]
+    if (any(str_to_lower(confounds) == "all")) {
+      confounds <- setdiff(colnames(metadata), c("sample_name", target))
+      confounds <- confounds[!str_detect(str_replace_all(confounds, "__", "_"), "_residual")]
+    }
+    confound_label <- paste(confounds, collapse=", ")
+    base_names <- target_residual_names(metadata, target)
+    if (target %in% repeated_targets) {
+      base_names <- paste0(base_names, "_adjustment", i)
+    }
+    for (base_name in base_names) {
+      category_name <- make_unique_name(base_name, existing_names)
+      existing_names <- c(existing_names, category_name)
+      out <- bind_rows(out, tibble(metadata_category=category_name, confounders=confound_label))
+    }
+  }
+  out
 }
 
 first_numeric_or_na <- function(x) {
@@ -415,6 +532,12 @@ calculate_distance_and_align <- function(sequences) {
 # read in input files
 dt <- fread(opt$nonzero_annotations)
 if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
+if (!"confounders" %in% colnames(dt)) {
+  dt$confounders <- NA_character_
+}
+if (!"confounders" %in% colnames(dt2)) {
+  dt2$confounders <- NA_character_
+}
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
 if (nrow(dt_reblastp) > 0 && !"qcovs" %in% colnames(dt_reblastp)) {
@@ -428,6 +551,19 @@ if (nrow(dt_reblast) > 0) {
 all_clusters <- fread(opt$clusters) %>% select(-kmer)
 feather_dt <- feather::read_feather(opt$feather)
 all_metadata <- fread(opt$metadata)
+residual_adjustment_map <- parse_residual_adjustment_map(opt$target_vars, opt$confound_vars, all_metadata)
+if (nrow(residual_adjustment_map) > 0) {
+  dt <- dt %>%
+    left_join(residual_adjustment_map %>% dplyr::rename(confounders_from_args=confounders),
+              by="metadata_category") %>%
+    mutate(confounders = coalesce(confounders, confounders_from_args)) %>%
+    select(-confounders_from_args)
+  dt2 <- dt2 %>%
+    left_join(residual_adjustment_map %>% dplyr::rename(confounders_from_args=confounders),
+              by="metadata_category") %>%
+    mutate(confounders = coalesce(confounders, confounders_from_args)) %>%
+    select(-confounders_from_args)
+}
 
 categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
 
@@ -462,7 +598,7 @@ for (category in categories) {
       rowwise() %>%
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
-      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient, cluster, feature, query, identity, qcovs, annotation) %>%
+      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient, cluster, feature, query, identity, qcovs, annotation, confounders) %>%
       mutate(query = str_remove(query, "cluster_\\d+_")) %>%
       distinct(cluster,annotation,query,.keep_all = T) %>% group_by(cluster)
 
@@ -495,7 +631,7 @@ for (category in categories) {
         rowwise() %>%
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
-        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, products, genes) %>%
+        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, products, genes, confounders) %>%
         mutate(query = str_remove(query, "^cluster_\\d+_")) %>%
         group_by(cluster) %>%
         ungroup() %>%
@@ -627,6 +763,9 @@ for (category in categories) {
       summ_dt$classes,
       str_detect(opt$nonzero_annotations, "adelie-train-only")
     )
+    adjustment_subtitle <- format_residual_adjustment(summ_dt$confounders)
+    hist_subtitle <- paste(c(metric_subtitle, adjustment_subtitle)[c(metric_subtitle, adjustment_subtitle) != ""],
+                           collapse="\n")
 
     dataset <- str_extract(opt$nonzero_annotations, "results/([A-Za-z\\d-]+)/filter", group=1)
     make_title <- paste(category, "in", dataset)
@@ -644,9 +783,10 @@ for (category in categories) {
                         labels=c("Known Cause", "Blast hit", "No blast/annotation")) +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
-              subtitle = metric_subtitle) +
+              subtitle = hist_subtitle) +
       theme_pubr() +
-      theme(legend.position="none")
+      theme(legend.position="none",
+            plot.subtitle = element_text(size=8, lineheight=0.95))
 
     print(p)
 
@@ -795,9 +935,18 @@ for (category in categories) {
           TRUE ~ as.character(`Blast Label`)
         )) %>%
         mutate(point_label = ifelse(outside_taxid_only,
-                                    paste(point_label, "outside taxid", sep="\n"),
+                                    paste0(str_replace(point_label, "\\s*\\(OTHER TAXA\\)\\s*$", ""),
+                                           " (OTHER TAXA)"),
                                     point_label)) %>%
-        mutate(point_label = str_wrap(str_trunc(point_label, width=80), width=28)) %>%
+        mutate(point_label = ifelse(outside_taxid_only,
+                                    paste0(str_trunc(str_replace(point_label, "\\s*\\(OTHER TAXA\\)\\s*$", ""),
+                                                     width=65),
+                                           " (OTHER TAXA)"),
+                                    str_trunc(point_label, width=80))) %>%
+        mutate(point_label = str_wrap(point_label, width=28)) %>%
+        mutate(point_label_expr = ifelse(outside_taxid_only,
+                                         make_plotmath_other_taxa_label(point_label),
+                                         NA_character_)) %>%
         mutate(point_label_color = ifelse(outside_taxid_only, "outside_taxid", "regular")) %>%
         ungroup()
 
@@ -815,13 +964,14 @@ for (category in categories) {
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
                                    size=3.2, color="black", max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
-                                   segment.size=0.25, box.padding=0.35,
-                                   point.padding=0.25, force=2) +
+                                   segment.size=0.25, box.padding=0.5,
+                                   point.padding=0.55, force=3) +
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
+                                   aes(label=point_label_expr),
                                    size=3.2, color="grey25", max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
-                                   segment.size=0.25, box.padding=0.35,
-                                   point.padding=0.25, force=2) +
+                                   segment.size=0.25, box.padding=0.5,
+                                   point.padding=0.55, force=3, parse=TRUE) +
           scale_color_gradient(paste0("Mean\n", metadata_source_col),
                                low = "blue", high = "red") +
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
@@ -863,13 +1013,14 @@ for (category in categories) {
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
                                      size=3.2, color="black", max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
-                                     segment.size=0.25, box.padding=0.35,
-                                     point.padding=0.25, force=2) +
+                                     segment.size=0.25, box.padding=0.5,
+                                     point.padding=0.55, force=3) +
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
+                                     aes(label=point_label_expr),
                                      size=3.2, color="grey25", max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
-                                     segment.size=0.25, box.padding=0.35,
-                                     point.padding=0.25, force=2) +
+                                     segment.size=0.25, box.padding=0.5,
+                                     point.padding=0.55, force=3, parse=TRUE) +
             scale_color_gradient(paste0("Proportion\n", class_to_plot),
                                  low = "blue", high = "red", limits = c(0, 1)) +
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +

@@ -1079,7 +1079,12 @@ rule plot_blast_features:
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
         feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     params:
-        script = config["scripts"]["plot_blast_results"]
+        script = config["scripts"]["plot_blast_results"],
+        residual_fitting_args = (
+            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
+            if TARGET_VARS and CONFOUND_VARS
+            else ""
+        )
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     conda:
@@ -1095,6 +1100,7 @@ rule plot_blast_features:
         --metadata {input.metadata} \
         --reblastp_annotations {input.reblastp_features} \
         --reblast_annotations {input.reblast_features} \
+        {params.residual_fitting_args} \
         --output {output}
     """
 
