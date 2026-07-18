@@ -17,6 +17,7 @@ DEFAULT_OUTPUT_DIR = (
 )
 DEFAULT_TAXIDS = "300111;102681;104421"
 DEFAULT_BLAST_DB = "/scratch/users/jiamuyu/dabs_ref/blast/"
+REPO_ROOT = Path(__file__).resolve().parent
 
 
 def parse_args():
@@ -166,9 +167,9 @@ def make_python_shim(output_dir):
     return env
 
 
-def run_command(command, env=None):
+def run_command(command, env=None, cwd=None):
     print("+ " + " ".join(map(str, command)), flush=True)
-    subprocess.run(command, check=True, env=env)
+    subprocess.run(command, check=True, env=env, cwd=cwd)
 
 
 def require_output(path, label):
@@ -197,7 +198,7 @@ def run_blasts(args, output_fasta, output_dir):
         run_command(
             [
                 "bash",
-                "src/annotation/blast_code/run_blast.sh",
+                str(REPO_ROOT / "src/annotation/blast_code/run_blast.sh"),
                 str(output_fasta),
                 str(temp_root / "split_fasta"),
                 str(temp_root / "blast"),
@@ -216,6 +217,7 @@ def run_blasts(args, output_fasta, output_dir):
                 str(reblast),
             ],
             env=command_env,
+            cwd=REPO_ROOT,
         )
     else:
         print(f"Reusing existing BLASTN outputs: {blast} and {reblast}")
@@ -225,7 +227,7 @@ def run_blasts(args, output_fasta, output_dir):
         run_command(
             [
                 "bash",
-                "src/annotation/blast_code/run_blastp.sh",
+                str(REPO_ROOT / "src/annotation/blast_code/run_blastp.sh"),
                 str(output_fasta),
                 str(temp_root / "split_fasta_blastp"),
                 str(temp_root / "blastp"),
@@ -243,6 +245,7 @@ def run_blasts(args, output_fasta, output_dir):
                 str(reblastp),
             ],
             env=command_env,
+            cwd=REPO_ROOT,
         )
     else:
         print(f"Reusing existing BLASTP outputs: {blastp} and {reblastp}")
