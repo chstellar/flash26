@@ -145,6 +145,14 @@ def run_command(command):
     subprocess.run(command, check=True)
 
 
+def require_output(path, label):
+    if not path.exists() or path.stat().st_size == 0:
+        raise RuntimeError(
+            f"{label} did not create a non-empty output file: {path}. "
+            "Check the module-loaded python/Rscript versions in the job log."
+        )
+
+
 def run_blasts(args, output_fasta, output_dir):
     blast = output_dir / "resfungi_compactors_blast.tsv"
     reblast = output_dir / "resfungi_compactors_reblast.tsv"
@@ -174,6 +182,8 @@ def run_blasts(args, output_fasta, output_dir):
             str(reblast),
         ]
     )
+    require_output(blast, "Restricted BLASTN")
+    require_output(reblast, "Unrestricted reBLASTN")
     run_command(
         [
             "bash",
@@ -195,6 +205,8 @@ def run_blasts(args, output_fasta, output_dir):
             str(reblastp),
         ]
     )
+    require_output(blastp, "Restricted BLASTP")
+    require_output(reblastp, "Unrestricted reBLASTP")
     return blast, reblast, blastp, reblastp
 
 
