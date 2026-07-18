@@ -71,8 +71,17 @@ python --version
 
 export ENTREZ_EMAIL="${ENTREZ_EMAIL:-v8514616@outlook.com}"
 
+if [ -n "${RESFUNGI_THREADS:-}" ]; then
+  THREADS="$RESFUNGI_THREADS"
+elif [ -n "${SLURM_JOB_ID:-}" ]; then
+  THREADS="${SLURM_CPUS_PER_TASK:-32}"
+else
+  THREADS=32
+fi
+echo "Using BLAST threads: $THREADS"
+
 python /scratch/users/jiamuyu/proj_botryllus/flash/resfungi_compactor_blast.py \
-  --threads "${SLURM_CPUS_PER_TASK:-32}" \
+  --threads "$THREADS" \
   --taxids "300111;102681;104421" \
   --translation_table 1 \
   --entrez_email "$ENTREZ_EMAIL" \

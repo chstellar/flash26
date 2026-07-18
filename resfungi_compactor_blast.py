@@ -37,6 +37,11 @@ def parse_args():
     parser.add_argument("--anchor_len", type=int, default=31)
     parser.add_argument("--thresholds", default="1000,100,5")
     parser.add_argument("--skip_blast", action="store_true")
+    parser.add_argument(
+        "--overwrite_blast",
+        action="store_true",
+        help="Re-run BLAST/BLASTP even if the expected output TSVs already exist.",
+    )
     return parser.parse_args()
 
 
@@ -174,6 +179,10 @@ def require_output(path, label):
         )
 
 
+def has_output(path):
+    return path.exists() and path.stat().st_size > 0
+
+
 def run_blasts(args, output_fasta, output_dir):
     blast = output_dir / "resfungi_compactors_blast.tsv"
     reblast = output_dir / "resfungi_compactors_reblast.tsv"
@@ -184,53 +193,59 @@ def run_blasts(args, output_fasta, output_dir):
     print(f"Wrapper subprocess python: {which('python', path=command_env['PATH'])}", flush=True)
     run_command(["python", "--version"], env=command_env)
 
-    run_command(
-        [
-            "bash",
-            "src/annotation/blast_code/run_blast.sh",
-            str(output_fasta),
-            str(temp_root / "split_fasta"),
-            str(temp_root / "blast"),
-            str(blast),
-            str(args.threads),
-            args.taxids,
-            args.entrez_email,
-            str(temp_root),
-            args.blast_db,
-            "0",
-            "all",
-            "",
-            "10",
-            "",
-            "0",
-            str(reblast),
-        ],
-        env=command_env,
-    )
+    if args.overwrite_blast or not (has_output(blast) and has_output(reblast)):
+        run_command(
+            [
+                "bash",
+                "src/annotation/blast_code/run_blast.sh",
+                str(output_fasta),
+                str(temp_root / "split_fasta"),
+                str(temp_root / "blast"),
+                str(blast),
+                str(args.threads),
+                args.taxids,
+                args.entrez_email,
+                str(temp_root),
+                args.blast_db,
+                "0",
+                "all",
+                "",
+                "10",
+                "",
+                "0",
+                str(reblast),
+            ],
+            env=command_env,
+        )
+    else:
+        print(f"Reusing existing BLASTN outputs: {blast} and {reblast}")
     require_output(blast, "Restricted BLASTN")
     require_output(reblast, "Unrestricted reBLASTN")
-    run_command(
-        [
-            "bash",
-            "src/annotation/blast_code/run_blastp.sh",
-            str(output_fasta),
-            str(temp_root / "split_fasta_blastp"),
-            str(temp_root / "blastp"),
-            str(blastp),
-            str(args.threads),
-            args.taxids,
-            str(args.translation_table),
-            args.blast_db,
-            "0",
-            "all",
-            "",
-            "10",
-            "",
-            "0",
-            str(reblastp),
-        ],
-        env=command_env,
-    )
+    if args.overwrite_blast or not (has_output(blastp) and has_output(reblastp)):
+        run_command(
+            [
+                "bash",
+                "src/annotation/blast_code/run_blastp.sh",
+                str(output_fasta),
+                str(temp_root / "split_fasta_blastp"),
+                str(temp_root / "blastp"),
+                str(blastp),
+                str(args.threads),
+                args.taxids,
+                str(args.translation_table),
+                args.blast_db,
+                "0",
+                "all",
+                "",
+                "10",
+                "",
+                "0",
+                str(reblastp),
+            ],
+            env=command_env,
+        )
+    else:
+        print(f"Reusing existing BLASTP outputs: {blastp} and {reblastp}")
     require_output(blastp, "Restricted BLASTP")
     require_output(reblastp, "Unrestricted reBLASTP")
     return blast, reblast, blastp, reblastp
