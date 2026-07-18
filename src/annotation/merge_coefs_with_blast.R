@@ -53,11 +53,16 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
     filter(!is.na(query)) %>%
     mutate(sequence = str_remove(query, "^.*cluster_\\d+_|\\w+_kmer_\\d+_")) %>%
     mutate(
-      reverse = ifelse(qframe < 0, TRUE, FALSE),
-      frame = abs(qframe) - 1
+      qframe_numeric = suppressWarnings(as.numeric(qframe)),
+      reverse = ifelse(!is.na(qframe_numeric) & qframe_numeric < 0, TRUE, FALSE),
+      frame = abs(qframe_numeric) - 1
     ) %>%
     distinct()
 
+  if (nrow(sequence_dt) == 0) {
+    sequence_dt <- sequence_dt %>%
+      mutate(translated_sequence = character(), aligned_sequence = character())
+  } else {
   duplicates <- sequence_dt %>%
     group_by(query) %>%
     filter(n() > 1) %>%
@@ -82,6 +87,9 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   }
 
   translated_sequences <- translate_sequences(sequence_dt$sequence, sequence_dt$frame, sequence_dt$reverse, TRANSLATION_TABLE)
+  if (is.null(translated_sequences) || length(translated_sequences) != nrow(sequence_dt)) {
+    translated_sequences <- rep(NA_character_, nrow(sequence_dt))
+  }
   sequence_dt <- sequence_dt %>% mutate(translated_sequence = translated_sequences)
 
   # also add a column removing anything after a stop codon and aligning the translated_sequences
@@ -111,8 +119,12 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
 
   aa_aligned <- map(aa_temps, align_cluster)
   aa_aligned <- bind_rows(aa_aligned)
+  if (!"query" %in% colnames(aa_aligned)) {
+    aa_aligned <- tibble(query=character(), aligned_sequence=character())
+  }
   sequence_dt <- sequence_dt %>% left_join(aa_aligned, by = "query")
   sequence_dt <- sequence_dt %>% select(query, qframe, translated_sequence, aligned_sequence)
+  }
 
   # now bind it all together
   annotations <- annotations %>% left_join(sequence_dt, by = c("query", "qframe"))
@@ -149,6 +161,12 @@ merged_data <- merged_data %>%
 
 # relocate sequences in blastp output
 if (str_detect(opt$blast_annotations, "blastp")) {
+  if (!"translated_sequence" %in% colnames(merged_data)) {
+    merged_data$translated_sequence <- NA_character_
+  }
+  if (!"aligned_sequence" %in% colnames(merged_data)) {
+    merged_data$aligned_sequence <- NA_character_
+  }
   merged_data <- merged_data %>%
     relocate(translated_sequence, aligned_sequence,
       .after = "NCBI_protein_accession"
