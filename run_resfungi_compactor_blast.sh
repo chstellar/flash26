@@ -33,6 +33,18 @@ python3 --version
 echo "Using Rscript: $(command -v Rscript)"
 Rscript --version
 
+# FLASH helper wrappers call bare `python`; on Sherlock that can still be
+# /bin/python 2.7. Put a tiny shim first in PATH so wrappers get Python 3.
+PYTHON_SHIM_DIR="${TMPDIR:-/tmp}/resfungi_python_shim_${USER:-user}_$$"
+mkdir -p "$PYTHON_SHIM_DIR"
+ln -sf "$(command -v python3)" "$PYTHON_SHIM_DIR/python"
+ln -sf "$(command -v python3)" "$PYTHON_SHIM_DIR/python3"
+export PATH="$PYTHON_SHIM_DIR:$PATH"
+trap 'rm -rf "$PYTHON_SHIM_DIR"' EXIT
+
+echo "After shim, python: $(command -v python)"
+python --version
+
 export ENTREZ_EMAIL="${ENTREZ_EMAIL:-v8514616@outlook.com}"
 
 python3 resfungi_compactor_blast.py \

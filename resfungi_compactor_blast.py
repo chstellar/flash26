@@ -4,8 +4,10 @@ import csv
 import os
 import re
 import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
+from shutil import which
 
 
 DEFAULT_INPUT_DIR = "/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge"
@@ -140,9 +142,28 @@ def write_selected_compactors(records, output_path):
             writer.writerow({col: record.get(col, "NA") for col in columns})
 
 
-def run_command(command):
+def make_python_shim(output_dir):
+    shim_dir = output_dir / "resfungi_compactors_python_shim"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    python_link = shim_dir / "python"
+    python3_link = shim_dir / "python3"
+    for link in (python_link, python3_link):
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        try:
+            link.symlink_to(sys.executable)
+        except OSError:
+            # Some filesystems disallow symlinks; a tiny shell shim is enough.
+            link.write_text(f"#!/bin/sh\nexec {sys.executable} \"$@\"\n")
+            link.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{shim_dir}{os.pathsep}{env.get('PATH', '')}"
+    return env
+
+
+def run_command(command, env=None):
     print("+ " + " ".join(map(str, command)), flush=True)
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, env=env)
 
 
 def require_output(path, label):
@@ -159,6 +180,9 @@ def run_blasts(args, output_fasta, output_dir):
     blastp = output_dir / "resfungi_compactors_blastp.tsv"
     reblastp = output_dir / "resfungi_compactors_reblastp.tsv"
     temp_root = output_dir / "resfungi_compactors_tmp"
+    command_env = make_python_shim(temp_root)
+    print(f"Wrapper subprocess python: {which('python', path=command_env['PATH'])}", flush=True)
+    run_command(["python", "--version"], env=command_env)
 
     run_command(
         [
@@ -180,7 +204,8 @@ def run_blasts(args, output_fasta, output_dir):
             "",
             "0",
             str(reblast),
-        ]
+        ],
+        env=command_env,
     )
     require_output(blast, "Restricted BLASTN")
     require_output(reblast, "Unrestricted reBLASTN")
@@ -203,7 +228,8 @@ def run_blasts(args, output_fasta, output_dir):
             "",
             "0",
             str(reblastp),
-        ]
+        ],
+        env=command_env,
     )
     require_output(blastp, "Restricted BLASTP")
     require_output(reblastp, "Unrestricted reBLASTP")
