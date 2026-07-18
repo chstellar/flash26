@@ -71,7 +71,7 @@ python --version
 
 export ENTREZ_EMAIL="${ENTREZ_EMAIL:-v8514616@outlook.com}"
 
-python resfungi_compactor_blast.py \
+python /scratch/users/jiamuyu/proj_botryllus/flash/resfungi_compactor_blast.py \
   --threads "${SLURM_CPUS_PER_TASK:-32}" \
   --taxids "300111;102681;104421" \
   --translation_table 1 \
