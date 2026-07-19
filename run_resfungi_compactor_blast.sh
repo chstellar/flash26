@@ -81,6 +81,7 @@ fi
 echo "Using BLAST threads: $THREADS"
 echo "Using BLAST modes: ${RESFUNGI_BLAST_MODES:-both}"
 echo "Using reblast mode: ${RESFUNGI_REBLAST_MODE:-missing}"
+echo "Using protein BLAST database: ${RESFUNGI_PROTEIN_DB:-refseq_protein}"
 
 python /scratch/users/jiamuyu/proj_botryllus/flash/resfungi_compactor_blast.py \
   --threads "$THREADS" \
@@ -89,4 +90,5 @@ python /scratch/users/jiamuyu/proj_botryllus/flash/resfungi_compactor_blast.py \
   --entrez_email "$ENTREZ_EMAIL" \
   --blast_modes "${RESFUNGI_BLAST_MODES:-both}" \
   --reblast_mode "${RESFUNGI_REBLAST_MODE:-missing}" \
+  --protein_db "${RESFUNGI_PROTEIN_DB:-refseq_protein}" \
   "$@"

@@ -9,14 +9,39 @@ from collections import defaultdict
 from pathlib import Path
 from shutil import which
 
+csv.field_size_limit(sys.maxsize)
 
 DEFAULT_INPUT_DIR = "/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge"
 DEFAULT_OUTPUT_DIR = (
     "/scratch/users/jiamuyu/proj_botryllus/flash/results/"
     "260714-00-3ants-challenge/filter1/noCluster/hyena/normalized"
 )
+DEFAULT_RESULTS_DIR = "/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge"
+DEFAULT_PLOT_PREFIX = (
+    DEFAULT_OUTPUT_DIR
+    + "/260714-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8"
+    + "_nonzero_coefficients"
+)
+DEFAULT_BLASTP_ANNOTATED = DEFAULT_PLOT_PREFIX + "_blastp_annotated.tsv"
+DEFAULT_BLAST_ANNOTATED = DEFAULT_PLOT_PREFIX + "_blast_annotated.tsv"
+DEFAULT_PLOT_PDF = DEFAULT_PLOT_PREFIX + "_blast_annotated_plots.pdf"
+DEFAULT_PLOT_SUMMARY = DEFAULT_PLOT_PREFIX + "_blast_annotated_plots_summary.tsv"
+DEFAULT_CLUSTERS = (
+    DEFAULT_RESULTS_DIR
+    + "/filter1/noCluster/260714-00-3ants-challenge_sequences_per_cluster_top2000-clusters_target1_k41_s41.tsv"
+)
+DEFAULT_FEATHER = (
+    DEFAULT_RESULTS_DIR
+    + "/260714-00-3ants-challenge_hyena_top_variance_features_for_glmnet_filter1_noCluster_top2000_target1_k41_s41_normalized.feather"
+)
+DEFAULT_SAMPLE_SEQS = (
+    DEFAULT_RESULTS_DIR
+    + "/260714-00-3ants-challenge_prepared_sequences_filter1_noCluster_top2000_target1_k41_s41_sample_sequences.tsv"
+)
+DEFAULT_METADATA = "/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/metadata.tsv"
 DEFAULT_TAXIDS = "300111;102681;104421"
 DEFAULT_BLAST_DB = "/scratch/users/jiamuyu/dabs_ref/blast/"
+DEFAULT_PROTEIN_DB = "refseq_protein"
 REPO_ROOT = Path(__file__).resolve().parent
 
 
@@ -35,6 +60,14 @@ def parse_args():
     parser.add_argument("--translation_table", default="1")
     parser.add_argument("--entrez_email", default=os.environ.get("ENTREZ_EMAIL", "v8514616@outlook.com"))
     parser.add_argument("--blast_db", default=DEFAULT_BLAST_DB)
+    parser.add_argument(
+        "--protein_db",
+        default=DEFAULT_PROTEIN_DB,
+        help=(
+            "BLAST-formatted protein database name for the BLASTX/BLASTP helper. "
+            "Examples: refseq_protein, swissprot, clusteredNR."
+        ),
+    )
     parser.add_argument("--anchor_len", type=int, default=31)
     parser.add_argument("--thresholds", default="1000,100,5")
     parser.add_argument("--skip_blast", action="store_true")
@@ -55,6 +88,24 @@ def parse_args():
         action="store_true",
         help="Re-run BLAST/BLASTP even if the expected output TSVs already exist.",
     )
+    parser.add_argument(
+        "--noblastp",
+        action="store_true",
+        help=(
+            "Skip compactor selection/BLAST and only reuse existing compactor annotations "
+            "to fill NO BLAST/NO MATCH rows in the FLASH blast plot outputs."
+        ),
+    )
+    parser.add_argument("--plot_blastp_annotated", default=DEFAULT_BLASTP_ANNOTATED)
+    parser.add_argument("--plot_blast_annotated", default=DEFAULT_BLAST_ANNOTATED)
+    parser.add_argument("--plot_pdf", default=DEFAULT_PLOT_PDF)
+    parser.add_argument("--plot_summary", default=DEFAULT_PLOT_SUMMARY)
+    parser.add_argument("--plot_clusters", default=DEFAULT_CLUSTERS)
+    parser.add_argument("--plot_feather", default=DEFAULT_FEATHER)
+    parser.add_argument("--plot_sample_seqs", default=DEFAULT_SAMPLE_SEQS)
+    parser.add_argument("--plot_metadata", default=DEFAULT_METADATA)
+    parser.add_argument("--plot_target_vars", default="")
+    parser.add_argument("--plot_confound_vars", default="")
     return parser.parse_args()
 
 
@@ -158,6 +209,19 @@ def write_selected_compactors(records, output_path):
         writer.writeheader()
         for record in records:
             writer.writerow({col: record.get(col, "NA") for col in columns})
+
+
+def read_selected_compactors(path):
+    records = []
+    if not path.exists() or path.stat().st_size == 0:
+        return records
+    for row in read_tsv(path):
+        record = dict(row)
+        record["length"] = int(numeric(record.get("length"), 0) or 0)
+        record["exact_support"] = numeric(record.get("exact_support"), "NA")
+        record["row_index"] = int(numeric(record.get("row_index"), 0) or 0)
+        records.append(record)
+    return records
 
 
 def make_python_shim(output_dir):
@@ -298,6 +362,7 @@ def run_blasts(args, output_fasta, output_dir):
                 args.taxids,
                 str(args.translation_table),
                 args.blast_db,
+                args.protein_db,
                 "0",
                 "all",
                 "",
@@ -528,10 +593,85 @@ def read_seed_rows(seeds_path, anchor_len):
                     "seed_row": idx,
                     "seed_extendor": extendor,
                     "seed_anchor": extendor[-anchor_len:] if len(extendor) >= anchor_len else extendor,
+                    "seed_source": str(seeds_path),
                     "raw_seed_row": line.replace("\t", "\\t"),
                 }
             )
     return rows
+
+
+def clean_sequence_candidate(value):
+    value = "" if value is None else str(value).strip()
+    value = re.sub(r"^cluster_\d+_", "", value)
+    value = value.replace("-", "")
+    value = re.sub(r"[^ACGTNacgtn]", "", value)
+    return value.upper()
+
+
+def read_plot_summary_seed_rows(summary_path, anchor_len):
+    rows = []
+    summary_path = Path(summary_path)
+    if not summary_path.exists() or summary_path.stat().st_size == 0:
+        return rows
+    preferred_columns = [
+        "seed_extendor",
+        "query",
+        "sequence",
+        "extendor",
+        "anchor_target",
+        "anchor_target_sequence",
+    ]
+    with open(summary_path, newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for idx, row in enumerate(reader, start=1):
+            extendor = ""
+            for col in preferred_columns:
+                candidate = clean_sequence_candidate(row.get(col))
+                if len(candidate) >= anchor_len:
+                    extendor = candidate
+                    break
+            if not extendor:
+                for value in row.values():
+                    candidate = clean_sequence_candidate(value)
+                    if len(candidate) >= anchor_len:
+                        extendor = candidate
+                        break
+            if not extendor:
+                continue
+            rows.append(
+                {
+                    "seed_row": idx,
+                    "seed_extendor": extendor,
+                    "seed_anchor": extendor[-anchor_len:],
+                    "seed_source": str(summary_path),
+                    "raw_seed_row": "\t".join(str(row.get(col, "")) for col in (reader.fieldnames or [])).replace(
+                        "\t", "\\t"
+                    ),
+                }
+            )
+    return rows
+
+
+def combine_seed_rows(*seed_groups):
+    combined = []
+    seen = set()
+    for rows in seed_groups:
+        for row in rows:
+            key = row.get("seed_extendor")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            row = dict(row)
+            row["seed_row"] = len(combined) + 1
+            combined.append(row)
+    return combined
+
+
+def records_by_anchor(records):
+    by_anchor = defaultdict(list)
+    for record in records:
+        by_anchor[record["anchor"]].append(record)
+    return by_anchor
 
 
 def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_path):
@@ -557,41 +697,253 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "restricted_blast_label",
         "unrestricted_blastp_label",
         "unrestricted_blast_label",
+        "seed_source",
         "raw_seed_row",
     ]
     with open(output_path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
         writer.writeheader()
         for seed in seeds:
-            record = records_by_anchor.get(seed["seed_anchor"], {})
-            query = record.get("query", "")
-            row = {**seed}
-            if record:
-                row.update(
-                    {
-                        "compactor_query": query,
-                        "compactor": record["compactor"],
-                        "compactor_length": record["length"],
-                        "compactor_exact_support": record["exact_support"],
-                        "compactor_anchor": record["anchor"],
-                        "compactor_source_file": record["source_file"],
-                    }
-                )
-                entries = annotations.get(query, []) or [no_hit_entry()]
-            else:
-                entries = [
-                    {
-                        **no_hit_entry(),
-                        "annotation_source": "no_anchor_matched_compactor",
-                    }
-                ]
-            for entry in entries:
-                out_row = {**row, **entry}
-                writer.writerow({col: out_row.get(col, "NA") for col in columns})
+            matched_records = records_by_anchor.get(seed["seed_anchor"], [])
+            if not matched_records:
+                matched_records = [{}]
+            for record in matched_records:
+                query = record.get("query", "")
+                row = {**seed}
+                if record:
+                    row.update(
+                        {
+                            "compactor_query": query,
+                            "compactor": record["compactor"],
+                            "compactor_length": record["length"],
+                            "compactor_exact_support": record["exact_support"],
+                            "compactor_anchor": record["anchor"],
+                            "compactor_source_file": record["source_file"],
+                        }
+                    )
+                    entries = annotations.get(query, []) or [no_hit_entry()]
+                else:
+                    entries = [
+                        {
+                            **no_hit_entry(),
+                            "annotation_source": "no_anchor_matched_compactor",
+                        }
+                    ]
+                for entry in entries:
+                    out_row = {**row, **entry}
+                    writer.writerow({col: out_row.get(col, "NA") for col in columns})
+
+
+UNRESOLVED_LABELS = {"", "NA", "NAN", "NONE", "NO MATCH", "NO BLAST", "UNANNOTATED", "NO PROTEIN/GENE HIT"}
+
+
+def is_real_annotation(label):
+    label = "" if label is None else str(label).strip()
+    return label.upper() not in UNRESOLVED_LABELS
+
+
+def sequence_from_plot_query(query):
+    query = normalize_query_id(query)
+    return re.sub(r"^cluster_\d+_", "", query)
+
+
+def tsv_output_path(path, suffix):
+    path = Path(path)
+    if path.name.endswith(".tsv"):
+        return path.with_name(path.name[:-4] + suffix + ".tsv")
+    return path.with_name(path.name + suffix + ".tsv")
+
+
+def pdf_output_path(path, suffix):
+    path = Path(path)
+    if path.name.endswith(".pdf"):
+        return path.with_name(path.name[:-4] + suffix + ".pdf")
+    return path.with_name(path.name + suffix + ".pdf")
+
+
+def read_seed_compactor_annotation_map(path):
+    annotation_map = {}
+    if not path.exists() or path.stat().st_size == 0:
+        return annotation_map
+    with open(path, newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            extendor = (row.get("seed_extendor") or "").strip()
+            label = clean_label(row.get("annotation_label")) or ""
+            if not extendor or not is_real_annotation(label):
+                continue
+            candidate = {
+                "label": f"{label} (COMPACTOR)",
+                "identity": row.get("identity", "NA"),
+                "qcovs": row.get("qcovs", "NA"),
+                "raw_annotation": row.get("raw_annotation", "NA"),
+                "compactor_query": row.get("compactor_query", "NA"),
+                "compactor": row.get("compactor", "NA"),
+                "compactor_length": row.get("compactor_length", "NA"),
+                "compactor_exact_support": row.get("compactor_exact_support", "NA"),
+                "annotation_source": row.get("annotation_source", "NA"),
+                "blast_mode": row.get("blast_mode", "NA"),
+            }
+            current = annotation_map.get(extendor)
+            if current is None:
+                annotation_map[extendor] = candidate
+                continue
+            current_priority = 0 if current.get("annotation_source") == "restricted_taxid" else 1
+            candidate_priority = 0 if candidate.get("annotation_source") == "restricted_taxid" else 1
+            if candidate_priority < current_priority:
+                annotation_map[extendor] = candidate
+    return annotation_map
+
+
+def row_has_real_plot_annotation(row, mode):
+    if mode == "blastp":
+        return is_real_annotation(row.get("annotation")) or is_real_annotation(row.get("stitle"))
+    feature_text = " ".join(str(row.get(col, "")) for col in ("features", "features_all", "features_10000_window"))
+    return is_real_annotation(blastn_label(row)) or bool(extract_qualifier(feature_text, "product")) or bool(
+        extract_qualifier(feature_text, "gene")
+    )
+
+
+def fake_feature_annotation(label):
+    safe_label = str(label).replace("(COMPACTOR)", "").strip()
+    safe_label = safe_label.replace("'", "").replace('"', "")
+    return (
+        "[{'type': 'compactor', 'start': '0', 'end': '0', "
+        f"'gene': ['{safe_label}'], 'product': ['{safe_label}'], "
+        "'protein_seq': None, 'protein_id': None, 'note': ['COMPACTOR']}]"
+    )
+
+
+def fill_plot_annotation_tsv(input_path, output_path, compactor_map, mode):
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    filled = 0
+    if not input_path.exists():
+        raise FileNotFoundError(f"Missing plot annotation TSV: {input_path}")
+    with open(input_path, newline="") as in_handle:
+        reader = csv.DictReader(in_handle, delimiter="\t")
+        fieldnames = list(reader.fieldnames or [])
+        for extra_col in (
+            "compactor_annotation",
+            "compactor_query",
+            "compactor_length",
+            "compactor_exact_support",
+            "compactor_raw_annotation",
+        ):
+            if extra_col not in fieldnames:
+                fieldnames.append(extra_col)
+        if mode == "blastp" and "annotation" not in fieldnames:
+            fieldnames.append("annotation")
+        if mode == "blast" and "features" not in fieldnames:
+            fieldnames.append("features")
+        if mode == "blast" and "features_all" not in fieldnames:
+            fieldnames.append("features_all")
+
+        with open(output_path, "w", newline="") as out_handle:
+            writer = csv.DictWriter(out_handle, delimiter="\t", fieldnames=fieldnames)
+            writer.writeheader()
+            for row in reader:
+                sequence = sequence_from_plot_query(row.get("query"))
+                compactor_hit = compactor_map.get(sequence)
+                if compactor_hit and not row_has_real_plot_annotation(row, mode):
+                    row["identity"] = row.get("identity") if has_text(row.get("identity")) else compactor_hit["identity"]
+                    row["qcovs"] = row.get("qcovs") if has_text(row.get("qcovs")) else compactor_hit["qcovs"]
+                    if mode == "blastp":
+                        row["annotation"] = compactor_hit["label"]
+                        row["stitle"] = row.get("stitle") if has_text(row.get("stitle")) else compactor_hit["label"]
+                    else:
+                        feature_annotation = fake_feature_annotation(compactor_hit["label"])
+                        row["features"] = row.get("features") if has_text(row.get("features")) else feature_annotation
+                        row["features_all"] = row.get("features_all") if has_text(row.get("features_all")) else feature_annotation
+                    row["compactor_annotation"] = compactor_hit["label"]
+                    row["compactor_query"] = compactor_hit["compactor_query"]
+                    row["compactor_length"] = compactor_hit["compactor_length"]
+                    row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
+                    row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
+                    filled += 1
+                else:
+                    row.setdefault("compactor_annotation", "NA")
+                    row.setdefault("compactor_query", "NA")
+                    row.setdefault("compactor_length", "NA")
+                    row.setdefault("compactor_exact_support", "NA")
+                    row.setdefault("compactor_raw_annotation", "NA")
+                writer.writerow({col: row.get(col, "NA") for col in fieldnames})
+    print(f"Filled {filled} unresolved {mode} rows with compactor annotations in {output_path}")
+    return output_path, filled
+
+
+def run_compactor_plot_mode(args):
+    output_dir = Path(args.output_dir)
+    selected_path = output_dir / "resfungi_compactors_selected.tsv"
+    records = read_selected_compactors(selected_path)
+    if not records:
+        raise FileNotFoundError(f"Missing or empty selected compactor table: {selected_path}")
+
+    blast = output_dir / "resfungi_compactors_blast.tsv"
+    reblast = output_dir / "resfungi_compactors_reblast.tsv"
+    blastp = output_dir / "resfungi_compactors_blastp.tsv"
+    reblastp = output_dir / "resfungi_compactors_reblastp.tsv"
+    annotations = merge_annotation_maps(
+        read_annotation_table(blastp, "blastp", "restricted"),
+        read_annotation_table(blast, "blast", "restricted"),
+        read_annotation_table(reblastp, "blastp", "unrestricted"),
+        read_annotation_table(reblast, "blast", "unrestricted"),
+    )
+    compactor_summary_path = output_dir / "resfungi_compactor_annotations.tsv"
+    write_compactor_annotation_summary(records, annotations, compactor_summary_path)
+    print(f"Regenerated compactor annotation summary at {compactor_summary_path}")
+
+    seeds_path = Path(args.seeds) if args.seeds else Path(args.input_dir) / "seeds.resfungi.raw"
+    seed_rows = combine_seed_rows(
+        read_seed_rows(seeds_path, args.anchor_len),
+        read_plot_summary_seed_rows(args.plot_summary, args.anchor_len),
+    )
+    seed_summary_path = output_dir / "seeds_resfungi_compactor_annotations.tsv"
+    write_seed_annotation_summary(seed_rows, records_by_anchor(records), annotations, seed_summary_path)
+    print(f"Regenerated seed extendor compactor annotation summary at {seed_summary_path}")
+
+    compactor_map = read_seed_compactor_annotation_map(seed_summary_path)
+    print(f"Loaded {len(compactor_map)} seed extendors with usable compactor annotations.")
+
+    blastp_compactor = tsv_output_path(args.plot_blastp_annotated, "_compactor")
+    blast_compactor = tsv_output_path(args.plot_blast_annotated, "_compactor")
+    fill_plot_annotation_tsv(args.plot_blastp_annotated, blastp_compactor, compactor_map, "blastp")
+    fill_plot_annotation_tsv(args.plot_blast_annotated, blast_compactor, compactor_map, "blast")
+
+    output_pdf = pdf_output_path(args.plot_pdf, "_compactor")
+    command = [
+        "Rscript",
+        "--vanilla",
+        str(REPO_ROOT / "src/annotation/blast_code/plot_blast_annotations_each_feature.R"),
+        "--nonzero_annotations",
+        str(blastp_compactor),
+        "--clusters",
+        str(args.plot_clusters),
+        "--feather_file",
+        str(args.plot_feather),
+        "--sample_seqs",
+        str(args.plot_sample_seqs),
+        "--metadata",
+        str(args.plot_metadata),
+        "--output",
+        str(output_pdf),
+    ]
+    if args.plot_target_vars:
+        command.extend(["--target_vars", args.plot_target_vars])
+    if args.plot_confound_vars:
+        command.extend(["--confound_vars", args.plot_confound_vars])
+    run_command(command, cwd=REPO_ROOT)
+    print(f"Wrote compactor-filled blast plot PDF to {output_pdf}")
+    print(f"Wrote compactor-filled plot summary to {pdf_output_path(args.plot_pdf, '_compactor_summary').with_suffix('.tsv')}")
 
 
 def main():
     args = parse_args()
+    if args.noblastp:
+        run_compactor_plot_mode(args)
+        return
+
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
     seeds_path = Path(args.seeds) if args.seeds else input_dir / "seeds.resfungi.raw"
@@ -633,11 +985,14 @@ def main():
     write_compactor_annotation_summary(records, annotations, compactor_summary_path)
     print(f"Wrote compactor annotation summary to {compactor_summary_path}")
 
-    records_by_anchor = {record["anchor"]: record for record in records}
     summary_path = output_dir / "seeds_resfungi_compactor_annotations.tsv"
-    write_seed_annotation_summary(
+    seed_rows = combine_seed_rows(
         read_seed_rows(seeds_path, args.anchor_len),
-        records_by_anchor,
+        read_plot_summary_seed_rows(args.plot_summary, args.anchor_len),
+    )
+    write_seed_annotation_summary(
+        seed_rows,
+        records_by_anchor(records),
         annotations,
         summary_path,
     )
