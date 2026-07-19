@@ -392,6 +392,22 @@ def blastp_label(row):
     return None
 
 
+def raw_blastn_annotation(row):
+    values = []
+    for col in ("stitle", "features", "features_10000_window"):
+        if has_text(row.get(col)):
+            values.append(f"{col}={str(row.get(col)).replace(chr(9), ' ')}")
+    return " | ".join(values) if values else "NA"
+
+
+def raw_blastp_annotation(row):
+    values = []
+    for col in ("stitle", "NCBI_protein_accession", "UniProt_accession", "GO"):
+        if has_text(row.get(col)):
+            values.append(f"{col}={str(row.get(col)).replace(chr(9), ' ')}")
+    return " | ".join(values) if values else "NA"
+
+
 def normalize_query_id(query):
     if query is None:
         return ""
@@ -403,7 +419,7 @@ def normalize_query_id(query):
 
 
 def read_annotation_table(path, mode, source):
-    annotations = {}
+    annotations = defaultdict(list)
     if not path.exists() or path.stat().st_size == 0:
         return annotations
     with open(path, newline="") as handle:
@@ -415,46 +431,48 @@ def read_annotation_table(path, mode, source):
             if not query:
                 continue
             label = blastp_label(row) if mode == "blastp" else blastn_label(row)
+            raw_annotation = raw_blastp_annotation(row) if mode == "blastp" else raw_blastn_annotation(row)
             if not label:
-                continue
-            current = annotations.get(query)
+                label = "UNANNOTATED" if raw_annotation != "NA" else "NO MATCH"
             identity = row.get("identity", "NA")
             qcovs = row.get("qcovs", "NA")
-            if current is None:
-                annotations[query] = {
+            annotations[query].append(
+                {
+                    "annotation_label": label,
+                    "annotation_source": (
+                        "restricted_taxid" if source == "restricted" else "outside_taxid"
+                    ),
+                    "blast_mode": mode,
+                    "blast_scope": source,
+                    "identity": identity,
+                    "qcovs": qcovs,
+                    "raw_annotation": raw_annotation,
                     f"{source}_{mode}_label": label,
                     f"{source}_{mode}_identity": identity,
                     f"{source}_{mode}_qcovs": qcovs,
                 }
+            )
     return annotations
 
 
 def merge_annotation_maps(*maps):
-    merged = defaultdict(dict)
+    merged = defaultdict(list)
     for annotation_map in maps:
-        for query, values in annotation_map.items():
-            merged[query].update(values)
+        for query, entries in annotation_map.items():
+            merged[query].extend(entries)
     return dict(merged)
 
 
-def choose_final_annotation(row):
-    restricted = [
-        row.get("restricted_blastp_label"),
-        row.get("restricted_blast_label"),
-    ]
-    outside = [
-        row.get("unrestricted_blastp_label"),
-        row.get("unrestricted_blast_label"),
-    ]
-    restricted = [label for label in restricted if has_text(label) and label != "UNANNOTATED"]
-    outside = [label for label in outside if has_text(label) and label != "UNANNOTATED"]
-    if restricted:
-        return ";".join(dict.fromkeys(restricted)), "restricted_taxid"
-    if outside:
-        return ";".join(dict.fromkeys(outside)), "outside_taxid"
-    if any(row.get(col) == "UNANNOTATED" for col in row):
-        return "UNANNOTATED", "hit_without_parsed_annotation"
-    return "NO MATCH", "no_hit"
+def no_hit_entry():
+    return {
+        "annotation_label": "NO MATCH",
+        "annotation_source": "no_hit",
+        "blast_mode": "NA",
+        "blast_scope": "NA",
+        "identity": "NA",
+        "qcovs": "NA",
+        "raw_annotation": "NA",
+    }
 
 
 def write_compactor_annotation_summary(records, annotations, output_path):
@@ -467,6 +485,11 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "source_file",
         "annotation_label",
         "annotation_source",
+        "blast_mode",
+        "blast_scope",
+        "identity",
+        "qcovs",
+        "raw_annotation",
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
@@ -478,12 +501,11 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
         writer.writeheader()
         for record in records:
-            row = {**record, **annotations.get(record["query"], {})}
-            label, source = choose_final_annotation(row)
-            row["annotation_label"] = label
-            row["annotation_source"] = source
-            source_counts[source] += 1
-            writer.writerow({col: row.get(col, "NA") for col in columns})
+            entries = annotations.get(record["query"], []) or [no_hit_entry()]
+            for entry in entries:
+                row = {**record, **entry}
+                source_counts[row["annotation_source"]] += 1
+                writer.writerow({col: row.get(col, "NA") for col in columns})
     print(
         "Compactor annotation source counts: "
         + ", ".join(f"{key}={source_counts[key]}" for key in sorted(source_counts))
@@ -526,6 +548,11 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "compactor_source_file",
         "annotation_label",
         "annotation_source",
+        "blast_mode",
+        "blast_scope",
+        "identity",
+        "qcovs",
+        "raw_annotation",
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
@@ -550,11 +577,17 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
                         "compactor_source_file": record["source_file"],
                     }
                 )
-                row.update(annotations.get(query, {}))
-            label, source = choose_final_annotation(row)
-            row["annotation_label"] = label
-            row["annotation_source"] = source if record else "no_anchor_matched_compactor"
-            writer.writerow({col: row.get(col, "NA") for col in columns})
+                entries = annotations.get(query, []) or [no_hit_entry()]
+            else:
+                entries = [
+                    {
+                        **no_hit_entry(),
+                        "annotation_source": "no_anchor_matched_compactor",
+                    }
+                ]
+            for entry in entries:
+                out_row = {**row, **entry}
+                writer.writerow({col: out_row.get(col, "NA") for col in columns})
 
 
 def main():
