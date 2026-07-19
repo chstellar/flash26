@@ -39,6 +39,18 @@ def parse_args():
     parser.add_argument("--thresholds", default="1000,100,5")
     parser.add_argument("--skip_blast", action="store_true")
     parser.add_argument(
+        "--reblast_mode",
+        choices=["missing", "none"],
+        default="missing",
+        help="Run unrestricted reblast for restricted-taxid misses, or skip it.",
+    )
+    parser.add_argument(
+        "--blast_modes",
+        choices=["both", "blastn", "blastp"],
+        default="both",
+        help="Which BLAST searches to run or reuse.",
+    )
+    parser.add_argument(
         "--overwrite_blast",
         action="store_true",
         help="Re-run BLAST/BLASTP even if the expected output TSVs already exist.",
@@ -121,9 +133,9 @@ def write_fasta(records, output_fasta):
     with open(output_fasta, "w", newline="") as handle:
         for record in records:
             header = (
-                f"{record['query']}|anchor={record['anchor']}|length={record['length']}"
-                f"|exact_support={record['exact_support']:g}|row={record['row_index']}"
-                f"|source={Path(record['source_file']).name}"
+                f"{record['query']} anchor={record['anchor']} length={record['length']}"
+                f" exact_support={record['exact_support']:g} row={record['row_index']}"
+                f" source={Path(record['source_file']).name}"
             )
             handle.write(f">{header}\n{record['compactor']}\n")
 
@@ -184,6 +196,34 @@ def has_output(path):
     return path.exists() and path.stat().st_size > 0
 
 
+def write_empty_blastn(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "query\tsubject\tidentity\talignment_length\tmismatches\tgap_opens\tq_start\tq_end\t"
+        "s_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tstitle\tfeatures\tfeatures_10000_window\n"
+    )
+
+
+def write_empty_blastp(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "query\tidentity\tevalue\tqcovs\tqframe\tstaxids\tstitle\t"
+        "NCBI_protein_accession\tUniProt_accession\tmethod\tGO\n"
+    )
+
+
+def count_tsv_rows(path):
+    if not path.exists() or path.stat().st_size == 0:
+        return 0
+    with open(path, newline="") as handle:
+        reader = csv.reader(handle, delimiter="\t")
+        try:
+            next(reader)
+        except StopIteration:
+            return 0
+        return sum(1 for _ in reader)
+
+
 def run_blasts(args, output_fasta, output_dir):
     blast = output_dir / "resfungi_compactors_blast.tsv"
     reblast = output_dir / "resfungi_compactors_reblast.tsv"
@@ -194,7 +234,19 @@ def run_blasts(args, output_fasta, output_dir):
     print(f"Wrapper subprocess python: {which('python', path=command_env['PATH'])}", flush=True)
     run_command(["python", "--version"], env=command_env)
 
-    if args.overwrite_blast or not (has_output(blast) and has_output(reblast)):
+    should_run_blastn = args.blast_modes in {"both", "blastn"}
+    should_run_blastp = args.blast_modes in {"both", "blastp"}
+    reblast_arg = str(reblast) if args.reblast_mode == "missing" else ""
+    reblastp_arg = str(reblastp) if args.reblast_mode == "missing" else ""
+
+    need_blastn = args.overwrite_blast or not has_output(blast) or (
+        args.reblast_mode == "missing" and not has_output(reblast)
+    )
+    need_blastp = args.overwrite_blast or not has_output(blastp) or (
+        args.reblast_mode == "missing" and not has_output(reblastp)
+    )
+
+    if should_run_blastn and need_blastn:
         run_command(
             [
                 "bash",
@@ -214,16 +266,26 @@ def run_blasts(args, output_fasta, output_dir):
                 "10",
                 "",
                 "0",
-                str(reblast),
+                reblast_arg,
             ],
             env=command_env,
             cwd=REPO_ROOT,
         )
     else:
-        print(f"Reusing existing BLASTN outputs: {blast} and {reblast}")
-    require_output(blast, "Restricted BLASTN")
-    require_output(reblast, "Unrestricted reBLASTN")
-    if args.overwrite_blast or not (has_output(blastp) and has_output(reblastp)):
+        print(f"Reusing existing restricted BLASTN output: {blast}")
+    if should_run_blastn or has_output(blast):
+        require_output(blast, "Restricted BLASTN")
+    else:
+        write_empty_blastn(blast)
+    if args.reblast_mode == "missing":
+        if should_run_blastn:
+            require_output(reblast, "Unrestricted reBLASTN")
+        elif not has_output(reblast):
+            write_empty_blastn(reblast)
+    else:
+        write_empty_blastn(reblast)
+
+    if should_run_blastp and need_blastp:
         run_command(
             [
                 "bash",
@@ -242,15 +304,32 @@ def run_blasts(args, output_fasta, output_dir):
                 "10",
                 "",
                 "0",
-                str(reblastp),
+                reblastp_arg,
             ],
             env=command_env,
             cwd=REPO_ROOT,
         )
     else:
-        print(f"Reusing existing BLASTP outputs: {blastp} and {reblastp}")
-    require_output(blastp, "Restricted BLASTP")
-    require_output(reblastp, "Unrestricted reBLASTP")
+        print(f"Reusing existing restricted BLASTP output: {blastp}")
+    if should_run_blastp or has_output(blastp):
+        require_output(blastp, "Restricted BLASTP")
+    else:
+        write_empty_blastp(blastp)
+    if args.reblast_mode == "missing":
+        if should_run_blastp:
+            require_output(reblastp, "Unrestricted reBLASTP")
+        elif not has_output(reblastp):
+            write_empty_blastp(reblastp)
+    else:
+        write_empty_blastp(reblastp)
+
+    print(
+        "BLAST row counts: "
+        f"restricted_blastn={count_tsv_rows(blast)}, "
+        f"unrestricted_blastn={count_tsv_rows(reblast)}, "
+        f"restricted_blastp={count_tsv_rows(blastp)}, "
+        f"unrestricted_blastp={count_tsv_rows(reblastp)}"
+    )
     return blast, reblast, blastp, reblastp
 
 
@@ -313,6 +392,16 @@ def blastp_label(row):
     return None
 
 
+def normalize_query_id(query):
+    if query is None:
+        return ""
+    query = str(query).strip()
+    if not query:
+        return ""
+    query = query.split()[0]
+    return query.split("|")[0]
+
+
 def read_annotation_table(path, mode, source):
     annotations = {}
     if not path.exists() or path.stat().st_size == 0:
@@ -322,7 +411,7 @@ def read_annotation_table(path, mode, source):
         if not reader.fieldnames or "query" not in reader.fieldnames:
             return annotations
         for row in reader:
-            query = row.get("query")
+            query = normalize_query_id(row.get("query"))
             if not query:
                 continue
             label = blastp_label(row) if mode == "blastp" else blastn_label(row)
@@ -384,6 +473,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "unrestricted_blast_label",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    source_counts = defaultdict(int)
     with open(output_path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
         writer.writeheader()
@@ -392,7 +482,12 @@ def write_compactor_annotation_summary(records, annotations, output_path):
             label, source = choose_final_annotation(row)
             row["annotation_label"] = label
             row["annotation_source"] = source
+            source_counts[source] += 1
             writer.writerow({col: row.get(col, "NA") for col in columns})
+    print(
+        "Compactor annotation source counts: "
+        + ", ".join(f"{key}={source_counts[key]}" for key in sorted(source_counts))
+    )
 
 
 def read_seed_rows(seeds_path, anchor_len):
@@ -411,7 +506,7 @@ def read_seed_rows(seeds_path, anchor_len):
                     "seed_row": idx,
                     "seed_extendor": extendor,
                     "seed_anchor": extendor[-anchor_len:] if len(extendor) >= anchor_len else extendor,
-                    "raw_seed_row": line,
+                    "raw_seed_row": line.replace("\t", "\\t"),
                 }
             )
     return rows
