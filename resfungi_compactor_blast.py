@@ -106,6 +106,11 @@ def parse_args():
     parser.add_argument("--plot_metadata", default=DEFAULT_METADATA)
     parser.add_argument("--plot_target_vars", default="")
     parser.add_argument("--plot_confound_vars", default="")
+    parser.add_argument(
+        "--plot_rscript",
+        default=os.environ.get("RESFUNGI_PLOT_RSCRIPT", "Rscript"),
+        help="Rscript executable for regenerating the compactor plot PDF.",
+    )
     return parser.parse_args()
 
 
@@ -615,8 +620,8 @@ def read_plot_summary_seed_rows(summary_path, anchor_len):
         return rows
     preferred_columns = [
         "seed_extendor",
-        "query",
         "sequence",
+        "query",
         "extendor",
         "anchor_target",
         "anchor_target_sequence",
@@ -795,6 +800,83 @@ def read_seed_compactor_annotation_map(path):
     return annotation_map
 
 
+def annotation_priority(hit):
+    source_rank = 0 if hit.get("annotation_source") == "restricted_taxid" else 1
+    mode_rank = 0 if hit.get("blast_mode") == "blastp" else 1
+    label_rank = len(str(hit.get("label", "")))
+    return (source_rank, mode_rank, label_rank)
+
+
+def compactor_hit_from_row(row):
+    label = clean_label(row.get("annotation_label")) or ""
+    if not is_real_annotation(label):
+        return None
+    return {
+        "label": f"{label} (COMPACTOR)",
+        "identity": row.get("identity", "NA"),
+        "qcovs": row.get("qcovs", "NA"),
+        "raw_annotation": row.get("raw_annotation", "NA"),
+        "compactor_query": row.get("query") or row.get("compactor_query", "NA"),
+        "compactor": row.get("compactor", "NA"),
+        "compactor_length": row.get("length") or row.get("compactor_length", "NA"),
+        "compactor_exact_support": row.get("exact_support") or row.get("compactor_exact_support", "NA"),
+        "annotation_source": row.get("annotation_source", "NA"),
+        "blast_mode": row.get("blast_mode", "NA"),
+        "compactor_anchor": row.get("anchor") or row.get("compactor_anchor", "NA"),
+    }
+
+
+def read_compactor_anchor_annotation_map(path):
+    anchor_map = defaultdict(list)
+    if not path.exists() or path.stat().st_size == 0:
+        return anchor_map
+    with open(path, newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        for row in reader:
+            anchor = clean_sequence_candidate(row.get("anchor") or row.get("compactor_anchor"))
+            hit = compactor_hit_from_row(row)
+            if not anchor or hit is None:
+                continue
+            anchor_map[anchor].append(hit)
+    return dict(anchor_map)
+
+
+def select_compactor_hit(candidates):
+    candidates = [hit for hit in candidates if hit and is_real_annotation(hit.get("label", "").replace("(COMPACTOR)", ""))]
+    if not candidates:
+        return None
+    return sorted(candidates, key=annotation_priority)[0]
+
+
+def build_anchor_annotation_map(compactor_map, anchor_len):
+    anchor_map = {}
+    for sequence, hit in compactor_map.items():
+        sequence = clean_sequence_candidate(sequence)
+        if len(sequence) < anchor_len:
+            continue
+        anchor = sequence[-anchor_len:]
+        current = anchor_map.get(anchor)
+        if current is None:
+            anchor_map[anchor] = hit
+            continue
+        current_priority = 0 if current.get("annotation_source") == "restricted_taxid" else 1
+        hit_priority = 0 if hit.get("annotation_source") == "restricted_taxid" else 1
+        if hit_priority < current_priority:
+            anchor_map[anchor] = hit
+    return {anchor: [hit] for anchor, hit in anchor_map.items()}
+
+
+def lookup_compactor_hit(sequence, compactor_map, anchor_map, anchor_len):
+    sequence = clean_sequence_candidate(sequence)
+    if not sequence:
+        return None
+    if sequence in compactor_map:
+        return compactor_map[sequence]
+    if len(sequence) >= anchor_len:
+        return select_compactor_hit(anchor_map.get(sequence[-anchor_len:], []))
+    return None
+
+
 def row_has_real_plot_annotation(row, mode):
     if mode == "blastp":
         return is_real_annotation(row.get("annotation")) or is_real_annotation(row.get("stitle"))
@@ -814,7 +896,7 @@ def fake_feature_annotation(label):
     )
 
 
-def fill_plot_annotation_tsv(input_path, output_path, compactor_map, mode):
+def fill_plot_annotation_tsv(input_path, output_path, compactor_map, anchor_map, anchor_len, mode):
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -845,7 +927,7 @@ def fill_plot_annotation_tsv(input_path, output_path, compactor_map, mode):
             writer.writeheader()
             for row in reader:
                 sequence = sequence_from_plot_query(row.get("query"))
-                compactor_hit = compactor_map.get(sequence)
+                compactor_hit = lookup_compactor_hit(sequence, compactor_map, anchor_map, anchor_len)
                 if compactor_hit and not row_has_real_plot_annotation(row, mode):
                     row["identity"] = row.get("identity") if has_text(row.get("identity")) else compactor_hit["identity"]
                     row["qcovs"] = row.get("qcovs") if has_text(row.get("qcovs")) else compactor_hit["qcovs"]
@@ -870,6 +952,62 @@ def fill_plot_annotation_tsv(input_path, output_path, compactor_map, mode):
                     row.setdefault("compactor_raw_annotation", "NA")
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
     print(f"Filled {filled} unresolved {mode} rows with compactor annotations in {output_path}")
+    return output_path, filled
+
+
+def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, anchor_len):
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not input_path.exists():
+        print(f"Skipping compactor summary fill because {input_path} does not exist.")
+        return output_path, 0
+
+    filled = 0
+    with open(input_path, newline="") as in_handle:
+        reader = csv.DictReader(in_handle, delimiter="\t")
+        fieldnames = list(reader.fieldnames or [])
+        for col in (
+            "compactor_annotation",
+            "compactor_query",
+            "compactor_length",
+            "compactor_exact_support",
+            "compactor_raw_annotation",
+        ):
+            if col not in fieldnames:
+                fieldnames.append(col)
+        with open(output_path, "w", newline="") as out_handle:
+            writer = csv.DictWriter(out_handle, delimiter="\t", fieldnames=fieldnames)
+            writer.writeheader()
+            for row in reader:
+                sequence = ""
+                for col in ("sequence", "query", "extendor", "anchor_target", "anchor_target_sequence"):
+                    sequence = clean_sequence_candidate(row.get(col))
+                    if sequence:
+                        break
+                compactor_hit = lookup_compactor_hit(sequence, compactor_map, anchor_map, anchor_len)
+                label = row.get("Blast Label") or row.get("label") or row.get("annotation")
+                if compactor_hit and not is_real_annotation(label):
+                    if "Blast Label" in fieldnames:
+                        row["Blast Label"] = compactor_hit["label"]
+                    elif "label" in fieldnames:
+                        row["label"] = compactor_hit["label"]
+                    elif "annotation" in fieldnames:
+                        row["annotation"] = compactor_hit["label"]
+                    row["compactor_annotation"] = compactor_hit["label"]
+                    row["compactor_query"] = compactor_hit["compactor_query"]
+                    row["compactor_length"] = compactor_hit["compactor_length"]
+                    row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
+                    row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
+                    filled += 1
+                else:
+                    row.setdefault("compactor_annotation", "NA")
+                    row.setdefault("compactor_query", "NA")
+                    row.setdefault("compactor_length", "NA")
+                    row.setdefault("compactor_exact_support", "NA")
+                    row.setdefault("compactor_raw_annotation", "NA")
+                writer.writerow({col: row.get(col, "NA") for col in fieldnames})
+    print(f"Filled {filled} unresolved plot summary rows with compactor annotations in {output_path}")
     return output_path, filled
 
 
@@ -904,16 +1042,28 @@ def run_compactor_plot_mode(args):
     print(f"Regenerated seed extendor compactor annotation summary at {seed_summary_path}")
 
     compactor_map = read_seed_compactor_annotation_map(seed_summary_path)
+    anchor_map = read_compactor_anchor_annotation_map(compactor_summary_path)
+    seed_anchor_map = build_anchor_annotation_map(compactor_map, args.anchor_len)
+    for anchor, hits in seed_anchor_map.items():
+        anchor_map.setdefault(anchor, []).extend(hits)
     print(f"Loaded {len(compactor_map)} seed extendors with usable compactor annotations.")
+    print(f"Loaded {len(anchor_map)} seed anchors with usable compactor annotations.")
 
     blastp_compactor = tsv_output_path(args.plot_blastp_annotated, "_compactor")
     blast_compactor = tsv_output_path(args.plot_blast_annotated, "_compactor")
-    fill_plot_annotation_tsv(args.plot_blastp_annotated, blastp_compactor, compactor_map, "blastp")
-    fill_plot_annotation_tsv(args.plot_blast_annotated, blast_compactor, compactor_map, "blast")
+    fill_plot_annotation_tsv(args.plot_blastp_annotated, blastp_compactor, compactor_map, anchor_map, args.anchor_len, "blastp")
+    fill_plot_annotation_tsv(args.plot_blast_annotated, blast_compactor, compactor_map, anchor_map, args.anchor_len, "blast")
+    fill_plot_summary_tsv(
+        args.plot_summary,
+        tsv_output_path(args.plot_summary, "_compactor"),
+        compactor_map,
+        anchor_map,
+        args.anchor_len,
+    )
 
     output_pdf = pdf_output_path(args.plot_pdf, "_compactor")
     command = [
-        "Rscript",
+        args.plot_rscript,
         "--vanilla",
         str(REPO_ROOT / "src/annotation/blast_code/plot_blast_annotations_each_feature.R"),
         "--nonzero_annotations",
@@ -934,8 +1084,13 @@ def run_compactor_plot_mode(args):
     if args.plot_confound_vars:
         command.extend(["--confound_vars", args.plot_confound_vars])
     run_command(command, cwd=REPO_ROOT)
+    generated_summary = pdf_output_path(args.plot_pdf, "_compactor_summary").with_suffix(".tsv")
+    if generated_summary.exists():
+        patched_summary_tmp = tsv_output_path(generated_summary, "_tmp")
+        fill_plot_summary_tsv(generated_summary, patched_summary_tmp, compactor_map, anchor_map, args.anchor_len)
+        patched_summary_tmp.replace(generated_summary)
     print(f"Wrote compactor-filled blast plot PDF to {output_pdf}")
-    print(f"Wrote compactor-filled plot summary to {pdf_output_path(args.plot_pdf, '_compactor_summary').with_suffix('.tsv')}")
+    print(f"Wrote compactor-filled plot summary to {generated_summary}")
 
 
 def main():

@@ -82,6 +82,10 @@ echo "Using BLAST threads: $THREADS"
 echo "Using BLAST modes: ${RESFUNGI_BLAST_MODES:-both}"
 echo "Using reblast mode: ${RESFUNGI_REBLAST_MODE:-missing}"
 echo "Using protein BLAST database: ${RESFUNGI_PROTEIN_DB:-refseq_protein}"
+if [ -z "${RESFUNGI_PLOT_RSCRIPT:-}" ] && [ -x "$CONDA_BASE/envs/default-R_env/bin/Rscript" ]; then
+  export RESFUNGI_PLOT_RSCRIPT="$CONDA_BASE/envs/default-R_env/bin/Rscript"
+fi
+echo "Using plot Rscript: ${RESFUNGI_PLOT_RSCRIPT:-Rscript}"
 
 python /scratch/users/jiamuyu/proj_botryllus/flash/resfungi_compactor_blast.py \
   --threads "$THREADS" \
