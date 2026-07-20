@@ -151,25 +151,7 @@ def safe_id(value):
     return value.strip("_") or "resfungi"
 
 
-def choose_compactor(path, thresholds):
-    rows = []
-    for idx, row in enumerate(read_tsv(path), start=1):
-        compactor = (row.get("compactor") or "").strip()
-        anchor = (row.get("anchor") or "").strip()
-        exact_support = numeric(row.get("exact_support"))
-        if not compactor or not anchor or exact_support is None:
-            continue
-        rows.append(
-            {
-                "row_index": idx,
-                "anchor": anchor,
-                "compactor": compactor,
-                "length": len(compactor),
-                "exact_support": exact_support,
-                "source_file": str(path),
-            }
-        )
-
+def choose_compactor_from_rows(rows, thresholds):
     if not rows:
         return None
 
@@ -203,27 +185,45 @@ def choose_compactor(path, thresholds):
     return None
 
 
-def read_compactor_table(path):
+def choose_compactor(path, thresholds):
+    rows = []
+    for idx, row in enumerate(read_tsv(path), start=1):
+        compactor = (row.get("compactor") or "").strip()
+        anchor = (row.get("anchor") or "").strip()
+        exact_support = numeric(row.get("exact_support"))
+        if not compactor or not anchor or exact_support is None:
+            continue
+        rows.append(
+            {
+                "row_index": idx,
+                "anchor": anchor,
+                "compactor": compactor,
+                "length": len(compactor),
+                "exact_support": exact_support,
+                "source_file": str(path),
+            }
+        )
+    return choose_compactor_from_rows(rows, thresholds)
+
+
+def read_compactor_table(path, thresholds):
+    rows_by_anchor = defaultdict(list)
     records = []
     for idx, row in enumerate(read_tsv(path), start=1):
         compactor = (row.get("compactor") or "").strip()
         anchor = (row.get("anchor") or "").strip()
-        if not compactor or not anchor:
+        exact_support = numeric(row.get("exact_support"))
+        if not compactor or not anchor or exact_support is None:
             continue
         length_value = int(numeric(row.get("total_length"), len(compactor)) or len(compactor))
-        exact_support = numeric(row.get("exact_support"), "NA")
-        row_id = row.get("id")
-        row_id = row_id if has_text(row_id) else idx
-        records.append(
+        rows_by_anchor[anchor].append(
             {
-                "query": f"{safe_id(path)}__row{idx}__id{row_id}__len{length_value}",
                 "anchor": anchor,
                 "compactor": compactor,
                 "length": length_value,
                 "exact_support": exact_support,
                 "row_index": idx,
-                "support_threshold": "input_table",
-                "selection_reason": "input_compactor_table",
+                "row_id": row.get("id", idx),
                 "source_file": str(path),
                 "support": row.get("support", "NA"),
                 "expected_read_count": row.get("expected_read_count", "NA"),
@@ -231,6 +231,27 @@ def read_compactor_table(path):
                 "num_extended": row.get("num_extended", "NA"),
             }
         )
+
+    skipped = 0
+    for anchor, rows in sorted(rows_by_anchor.items(), key=lambda item: min(row["row_index"] for row in item[1])):
+        chosen = choose_compactor_from_rows(rows, thresholds)
+        if chosen is None:
+            skipped += 1
+            continue
+        row_id = chosen.get("row_id")
+        row_id = row_id if has_text(row_id) else chosen["row_index"]
+        chosen = dict(chosen)
+        chosen["query"] = (
+            f"{safe_id(path)}__anchor{len(records) + 1}__row{chosen['row_index']}"
+            f"__id{row_id}__len{chosen['length']}"
+        )
+        chosen["selection_reason"] = f"per_anchor_{chosen['selection_reason']}"
+        records.append(chosen)
+
+    print(
+        f"Selected {len(records)}/{len(rows_by_anchor)} anchor-level compactors from {path}; "
+        f"skipped {skipped} anchors with no representative passing thresholds {thresholds}."
+    )
     return records
 
 
@@ -1193,8 +1214,8 @@ def main():
 
     if args.compactor_table:
         compactor_table = Path(args.compactor_table)
-        records = read_compactor_table(compactor_table)
-        print(f"Loaded {len(records)} compactors directly from {compactor_table}")
+        records = read_compactor_table(compactor_table, thresholds)
+        print(f"Loaded {len(records)} selected anchor-level compactors from {compactor_table}")
     else:
         records = []
         for path in sorted(input_dir.glob("*resfungi.tsv")):
