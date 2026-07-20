@@ -22,10 +22,6 @@ option_list <- list(
               help = "Optional unrestricted reblastp annotated TSV", metavar = "character"),
   make_option(c("--reblast_annotations"), type = "character", default = NULL,
               help = "Optional unrestricted reblast annotated TSV", metavar = "character"),
-  make_option(c("--compactor_summary"), type = "character", default = NULL,
-              help = "Optional compactor-filled plot summary TSV used as rescue labels", metavar = "character"),
-  make_option(c("--compactor_anchor_len"), type = "integer", default = 31,
-              help = "Anchor suffix length used for compactor rescue matching", metavar = "integer"),
   make_option(c("--target_vars"), type = "character", default = "",
               help = "Optional semicolon-delimited residual target settings used by run_adelie", metavar = "character"),
   make_option(c("--confound_vars"), type = "character", default = "",
@@ -456,46 +452,6 @@ read_optional_tsv <- function(path) {
   fread(path)
 }
 
-clean_sequence_candidate <- function(x) {
-  x <- replace_na(as.character(x), "")
-  x <- str_replace_all(x, "[^ACGTNacgtn]", "")
-  toupper(x)
-}
-
-sequence_suffix <- function(x, n) {
-  x <- clean_sequence_candidate(x)
-  ifelse(nchar(x) >= n, str_sub(x, -n), x)
-}
-
-make_compactor_summary_label_dt <- function(path) {
-  compactor_dt <- read_optional_tsv(path)
-  if (nrow(compactor_dt) == 0 || !"compactor_annotation" %in% colnames(compactor_dt)) {
-    return(tibble(metadata_category=character(), cluster=character(), feature=character(),
-                  sequence=character(), compactor_label=character(),
-                  compactor_anchor=character(),
-                  compactor_identity=numeric(), compactor_qcovs=numeric()))
-  }
-  if (!"Blast Label" %in% colnames(compactor_dt)) {
-    compactor_dt$`Blast Label` <- NA_character_
-  }
-  if (!"sequence" %in% colnames(compactor_dt)) {
-    compactor_dt$sequence <- NA_character_
-  }
-  compactor_dt %>%
-    mutate(sequence = clean_sequence_candidate(sequence)) %>%
-    mutate(compactor_anchor = sequence_suffix(sequence, opt$compactor_anchor_len)) %>%
-    mutate(compactor_label = ifelse(has_restricted_label(compactor_annotation),
-                                    compactor_annotation, `Blast Label`)) %>%
-    filter(has_restricted_label(compactor_label), !is.na(sequence), nchar(sequence) > 0) %>%
-    mutate(compactor_identity = first_numeric_or_na(identity),
-           compactor_qcovs = first_numeric_or_na(qcovs)) %>%
-    group_by(metadata_category, cluster, feature, sequence, compactor_anchor) %>%
-    summarise(compactor_label = collapse_blast_labels(paste(unique(na.omit(compactor_label)), collapse=";")),
-              compactor_identity = first_numeric_or_na(compactor_identity),
-              compactor_qcovs = first_numeric_or_na(compactor_qcovs),
-              .groups="drop")
-}
-
 has_restricted_label <- function(label) {
   !is.na(label) & nchar(label) > 1 &
     !label %in% c("NO MATCH", "NO TARGET", "UNANNOTATED", "NO PROTEIN/GENE HIT")
@@ -635,8 +591,6 @@ if (!"confounders" %in% colnames(dt2)) {
 }
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
-compactor_summary_label_dt <- make_compactor_summary_label_dt(opt$compactor_summary)
-message("Compactor summary rescue labels loaded: ", nrow(compactor_summary_label_dt))
 if (nrow(dt_reblastp) > 0 && !"qcovs" %in% colnames(dt_reblastp)) {
   dt_reblastp$qcovs <- NA
 }
@@ -794,22 +748,6 @@ for (category in categories) {
              outside_taxid_qcovs = coalesce(outside_taxid_qcovs_blastp, outside_taxid_qcovs_blast)) %>%
       select(sequence, outside_taxid_label, outside_taxid_identity, outside_taxid_qcovs)
 
-    category_compactor_label_dt <- compactor_summary_label_dt %>%
-      filter(metadata_category == category) %>%
-      select(cluster, feature, sequence, compactor_label, compactor_identity, compactor_qcovs)
-    category_compactor_anchor_label_dt <- compactor_summary_label_dt %>%
-      filter(metadata_category == category) %>%
-      select(cluster, feature, compactor_anchor, compactor_anchor_label=compactor_label,
-             compactor_anchor_identity=compactor_identity, compactor_anchor_qcovs=compactor_qcovs) %>%
-      group_by(cluster, feature, compactor_anchor) %>%
-      summarise(compactor_anchor_label = collapse_blast_labels(paste(unique(na.omit(compactor_anchor_label)), collapse=";")),
-                compactor_anchor_identity = first_numeric_or_na(compactor_anchor_identity),
-                compactor_anchor_qcovs = first_numeric_or_na(compactor_anchor_qcovs),
-                .groups="drop")
-    if (nrow(category_compactor_label_dt) > 0) {
-      message("Compactor rescue labels for ", category, ": ", nrow(category_compactor_label_dt))
-    }
-
     blastp_all_dt <- summ_dt_blastp_only %>%
       group_by(feature) %>%
       mutate(label = ifelse(rep(sum(!is.na(label))==0, length(label)) & (is.na(label)) & !is.na(identity), "NO PROTEIN/GENE HIT", label)) %>%
@@ -871,13 +809,6 @@ for (category in categories) {
         )) %>%
         select(cluster, feature, max_coefficient, label),
       hist_direct_label_dt
-      ,
-      category_compactor_label_dt %>%
-        select(cluster, feature, label=compactor_label) %>%
-        left_join(summ_dt %>% ungroup() %>%
-                    select(cluster, feature, max_coefficient) %>%
-                    distinct(),
-                  by=c("cluster", "feature"))
     )
 
     plot_dt <- hist_label_dt %>%
@@ -1031,25 +962,11 @@ for (category in categories) {
       }
 
       summ_sub_dt <- summ_sub_dt %>%
-        mutate(compactor_anchor = sequence_suffix(sequence, opt$compactor_anchor_len)) %>%
         left_join(label_dt, by="sequence") %>%
         left_join(direct_blast_label_dt, by="sequence") %>%
-        left_join(category_compactor_label_dt %>%
-                    filter(cluster == my_cluster, feature == my_feature) %>%
-                    select(sequence, compactor_label, compactor_identity, compactor_qcovs),
-                  by="sequence") %>%
-        left_join(category_compactor_anchor_label_dt %>%
-                    filter(cluster == my_cluster, feature == my_feature),
-                  by=c("cluster", "feature", "compactor_anchor")) %>%
         left_join(outside_taxid_label_dt, by="sequence")
 
       p_sub <- summ_sub_dt %>%
-        mutate(compactor_label = coalesce(compactor_label, compactor_anchor_label),
-               compactor_identity = coalesce(compactor_identity, compactor_anchor_identity),
-               compactor_qcovs = coalesce(compactor_qcovs, compactor_anchor_qcovs)) %>%
-        mutate(label = ifelse(has_restricted_label(compactor_label), compactor_label, label)) %>%
-        mutate(identity = coalesce(compactor_identity, identity),
-               qcovs = coalesce(compactor_qcovs, qcovs)) %>%
         mutate(label = ifelse((is.na(label) | label == "NO MATCH") &
                                  !is.na(direct_blast_label) & nchar(direct_blast_label) > 1,
                               direct_blast_label, label)) %>%

@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from shutil import copyfile, which
+from shutil import which
 
 csv.field_size_limit(sys.maxsize)
 
@@ -861,7 +861,18 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
                     writer.writerow({col: out_row.get(col, "NA") for col in columns})
 
 
-UNRESOLVED_LABELS = {"", "NA", "NAN", "NONE", "NO MATCH", "NO BLAST", "UNANNOTATED", "NO PROTEIN/GENE HIT"}
+UNRESOLVED_LABELS = {
+    "",
+    "NA",
+    "NAN",
+    "NONE",
+    "NO MATCH",
+    "NO BLAST",
+    "UNANNOTATED",
+    "NO PROTEIN/GENE HIT",
+    "BLAST",
+    "BLASTP",
+}
 
 
 def is_real_annotation(label):
@@ -1074,6 +1085,7 @@ def summary_compactor_hit(row):
         "compactor_exact_support": row.get("compactor_exact_support", "NA"),
         "annotation_source": row.get("annotation_source", "NA"),
         "blast_mode": row.get("blast_mode", "NA"),
+        "match_source": "summary",
     }
 
 
@@ -1195,6 +1207,7 @@ def fill_plot_annotation_tsv(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filled = 0
+    summary_matches = 0
     if not input_path.exists():
         raise FileNotFoundError(f"Missing plot annotation TSV: {input_path}")
     with open(input_path, newline="") as in_handle:
@@ -1229,7 +1242,12 @@ def fill_plot_annotation_tsv(
                     summary_key_map,
                     summary_sequence_map,
                 )
-                if compactor_hit and not row_has_real_plot_annotation(row, mode):
+                should_fill = compactor_hit and (
+                    compactor_hit.get("match_source") == "summary" or not row_has_real_plot_annotation(row, mode)
+                )
+                if compactor_hit and compactor_hit.get("match_source") == "summary":
+                    summary_matches += 1
+                if should_fill:
                     row["identity"] = row.get("identity") if has_text(row.get("identity")) else compactor_hit["identity"]
                     row["qcovs"] = row.get("qcovs") if has_text(row.get("qcovs")) else compactor_hit["qcovs"]
                     if mode == "blastp":
@@ -1252,7 +1270,10 @@ def fill_plot_annotation_tsv(
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
-    print(f"Filled {filled} unresolved {mode} rows with compactor annotations in {output_path}")
+    print(
+        f"Filled {filled} {mode} rows with compactor annotations in {output_path} "
+        f"({summary_matches} exact-summary matches found)."
+    )
     return output_path, filled
 
 
@@ -1394,18 +1415,31 @@ def run_compactor_plot_mode(args):
     command = [
         args.plot_rscript,
         "--vanilla",
-        str(REPO_ROOT / "src/annotation/blast_code/plot_blast_summary_direct.R"),
-        "--summary",
-        str(prefilled_summary),
+        str(REPO_ROOT / "src/annotation/blast_code/plot_blast_annotations_each_feature.R"),
+        "--nonzero_annotations",
+        str(blastp_compactor),
+        "--clusters",
+        str(args.plot_clusters),
+        "--feather_file",
+        str(args.plot_feather),
+        "--sample_seqs",
+        str(args.plot_sample_seqs),
+        "--metadata",
+        str(args.plot_metadata),
         "--output",
         str(output_pdf),
-        "--num_hits",
-        "10",
     ]
+    if args.plot_target_vars:
+        command.extend(["--target_vars", args.plot_target_vars])
+    if args.plot_confound_vars:
+        command.extend(["--confound_vars", args.plot_confound_vars])
     run_command(command, cwd=REPO_ROOT)
     generated_summary = pdf_output_path(args.plot_pdf, "_compactor_summary").with_suffix(".tsv")
-    copyfile(prefilled_summary, generated_summary)
-    write_fungus_subset(generated_summary, args.fungus_output)
+    if generated_summary.exists():
+        patched_summary_tmp = tsv_output_path(generated_summary, "_tmp")
+        fill_plot_summary_tsv(generated_summary, patched_summary_tmp, compactor_map, anchor_map, args.anchor_len)
+        patched_summary_tmp.replace(generated_summary)
+        write_fungus_subset(generated_summary, args.fungus_output)
     print(f"Wrote compactor-filled blast plot PDF to {output_pdf}")
     print(f"Wrote compactor-filled plot summary to {generated_summary}")
 
