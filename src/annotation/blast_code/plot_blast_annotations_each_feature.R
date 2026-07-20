@@ -55,6 +55,8 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
+within_taxid_label_color <- "#1F3A44"
+outside_taxid_label_color <- "#5A4A55"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
@@ -121,6 +123,15 @@ get_nth_class <- function(x,n=1) {
 
 clean_blast_label <- function(x) {
   x <- replace_na(x, "")
+  x <- str_replace_all(x, "\\s*\\[[^\\]]+\\]\\s*$", "")
+  x <- str_replace(x, "^RecName:\\s*Full=([^;]+).*$", "\\1")
+  x <- str_replace(x, "^SubName:\\s*Full=([^;]+).*$", "\\1")
+  x <- str_replace(x, "^AltName:\\s*Full=([^;]+).*$", "\\1")
+  x <- str_replace(x, "(^|;\\s*)Short=([^;]+).*$", "\\2")
+  x <- str_replace_all(x, "\\bRecName:\\s*Full=", "")
+  x <- str_replace_all(x, "\\bAltName:\\s*Full=", "")
+  x <- str_replace_all(x, "\\bSubName:\\s*Full=", "")
+  x <- str_replace_all(x, "\\bFlags:\\s*[^;]+;?", "")
   x <- str_replace_all(x, "LOC\\d+[- ]*", "")
   x <- str_replace_all(x, "\\s+isoform\\s+X\\d+\\b", "")
   x <- str_replace_all(x, "\\s+transcript\\s+variant\\s+X?\\d+\\b", "")
@@ -952,9 +963,7 @@ for (category in categories) {
       classes_to_plot <- all_classes
       if (length(all_classes) == 1 && all_classes[1] == "residual" && !is_quantitative_target) {
         all_classes <- sort(unique(na.omit(as.character(my_metadata$metadata))))
-        if (!is.na(residual_focus_class)) {
-          classes_to_plot <- residual_focus_class
-        } else if (length(all_classes) > 0) {
+        if (length(all_classes) > 0) {
           classes_to_plot <- all_classes
         }
         first_class <- all_classes[1]
@@ -1071,9 +1080,7 @@ for (category in categories) {
                                              "; C:", str_replace(label_coverage, "-", "100%")), "")) %>%
         mutate(point_label = case_when(
           `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ as.character(`Blast Label`),
-          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "UNANNOTATED") &
-            nchar(label_quality) > 0 ~ paste(`Blast Label`, label_quality, sep="\n"),
-          `Blast Label` %in% c("NO PROTEIN/GENE HIT", "UNANNOTATED") ~ as.character(`Blast Label`),
+          nchar(label_quality) > 0 ~ paste(`Blast Label`, label_quality, sep="\n"),
           TRUE ~ as.character(`Blast Label`)
         )) %>%
         mutate(point_label = ifelse(outside_taxid_only,
@@ -1109,13 +1116,13 @@ for (category in categories) {
                                 breaks = c(1, 10, 100, 1000, 10000),
                                 limits = c(1, 10000), labels = scales::label_log()) +
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
-                                   size=3.2, color="black", max.overlaps=Inf,
+                                   size=3.2, color=within_taxid_label_color, max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
                                    segment.size=0.25, box.padding=0.5,
                                    point.padding=0.55, force=3) +
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
                                    aes(label=point_label_expr),
-                                   size=3.2, color="grey25", max.overlaps=Inf,
+                                   size=3.2, color=outside_taxid_label_color, max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
                                    segment.size=0.25, box.padding=0.5,
                                    point.padding=0.55, force=3, parse=TRUE) +
@@ -1161,13 +1168,13 @@ for (category in categories) {
                                   breaks = c(1, 10, 100, 1000, 10000),
                                   limits = c(1, 10000), labels = scales::label_log()) +
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
-                                     size=3.2, color="black", max.overlaps=Inf,
+                                     size=3.2, color=within_taxid_label_color, max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
                                      segment.size=0.25, box.padding=0.5,
                                      point.padding=0.55, force=3) +
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
                                      aes(label=point_label_expr),
-                                     size=3.2, color="grey25", max.overlaps=Inf,
+                                     size=3.2, color=outside_taxid_label_color, max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
                                      segment.size=0.25, box.padding=0.5,
                                      point.padding=0.55, force=3, parse=TRUE) +
