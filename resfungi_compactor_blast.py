@@ -42,6 +42,7 @@ DEFAULT_METADATA = "/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ant
 DEFAULT_TAXIDS = "300111;102681;104421"
 DEFAULT_BLAST_DB = "/scratch/users/jiamuyu/dabs_ref/blast/"
 DEFAULT_PROTEIN_DB = "refseq_protein"
+DEFAULT_OUTPUT_STEM = "resfungi_compactors"
 REPO_ROOT = Path(__file__).resolve().parent
 
 
@@ -53,7 +54,24 @@ def parse_args():
         )
     )
     parser.add_argument("--input_dir", default=DEFAULT_INPUT_DIR)
+    parser.add_argument(
+        "--compactor_table",
+        default=None,
+        help=(
+            "Optional TSV with anchor/compactor rows to blast directly. When omitted, "
+            "the legacy mode scans INPUT_DIR/*resfungi.tsv and picks one representative "
+            "compactor per file."
+        ),
+    )
     parser.add_argument("--output_dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--output_stem",
+        default=DEFAULT_OUTPUT_STEM,
+        help=(
+            "Stem for FASTA, BLAST, and selected-compactor outputs. The default keeps "
+            "legacy filenames such as resfungi_compactors_blast.tsv."
+        ),
+    )
     parser.add_argument("--seeds", default=None, help="Defaults to INPUT_DIR/seeds.resfungi.raw")
     parser.add_argument("--taxids", default=DEFAULT_TAXIDS)
     parser.add_argument("--threads", type=int, default=32)
@@ -128,6 +146,7 @@ def numeric(value, default=None):
 
 def safe_id(value):
     value = re.sub(r"\.resfungi\.tsv$", "", Path(value).name)
+    value = re.sub(r"\.tsv$", "", value)
     value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
     return value.strip("_") or "resfungi"
 
@@ -184,6 +203,63 @@ def choose_compactor(path, thresholds):
     return None
 
 
+def read_compactor_table(path):
+    records = []
+    for idx, row in enumerate(read_tsv(path), start=1):
+        compactor = (row.get("compactor") or "").strip()
+        anchor = (row.get("anchor") or "").strip()
+        if not compactor or not anchor:
+            continue
+        length_value = int(numeric(row.get("total_length"), len(compactor)) or len(compactor))
+        exact_support = numeric(row.get("exact_support"), "NA")
+        row_id = row.get("id")
+        row_id = row_id if has_text(row_id) else idx
+        records.append(
+            {
+                "query": f"{safe_id(path)}__row{idx}__id{row_id}__len{length_value}",
+                "anchor": anchor,
+                "compactor": compactor,
+                "length": length_value,
+                "exact_support": exact_support,
+                "row_index": idx,
+                "support_threshold": "input_table",
+                "selection_reason": "input_compactor_table",
+                "source_file": str(path),
+                "support": row.get("support", "NA"),
+                "expected_read_count": row.get("expected_read_count", "NA"),
+                "extender_specificity": row.get("extender_specificity", "NA"),
+                "num_extended": row.get("num_extended", "NA"),
+            }
+        )
+    return records
+
+
+def output_paths(output_dir, stem):
+    return {
+        "fasta": output_dir / f"{stem}.fasta",
+        "selected": output_dir / f"{stem}_selected.tsv",
+        "blast": output_dir / f"{stem}_blast.tsv",
+        "reblast": output_dir / f"{stem}_reblast.tsv",
+        "blastp": output_dir / f"{stem}_blastp.tsv",
+        "reblastp": output_dir / f"{stem}_reblastp.tsv",
+        "tmp": output_dir / f"{stem}_tmp",
+        "compactor_annotations": compactor_annotations_path(output_dir, stem),
+        "seed_annotations": seed_annotations_path(output_dir, stem),
+    }
+
+
+def compactor_annotations_path(output_dir, stem):
+    if stem == DEFAULT_OUTPUT_STEM:
+        return output_dir / "resfungi_compactor_annotations.tsv"
+    return output_dir / f"{stem}_annotations.tsv"
+
+
+def seed_annotations_path(output_dir, stem):
+    if stem == DEFAULT_OUTPUT_STEM:
+        return output_dir / "seeds_resfungi_compactor_annotations.tsv"
+    return output_dir / f"seeds_{stem}_annotations.tsv"
+
+
 def write_fasta(records, output_fasta):
     output_fasta.parent.mkdir(parents=True, exist_ok=True)
     with open(output_fasta, "w", newline="") as handle:
@@ -207,6 +283,10 @@ def write_selected_compactors(records, output_path):
         "support_threshold",
         "selection_reason",
         "source_file",
+        "support",
+        "expected_read_count",
+        "extender_specificity",
+        "num_extended",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", newline="") as handle:
@@ -294,11 +374,12 @@ def count_tsv_rows(path):
 
 
 def run_blasts(args, output_fasta, output_dir):
-    blast = output_dir / "resfungi_compactors_blast.tsv"
-    reblast = output_dir / "resfungi_compactors_reblast.tsv"
-    blastp = output_dir / "resfungi_compactors_blastp.tsv"
-    reblastp = output_dir / "resfungi_compactors_reblastp.tsv"
-    temp_root = output_dir / "resfungi_compactors_tmp"
+    paths = output_paths(output_dir, args.output_stem)
+    blast = paths["blast"]
+    reblast = paths["reblast"]
+    blastp = paths["blastp"]
+    reblastp = paths["reblastp"]
+    temp_root = paths["tmp"]
     command_env = make_python_shim(temp_root)
     print(f"Wrapper subprocess python: {which('python', path=command_env['PATH'])}", flush=True)
     run_command(["python", "--version"], env=command_env)
@@ -553,6 +634,10 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "length",
         "exact_support",
         "source_file",
+        "support",
+        "expected_read_count",
+        "extender_specificity",
+        "num_extended",
         "annotation_label",
         "annotation_source",
         "blast_mode",
@@ -1013,22 +1098,23 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
 
 def run_compactor_plot_mode(args):
     output_dir = Path(args.output_dir)
-    selected_path = output_dir / "resfungi_compactors_selected.tsv"
+    paths = output_paths(output_dir, args.output_stem)
+    selected_path = paths["selected"]
     records = read_selected_compactors(selected_path)
     if not records:
         raise FileNotFoundError(f"Missing or empty selected compactor table: {selected_path}")
 
-    blast = output_dir / "resfungi_compactors_blast.tsv"
-    reblast = output_dir / "resfungi_compactors_reblast.tsv"
-    blastp = output_dir / "resfungi_compactors_blastp.tsv"
-    reblastp = output_dir / "resfungi_compactors_reblastp.tsv"
+    blast = paths["blast"]
+    reblast = paths["reblast"]
+    blastp = paths["blastp"]
+    reblastp = paths["reblastp"]
     annotations = merge_annotation_maps(
         read_annotation_table(blastp, "blastp", "restricted"),
         read_annotation_table(blast, "blast", "restricted"),
         read_annotation_table(reblastp, "blastp", "unrestricted"),
         read_annotation_table(reblast, "blast", "unrestricted"),
     )
-    compactor_summary_path = output_dir / "resfungi_compactor_annotations.tsv"
+    compactor_summary_path = paths["compactor_annotations"]
     write_compactor_annotation_summary(records, annotations, compactor_summary_path)
     print(f"Regenerated compactor annotation summary at {compactor_summary_path}")
 
@@ -1037,7 +1123,7 @@ def run_compactor_plot_mode(args):
         read_seed_rows(seeds_path, args.anchor_len),
         read_plot_summary_seed_rows(args.plot_summary, args.anchor_len),
     )
-    seed_summary_path = output_dir / "seeds_resfungi_compactor_annotations.tsv"
+    seed_summary_path = paths["seed_annotations"]
     write_seed_annotation_summary(seed_rows, records_by_anchor(records), annotations, seed_summary_path)
     print(f"Regenerated seed extendor compactor annotation summary at {seed_summary_path}")
 
@@ -1103,30 +1189,37 @@ def main():
     output_dir = Path(args.output_dir)
     seeds_path = Path(args.seeds) if args.seeds else input_dir / "seeds.resfungi.raw"
     thresholds = [float(item) for item in args.thresholds.split(",") if item.strip()]
+    paths = output_paths(output_dir, args.output_stem)
 
-    records = []
-    for path in sorted(input_dir.glob("*resfungi.tsv")):
-        if path.stat().st_size == 0:
-            print(f"Skipping empty file: {path}")
-            continue
-        chosen = choose_compactor(path, thresholds)
-        if chosen is None:
-            print(f"Skipping {path}: no representative passed thresholds {thresholds}")
-            continue
-        chosen["query"] = f"{safe_id(path)}__row{chosen['row_index']}__len{chosen['length']}"
-        records.append(chosen)
+    if args.compactor_table:
+        compactor_table = Path(args.compactor_table)
+        records = read_compactor_table(compactor_table)
+        print(f"Loaded {len(records)} compactors directly from {compactor_table}")
+    else:
+        records = []
+        for path in sorted(input_dir.glob("*resfungi.tsv")):
+            if path.stat().st_size == 0:
+                print(f"Skipping empty file: {path}")
+                continue
+            chosen = choose_compactor(path, thresholds)
+            if chosen is None:
+                print(f"Skipping {path}: no representative passed thresholds {thresholds}")
+                continue
+            chosen["query"] = f"{safe_id(path)}__row{chosen['row_index']}__len{chosen['length']}"
+            records.append(chosen)
 
-    output_fasta = output_dir / "resfungi_compactors.fasta"
+    output_fasta = paths["fasta"]
     write_fasta(records, output_fasta)
-    selected_path = output_dir / "resfungi_compactors_selected.tsv"
+    selected_path = paths["selected"]
     write_selected_compactors(records, selected_path)
-    print(f"Wrote {len(records)} representative compactors to {output_fasta}")
+    record_description = "input-table compactors" if args.compactor_table else "representative compactors"
+    print(f"Wrote {len(records)} {record_description} to {output_fasta}")
     print(f"Wrote selected compactor table to {selected_path}")
 
-    blast = output_dir / "resfungi_compactors_blast.tsv"
-    reblast = output_dir / "resfungi_compactors_reblast.tsv"
-    blastp = output_dir / "resfungi_compactors_blastp.tsv"
-    reblastp = output_dir / "resfungi_compactors_reblastp.tsv"
+    blast = paths["blast"]
+    reblast = paths["reblast"]
+    blastp = paths["blastp"]
+    reblastp = paths["reblastp"]
     if records and not args.skip_blast:
         blast, reblast, blastp, reblastp = run_blasts(args, output_fasta, output_dir)
 
@@ -1136,11 +1229,11 @@ def main():
         read_annotation_table(reblastp, "blastp", "unrestricted"),
         read_annotation_table(reblast, "blast", "unrestricted"),
     )
-    compactor_summary_path = output_dir / "resfungi_compactor_annotations.tsv"
+    compactor_summary_path = paths["compactor_annotations"]
     write_compactor_annotation_summary(records, annotations, compactor_summary_path)
     print(f"Wrote compactor annotation summary to {compactor_summary_path}")
 
-    summary_path = output_dir / "seeds_resfungi_compactor_annotations.tsv"
+    summary_path = paths["seed_annotations"]
     seed_rows = combine_seed_rows(
         read_seed_rows(seeds_path, args.anchor_len),
         read_plot_summary_seed_rows(args.plot_summary, args.anchor_len),
