@@ -1407,6 +1407,8 @@ def run_compactor_plot_mode(args):
         str(args.plot_metadata),
         "--compactor_summary",
         str(prefilled_summary),
+        "--compactor_anchor_len",
+        str(args.anchor_len),
         "--output",
         str(output_pdf),
     ]
