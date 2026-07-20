@@ -235,6 +235,39 @@ format_residual_adjustment <- function(confounders) {
   str_wrap(paste("Adjusted for:", paste(confounders, collapse="; ")), width=115)
 }
 
+infer_residual_source_col <- function(category, metadata_cols) {
+  if (category %in% metadata_cols) {
+    return(category)
+  }
+  if (!str_detect(category, "_+residual")) {
+    return(category)
+  }
+  inferred_col <- str_replace(category, "_+residual.*$", "")
+  if (inferred_col %in% metadata_cols) {
+    return(inferred_col)
+  }
+  category
+}
+
+infer_residual_focus_class <- function(category, metadata_source_col, metadata_values) {
+  if (!str_detect(category, "_+residual")) {
+    return(NA_character_)
+  }
+  prefix <- paste0(metadata_source_col, "_residual_")
+  if (!startsWith(category, prefix)) {
+    return(NA_character_)
+  }
+  focus <- substr(category, nchar(prefix) + 1, nchar(category))
+  if (focus == "" || str_detect(focus, "^adjustment\\d+$")) {
+    return(NA_character_)
+  }
+  metadata_classes <- sort(unique(na.omit(as.character(metadata_values))))
+  if (focus %in% metadata_classes) {
+    return(focus)
+  }
+  NA_character_
+}
+
 make_plotmath_other_taxa_label <- function(label) {
   label <- replace_na(label, "")
   label <- str_replace_all(label, "\\s*\\(OTHER TAXA\\)\\s*$", "")
@@ -565,7 +598,17 @@ if (nrow(residual_adjustment_map) > 0) {
     select(-confounders_from_args)
 }
 
-categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
+categories <- bind_rows(
+  dt %>% select(any_of(c("metadata_category", "accuracy"))),
+  dt2 %>% select(any_of(c("metadata_category", "accuracy")))
+) %>%
+  filter(!is.na(metadata_category)) %>%
+  mutate(accuracy = suppressWarnings(as.numeric(accuracy))) %>%
+  group_by(metadata_category) %>%
+  summarise(accuracy = max(accuracy, na.rm=TRUE), .groups="drop") %>%
+  mutate(accuracy = ifelse(is.infinite(accuracy), NA_real_, accuracy)) %>%
+  arrange(desc(accuracy), metadata_category) %>%
+  pull(metadata_category)
 
 if (str_detect(opt$nonzero_annotations, "adelie-train-only")) {
   dt <- dt %>% mutate(accuracy=train_accuracy)
@@ -796,18 +839,13 @@ for (category in categories) {
 
     # filter metadata for only current category. Regression residual names may not
     # exist in the raw metadata sheet, so infer the raw source column when possible.
-    metadata_source_col <- category
-    if (!metadata_source_col %in% colnames(all_metadata) && str_detect(category, "_+residual")) {
-      inferred_col <- str_replace(category, "_+residual.*$", "")
-      if (inferred_col %in% colnames(all_metadata)) {
-        metadata_source_col <- inferred_col
-      }
-    }
+    metadata_source_col <- infer_residual_source_col(category, colnames(all_metadata))
     if (!metadata_source_col %in% colnames(all_metadata)) {
       message(paste("Skipping detailed plots for", category, "because no matching metadata column was found."))
       next
     }
     my_metadata <- as_tibble(all_metadata) %>% select(sample_name, !!metadata_source_col) %>% dplyr::rename(metadata:=!!metadata_source_col)
+    residual_focus_class <- infer_residual_focus_class(category, metadata_source_col, my_metadata$metadata)
     metadata_numeric <- suppressWarnings(as.numeric(my_metadata$metadata))
     category_is_regression <- any(map_lgl(summ_dt$classes, \(x) length(x) == 1 && x[1] == "residual"))
     is_quantitative_target <- category_is_regression &&
@@ -828,7 +866,11 @@ for (category in categories) {
       first_class = unique(dt_sub$first_class)
       all_classes = dt_sub[1,]$classes %>% unlist()
       if (length(all_classes) == 1 && all_classes[1] == "residual" && !is_quantitative_target) {
-        all_classes <- sort(unique(na.omit(as.character(my_metadata$metadata))))
+        if (!is.na(residual_focus_class)) {
+          all_classes <- residual_focus_class
+        } else {
+          all_classes <- sort(unique(na.omit(as.character(my_metadata$metadata))))
+        }
         first_class <- all_classes[1]
       }
 
