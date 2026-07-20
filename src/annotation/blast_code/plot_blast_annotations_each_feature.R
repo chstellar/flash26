@@ -26,6 +26,8 @@ option_list <- list(
               help = "Optional semicolon-delimited residual target settings used by run_adelie", metavar = "character"),
   make_option(c("--confound_vars"), type = "character", default = "",
               help = "Optional semicolon-delimited residual confounder settings used by run_adelie", metavar = "character"),
+  make_option(c("--compactor_summary"), type = "character", default = "",
+              help = "Optional compactor-filled plot summary TSV used only as an annotation-label lookup", metavar = "character"),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Path to set of output plots", metavar = "character"),
   make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
@@ -453,8 +455,44 @@ read_optional_tsv <- function(path) {
 }
 
 has_restricted_label <- function(label) {
+  label <- str_squish(as.character(label))
   !is.na(label) & nchar(label) > 1 &
-    !label %in% c("NO MATCH", "NO TARGET", "UNANNOTATED", "NO PROTEIN/GENE HIT")
+    !str_to_upper(label) %in% c("", "NA", "NAN", "NONE", "NO MATCH", "NO TARGET",
+                                "UNANNOTATED", "NO PROTEIN/GENE HIT", "BLAST", "BLASTP")
+}
+
+compactor_plot_label <- function(label) {
+  label <- clean_blast_label(label)
+  ifelse(has_restricted_label(label) & !str_detect(label, "\\s*\\(COMPACTOR\\)\\s*$"),
+         paste0(label, " (COMPACTOR)"),
+         label)
+}
+
+make_compactor_summary_label_dt <- function(path) {
+  empty_dt <- tibble(metadata_category=character(), feature=character(), cluster=character(),
+                     sequence=character(), compactor_summary_label=character(),
+                     compactor_summary_identity=numeric(), compactor_summary_qcovs=numeric())
+  if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
+    return(empty_dt)
+  }
+  compactor_dt <- fread(path)
+  for (col in c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
+                "Blast Label", "identity", "qcovs")) {
+    if (!col %in% colnames(compactor_dt)) {
+      compactor_dt[[col]] <- NA_character_
+    }
+  }
+  compactor_dt %>%
+    mutate(sequence = str_remove_all(str_remove(as.character(sequence), "^cluster_\\d+_"), "-")) %>%
+    mutate(compactor_summary_label = ifelse(has_restricted_label(compactor_annotation),
+                                            compactor_annotation, `Blast Label`)) %>%
+    mutate(compactor_summary_label = compactor_plot_label(compactor_summary_label)) %>%
+    filter(has_restricted_label(compactor_summary_label)) %>%
+    group_by(metadata_category, feature, cluster, sequence) %>%
+    summarise(compactor_summary_label = collapse_blast_labels(paste(unique(na.omit(compactor_summary_label)), collapse=";")),
+              compactor_summary_identity = first_numeric_or_na(identity),
+              compactor_summary_qcovs = first_numeric_or_na(qcovs),
+              .groups="drop")
 }
 
 make_reblastp_label_dt <- function(reblastp_dt, category) {
@@ -589,6 +627,15 @@ if (!"confounders" %in% colnames(dt)) {
 if (!"confounders" %in% colnames(dt2)) {
   dt2$confounders <- NA_character_
 }
+message(paste0("Compactor-labeled annotation rows seen by plotter: blastp=",
+               sum(has_restricted_label(dt$compactor_annotation), na.rm=TRUE),
+               ", blast=",
+               sum(has_restricted_label(dt2$compactor_annotation), na.rm=TRUE)))
+compactor_summary_label_dt <- make_compactor_summary_label_dt(opt$compactor_summary)
+if (nrow(compactor_summary_label_dt) > 0) {
+  message(paste0("Compactor labels loaded from plot summary lookup: ",
+                 nrow(compactor_summary_label_dt)))
+}
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
 if (nrow(dt_reblastp) > 0 && !"qcovs" %in% colnames(dt_reblastp)) {
@@ -658,7 +705,7 @@ for (category in categories) {
       arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
       mutate(annotation = str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
       mutate(annotation = ifelse(has_restricted_label(compactor_annotation),
-                                 compactor_annotation, annotation)) %>%
+                                 compactor_plot_label(compactor_annotation), annotation)) %>%
       rowwise() %>%
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
@@ -704,7 +751,7 @@ for (category in categories) {
       summ_dt2 <- summ_dt2 %>%
         mutate(label = choose_feature_label(products, genes, opt$products)) %>%
         mutate(label = ifelse(has_restricted_label(compactor_annotation),
-                              compactor_annotation, label)) %>%
+                              compactor_plot_label(compactor_annotation), label)) %>%
         group_by(cluster,query) %>%
         mutate(label=ifelse(!is_empty(unique(na.omit(label))), paste0(unique(na.omit(label)),collapse=";"), NA)) %>%
         distinct(cluster, query, label, .keep_all=T) %>% ungroup()
@@ -747,6 +794,8 @@ for (category in categories) {
       mutate(outside_taxid_identity = coalesce(outside_taxid_identity_blastp, outside_taxid_identity_blast),
              outside_taxid_qcovs = coalesce(outside_taxid_qcovs_blastp, outside_taxid_qcovs_blast)) %>%
       select(sequence, outside_taxid_label, outside_taxid_identity, outside_taxid_qcovs)
+    category_compactor_summary_dt <- compactor_summary_label_dt %>%
+      filter(metadata_category == category)
 
     blastp_all_dt <- summ_dt_blastp_only %>%
       group_by(feature) %>%
@@ -784,7 +833,7 @@ for (category in categories) {
       mutate(hist_genes = extract_feature_qualifier(feature_text, "gene")) %>%
       mutate(hist_label = choose_feature_label(hist_products, hist_genes, opt$products)) %>%
       mutate(hist_label = ifelse(has_restricted_label(compactor_annotation),
-                                 compactor_annotation, hist_label)) %>%
+                                 compactor_plot_label(compactor_annotation), hist_label)) %>%
       mutate(hist_label = case_when(
         str_detect(query, "NNNNNNNN") ~ "NO TARGET",
         !is.na(hist_label) & nchar(hist_label) > 1 ~ hist_label,
@@ -794,6 +843,11 @@ for (category in categories) {
       mutate(first_coef=get_first_coef(coefficients)) %>%
       mutate(max_coefficient=abs(first_coef)) %>%
       select(cluster, feature, max_coefficient, label=hist_label)
+    hist_compactor_label_dt <- category_compactor_summary_dt %>%
+      left_join(summ_dt %>% distinct(cluster, feature, max_coefficient),
+                by=c("cluster", "feature")) %>%
+      filter(!is.na(max_coefficient)) %>%
+      select(cluster, feature, max_coefficient, label=compactor_summary_label)
 
     hist_label_dt <- bind_rows(
       summ_dt %>%
@@ -808,7 +862,8 @@ for (category in categories) {
           TRUE ~ "NO MATCH"
         )) %>%
         select(cluster, feature, max_coefficient, label),
-      hist_direct_label_dt
+      hist_direct_label_dt,
+      hist_compactor_label_dt
     )
 
     plot_dt <- hist_label_dt %>%
@@ -825,6 +880,10 @@ for (category in categories) {
       mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=100), width = 25)) %>%
       mutate(label = replace_na(label, ""))
+    compactor_hist_count <- sum(str_detect(plot_dt$label, "\\(COMPACTOR\\)"), na.rm=TRUE)
+    if (compactor_hist_count > 0) {
+      message(paste0("Compactor labels in histogram for ", category, ": ", compactor_hist_count))
+    }
 
     metric_subtitle <- format_model_metric(
       summ_dt$accuracy,
@@ -924,12 +983,16 @@ for (category in categories) {
         mutate(direct_genes = extract_feature_qualifier(feature_text, "gene")) %>%
         mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, opt$products)) %>%
         mutate(direct_blast_label = ifelse(has_restricted_label(compactor_annotation),
-                                           compactor_annotation, direct_blast_label)) %>%
+                                           compactor_plot_label(compactor_annotation), direct_blast_label)) %>%
         group_by(sequence) %>%
         summarise(direct_blast_label = collapse_blast_labels(paste(unique(na.omit(direct_blast_label)), collapse=";")),
                   direct_identity = first_numeric_or_na(identity),
                   direct_qcovs = first_numeric_or_na(qcovs),
                   .groups="drop")
+      compactor_detail_label_dt <- category_compactor_summary_dt %>%
+        filter(cluster == my_cluster, feature == my_feature) %>%
+        select(sequence, compactor_summary_label,
+               compactor_summary_identity, compactor_summary_qcovs)
 
       label_dt <- dt_sub %>%
         mutate(any_identity = coalesce(`identity.y`, identity),
@@ -964,6 +1027,7 @@ for (category in categories) {
       summ_sub_dt <- summ_sub_dt %>%
         left_join(label_dt, by="sequence") %>%
         left_join(direct_blast_label_dt, by="sequence") %>%
+        left_join(compactor_detail_label_dt, by="sequence") %>%
         left_join(outside_taxid_label_dt, by="sequence")
 
       p_sub <- summ_sub_dt %>%
@@ -972,6 +1036,13 @@ for (category in categories) {
                               direct_blast_label, label)) %>%
         mutate(identity = coalesce(identity, direct_identity),
                qcovs = coalesce(qcovs, direct_qcovs)) %>%
+        mutate(label = ifelse(!has_restricted_label(label) &
+                                has_restricted_label(compactor_summary_label),
+                              compactor_summary_label, label)) %>%
+        mutate(identity = ifelse(has_restricted_label(compactor_summary_label) & is.na(identity),
+                                 compactor_summary_identity, identity),
+               qcovs = ifelse(has_restricted_label(compactor_summary_label) & is.na(qcovs),
+                              compactor_summary_qcovs, qcovs)) %>%
         mutate(outside_taxid_only = !has_restricted_label(label) &
                  !is.na(outside_taxid_label) & nchar(outside_taxid_label) > 1) %>%
         mutate(label = ifelse(outside_taxid_only, outside_taxid_label, label)) %>%
@@ -1020,6 +1091,11 @@ for (category in categories) {
                                          NA_character_)) %>%
         mutate(point_label_color = ifelse(outside_taxid_only, "outside_taxid", "regular")) %>%
         ungroup()
+      compactor_point_count <- sum(str_detect(p_sub$point_label, "\\(COMPACTOR\\)"), na.rm=TRUE)
+      if (compactor_point_count > 0) {
+        message(paste0("Compactor labels in detail plot for ", category, " ",
+                       my_cluster, " ", my_feature, ": ", compactor_point_count))
+      }
 
       if (is_quantitative_target) {
         p_sub <- p_sub %>% mutate(color_value = mean_metadata)
@@ -1132,6 +1208,8 @@ all_blastp_summary <- all_blastp_summary %>%
   mutate(across(where(is.character), single_line_text))
 all_blast_summary <- all_blast_summary %>%
   mutate(across(where(is.character), single_line_text))
+message(paste0("Compactor labels in generated plot summary: ",
+               sum(str_detect(all_features_summary$`Blast Label`, "\\(COMPACTOR\\)"), na.rm=TRUE)))
 
 unannotated_summary <- all_features_summary %>%
   filter(is.na(`Blast Label`) |

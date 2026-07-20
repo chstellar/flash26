@@ -1518,6 +1518,8 @@ def run_compactor_plot_mode(args):
         str(args.plot_sample_seqs),
         "--metadata",
         str(args.plot_metadata),
+        "--compactor_summary",
+        str(prefilled_summary),
         "--output",
         str(output_pdf),
     ]
