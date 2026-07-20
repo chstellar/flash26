@@ -68,7 +68,7 @@ set-threads: # set specific threads for each rule
     merge_blastp_results_OHE: 1
     merge_annotations_genomes: 1
     plot_blast_features: 1
-    plot_blast_features_compactor: 1
+    compactor_reannotation: 1
     plot_blast_heatmaps: 1
     plot_blast_features_OHE: 1
     plot_blast_heatmaps_OHE: 1
@@ -181,7 +181,7 @@ set-resources: # set specific resources for each rule
         mem_mb: 256000 + ((attempt - 1) * 128000)
         msa: 1
         time: "4:00:00"
-    plot_blast_features_compactor:
+    compactor_reannotation:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         msa: 1
         time: "4:00:00"

@@ -107,7 +107,7 @@ rule all_embeddings:
                FILE = FILE_SUFFIXES)
 
 
-rule compactor_reannotation:
+rule all_compactor_reannotations:
     """
     Generate compactor-rescued BLAST plot PDFs for all configured embedding runs.
     """
@@ -1311,7 +1311,7 @@ rule annotate_compactor_rescue:
     """
 
 
-rule plot_blast_features_compactor:
+rule compactor_reannotation:
     """
     Replot BLAST results using compactor-rescued annotations and the original plot style.
     """
