@@ -865,11 +865,13 @@ for (category in categories) {
       first_beta = unique(dt_sub$first_coef)
       first_class = unique(dt_sub$first_class)
       all_classes = dt_sub[1,]$classes %>% unlist()
+      classes_to_plot <- all_classes
       if (length(all_classes) == 1 && all_classes[1] == "residual" && !is_quantitative_target) {
+        all_classes <- sort(unique(na.omit(as.character(my_metadata$metadata))))
         if (!is.na(residual_focus_class)) {
-          all_classes <- residual_focus_class
-        } else {
-          all_classes <- sort(unique(na.omit(as.character(my_metadata$metadata))))
+          classes_to_plot <- residual_focus_class
+        } else if (length(all_classes) > 0) {
+          classes_to_plot <- all_classes
         }
         first_class <- all_classes[1]
       }
@@ -1027,11 +1029,14 @@ for (category in categories) {
                                    "/n:", total_samples),
                  metadata_category = category, cluster=my_cluster, feature=my_feature)
       } else {
+        missing_class_cols <- setdiff(all_classes, colnames(p_sub))
+        for (missing_class_col in missing_class_cols) {
+          p_sub[[missing_class_col]] <- 0
+        }
         p_sub <- p_sub %>%
           mutate(across(all_of(all_classes), \(x) replace_na(x, 0))) %>%
           mutate(total_samples = rowSums(across(all_of(all_classes))))
 
-        classes_to_plot <- all_classes
         if (length(classes_to_plot) == 0) {
           classes_to_plot <- first_class
         }
