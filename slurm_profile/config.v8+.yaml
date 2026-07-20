@@ -58,7 +58,7 @@ set-threads: # set specific threads for each rule
     select_compactors_for_reannotation: 1
     run_blast_compactors_for_reannotation: 32
     run_blastp_compactors_for_reannotation: 32
-    annotate_compactor_rescue: 1
+    compactor_reannotation: 1
     merge_blast_results: 1
     merge_blastp_results: 1
     merge_annotations_OHE: 1
@@ -68,7 +68,7 @@ set-threads: # set specific threads for each rule
     merge_blastp_results_OHE: 1
     merge_annotations_genomes: 1
     plot_blast_features: 1
-    compactor_reannotation: 1
+    plot_compactor_reannotation: 1
     plot_blast_heatmaps: 1
     plot_blast_features_OHE: 1
     plot_blast_heatmaps_OHE: 1
@@ -156,9 +156,6 @@ set-resources: # set specific resources for each rule
     run_blastp_compactors_for_reannotation:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         time: "12:00:00"
-    annotate_compactor_rescue:
-        mem_mb: 32000 + ((attempt - 1) * 32000)
-        time: "2:00:00"
     merge_blast_results:
         mem_mb: 8000 + ((attempt - 1) * 16000)
     merge_blastp_results:
@@ -182,6 +179,10 @@ set-resources: # set specific resources for each rule
         msa: 1
         time: "4:00:00"
     compactor_reannotation:
+        mem_mb: 32000 + ((attempt - 1) * 16000)
+        msa: 1
+        time: "2:00:00"
+    plot_compactor_reannotation:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         msa: 1
         time: "4:00:00"

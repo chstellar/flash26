@@ -57,8 +57,8 @@ message("plot_blast_annotations_each_feature.R build: compactor-finite-coef-v2")
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
-within_taxid_label_color <- "#1F3A44"
-outside_taxid_label_color <- "#5A4A55"
+within_taxid_label_color <- "#0072B2"
+outside_taxid_label_color <- "#D55E00"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
@@ -195,6 +195,9 @@ clean_blast_label <- function(x) {
   x <- str_replace_all(x, "\\s+", " ")
   x <- str_replace_all(x, "\\s*[,;]\\s*$", "")
   x <- str_trim(x)
+  x <- ifelse(str_detect(x, regex("uncharacteri[sz]ed protein|hypothetical protein|predicted protein|unnamed protein",
+                                  ignore_case=TRUE)),
+              "UNCHARACTERISED", x)
   ifelse(nchar(x) == 0, NA_character_, x)
 }
 
@@ -241,7 +244,7 @@ combine_blast_labels <- function(blastp_label, blast_label) {
   pmap_chr(list(blastp_label, blast_label), function(x, y) {
     labels <- c(x, y)
     labels <- labels[!is.na(labels)]
-    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED")]
+    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED", "UNCHARACTERISED")]
     collapsed <- collapse_blast_labels(paste(labels, collapse=";"))
     if (is.na(collapsed)) {
       return(NA_character_)
@@ -255,8 +258,8 @@ make_histogram_label <- function(labels) {
   labels <- labels[!is.na(labels) & nchar(labels) > 1]
   labels <- str_replace(labels, "^NO PROTEIN/GENE HIT$", "UNANNOTATED")
   labels <- str_replace(labels, "^NO BLAST$", "NO MATCH")
-  special_labels <- intersect(c("NO TARGET", "NO MATCH", "UNANNOTATED"), unique(labels))
-  real_labels <- labels[!labels %in% c("NO TARGET", "NO MATCH", "UNANNOTATED")]
+  special_labels <- intersect(c("NO TARGET", "NO MATCH", "UNANNOTATED", "UNCHARACTERISED"), unique(labels))
+  real_labels <- labels[!labels %in% c("NO TARGET", "NO MATCH", "UNANNOTATED", "UNCHARACTERISED")]
   if (length(real_labels) > 0) {
     label_keys <- str_to_lower(str_replace_all(real_labels, "[^[:alnum:]]+", " "))
     real_labels <- real_labels[!duplicated(str_squish(label_keys))]
@@ -545,7 +548,7 @@ has_restricted_label <- function(label) {
   label <- str_squish(as.character(label))
   !is.na(label) & nchar(label) > 1 &
     !str_to_upper(label) %in% c("", "NA", "NAN", "NONE", "NO MATCH", "NO TARGET",
-                                "UNANNOTATED", "NO PROTEIN/GENE HIT", "BLAST", "BLASTP")
+                                "UNANNOTATED", "UNCHARACTERISED", "NO PROTEIN/GENE HIT", "BLAST", "BLASTP")
 }
 
 compactor_plot_label <- function(label) {
@@ -967,11 +970,11 @@ for (category in categories) {
       mutate(label = str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")) %>%
       arrange(-coef_mag) %>%
       mutate(rank=row_number()) %>%
-      mutate(color="no_blast") %>%
-      mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED))*$")) %>%
-      mutate(color=ifelse(has_real_label, "blast", color)) %>%
-      mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
-      mutate(label = str_wrap(preserve_compactor_suffix(label, width=100), width = 25)) %>%
+      mutate(color="no_taxon") %>%
+      mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED))*$")) %>%
+      mutate(color=ifelse(has_real_label, "within_taxid", color)) %>%
+      mutate(color=ifelse(str_detect(label, "\\(OTHER TAXA\\)"), "outside_taxid", color)) %>%
+      mutate(label = str_wrap(preserve_compactor_suffix(label, width=120), width = 38)) %>%
       mutate(label = replace_na(label, ""))
     message(paste0("Histogram rows for ", category, ": ",
                    nrow(plot_dt), " finite rows from ",
@@ -996,20 +999,32 @@ for (category in categories) {
     p <- plot_dt %>% head(opt$num_hits) %>%
       ggplot(aes(x=rank, y=coef_mag, fill=color, label=label)) +
       geom_col() +
-      geom_text(aes(y=coef_mag + 0.05,hjust=0),angle=45,size=3) +
+      ggrepel::geom_text_repel(aes(y=coef_mag + 0.05),
+                               angle=28, hjust=0, size=3.1, color="#1A1A1A",
+                               max.overlaps=Inf, min.segment.length=0,
+                               segment.color="grey45", segment.size=0.25,
+                               box.padding=0.55, point.padding=0.35,
+                               force=5, force_pull=0.15, direction="both") +
       scale_y_continuous("Magnitude relative to\nlargest nonzero coefficient",
-                         limits = c(0,1.5),
+                         limits = c(0,1.8),
                          labels=scales::label_percent(), breaks=seq(0,1,0.25),
                          expand=c(0,0)) +
       xlab("Rank of nonzero coefficient (by magnitude)") +
-      scale_fill_manual(breaks=c("known_cause","blast","no_blast"), values=c("forestgreen", "pink", "grey"),
-                        labels=c("Known Cause", "Blast hit", "No blast/annotation")) +
+      scale_fill_manual(breaks=c("within_taxid","outside_taxid","no_taxon"),
+                        values=c("within_taxid"="#0072B2",
+                                 "outside_taxid"="#D55E00",
+                                 "no_taxon"="#777777"),
+                        labels=c("Within requested taxids", "Outside requested taxids",
+                                 "No taxon annotation"),
+                        name="Taxon source") +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
               subtitle = hist_subtitle) +
       theme_pubr() +
-      theme(legend.position="none",
-            plot.subtitle = element_text(size=8, lineheight=0.95))
+      coord_cartesian(clip="off") +
+      theme(legend.position="right",
+            plot.subtitle = element_text(size=8, lineheight=0.95),
+            plot.margin = margin(10, 35, 10, 10))
 
     print(p)
 
@@ -1231,21 +1246,23 @@ for (category in categories) {
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
                                    size=3.2, color=within_taxid_label_color, max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
-                                   segment.size=0.25, box.padding=0.5,
-                                   point.padding=0.55, force=3) +
+                                   segment.size=0.25, box.padding=0.75,
+                                   point.padding=0.8, force=6, force_pull=0.08) +
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
                                    aes(label=point_label_expr),
                                    size=3.2, color=outside_taxid_label_color, max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
-                                   segment.size=0.25, box.padding=0.5,
-                                   point.padding=0.55, force=3, parse=TRUE) +
+                                   segment.size=0.25, box.padding=0.75,
+                                   point.padding=0.8, force=6, force_pull=0.08, parse=TRUE) +
           scale_color_gradient(paste0("Mean\n", metadata_source_col),
                                low = "blue", high = "red") +
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
           ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
           ggtitle(paste(category, my_cluster, sep=" | "),
                   subtitle=paste("Color: mean observed", metadata_source_col)) +
-          theme(panel.grid.minor.y = element_blank())
+          theme(panel.grid.minor.y = element_blank(),
+                plot.caption = element_text(hjust=0, size=8, color="grey30")) +
+          labs(caption="Text color: blue = within requested taxids; orange = outside requested taxids")
         print(p2)
         summ_out_dt <- p_sub %>% select(-label2) %>%
           mutate(metadata = paste0("mean_", metadata_source_col, ":", round(mean_metadata, 6),
@@ -1284,21 +1301,23 @@ for (category in categories) {
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
                                      size=3.2, color=within_taxid_label_color, max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
-                                     segment.size=0.25, box.padding=0.5,
-                                     point.padding=0.55, force=3) +
+                                     segment.size=0.25, box.padding=0.75,
+                                     point.padding=0.8, force=6, force_pull=0.08) +
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
                                      aes(label=point_label_expr),
                                      size=3.2, color=outside_taxid_label_color, max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
-                                     segment.size=0.25, box.padding=0.5,
-                                     point.padding=0.55, force=3, parse=TRUE) +
+                                     segment.size=0.25, box.padding=0.75,
+                                     point.padding=0.8, force=6, force_pull=0.08, parse=TRUE) +
             scale_color_gradient(paste0("Proportion\n", class_to_plot),
                                  low = "blue", high = "red", limits = c(0, 1)) +
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
             ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
             ggtitle(paste(category, my_cluster, sep=" | "),
                     subtitle=paste("Color: proportion", class_to_plot)) +
-            theme(panel.grid.minor.y = element_blank())
+            theme(panel.grid.minor.y = element_blank(),
+                  plot.caption = element_text(hjust=0, size=8, color="grey30")) +
+            labs(caption="Text color: blue = within requested taxids; orange = outside requested taxids")
           print(p2)
         }
 
@@ -1339,7 +1358,7 @@ message(paste0("Compactor labels in generated plot summary: ",
 
 unannotated_summary <- all_features_summary %>%
   filter(is.na(`Blast Label`) |
-           `Blast Label` %in% c("NO MATCH", "UNANNOTATED", "NO PROTEIN/GENE HIT")) %>%
+           `Blast Label` %in% c("NO MATCH", "UNANNOTATED", "UNCHARACTERISED", "NO PROTEIN/GENE HIT")) %>%
   mutate(total_samples = suppressWarnings(as.numeric(total_samples))) %>%
   mutate(entropy_stats = map2(metadata, total_samples, metadata_entropy_stats)) %>%
   unnest(entropy_stats) %>%

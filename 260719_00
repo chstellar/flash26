@@ -1315,7 +1315,7 @@ rule run_blastp_compactors_for_reannotation:
     """
 
 
-rule annotate_compactor_rescue:
+rule compactor_reannotation:
     """
     Fill original BLAST annotation inputs and plot summary with compactor rescue labels.
     """
@@ -1360,7 +1360,7 @@ rule annotate_compactor_rescue:
     """
 
 
-rule compactor_reannotation:
+rule plot_compactor_reannotation:
     """
     Replot BLAST results using compactor-rescued annotations and the original plot style.
     """
