@@ -85,40 +85,94 @@ paramaters <- filename %>% pivot_longer(everything(), names_to="paramater", valu
 
 
 # Define Function
+coerce_scalar_text <- function(value) {
+  if (length(value) == 0 || all(is.na(value))) {
+    return(NA_character_)
+  }
+  if (is.list(value)) {
+    value <- unlist(value, recursive = TRUE, use.names = FALSE)
+  }
+  value <- value[!is.na(value)]
+  if (length(value) == 0) {
+    return(NA_character_)
+  }
+  value <- paste(as.character(value), collapse = ",")
+  value <- str_trim(value)
+  if (nchar(value) == 0 || value %in% c("NA", "NaN", "NULL")) {
+    return(NA_character_)
+  }
+  value
+}
+
+parse_coef_values <- function(value) {
+  value <- coerce_scalar_text(value)
+  if (is.na(value)) {
+    return(numeric(0))
+  }
+  value <- gsub("^\\[|\\]$", "", value)
+  nums <- suppressWarnings(as.numeric(strsplit(value, ",", fixed = TRUE)[[1]]))
+  nums[!is.na(nums)]
+}
+
+parse_class_values <- function(value) {
+  value <- coerce_scalar_text(value)
+  if (is.na(value)) {
+    return(character(0))
+  }
+  value <- gsub("^\\[|\\]$", "", value)
+  classes <- str_trim(strsplit(value, ",", fixed = TRUE)[[1]])
+  classes[!is.na(classes) & nchar(classes) > 0]
+}
+
 get_max_abs_value <- function(x) {
-  sapply(x, function(str) {
-    nums <- as.numeric(strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]])
+  vapply(seq_along(x), function(i) {
+    nums <- parse_coef_values(x[[i]])
+    if (length(nums) == 0) {
+      return(NA_real_)
+    }
     max(abs(nums), na.rm = TRUE)
-  })
+  }, numeric(1))
 }
 
 
 get_first_coef <- function(x) {
-  sapply(x, function(str) {
-    nums <- as.numeric(strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]])
+  vapply(seq_along(x), function(i) {
+    nums <- parse_coef_values(x[[i]])
+    if (length(nums) < 1) {
+      return(NA_real_)
+    }
     nums[1]
-  })
+  }, numeric(1))
 }
 
 get_first_class <- function(x) {
-  sapply(x, function(str) {
-    classes <- strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]]
+  vapply(seq_along(x), function(i) {
+    classes <- parse_class_values(x[[i]])
+    if (length(classes) < 1) {
+      return(NA_character_)
+    }
     classes[1]
-  })
+  }, character(1))
 }
 
 get_nth_coef <- function(x, n=1) {
-  sapply(x, function(str) {
-    nums <- as.numeric(strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]])
+  vapply(seq_along(x), function(i) {
+    nums <- parse_coef_values(x[[i]])
+    if (length(nums) < n) {
+      return(NA_real_)
+    }
     nums[n]
-  })
+  }, numeric(1))
 }
 
 get_nth_class <- function(x,n=1) {
-  sapply(x, function(str) {
-    classes <- strsplit(gsub("^\\[|\\]$", "", str), ",")[[1]]
+  vapply(seq_along(x), function(i) {
+    classes <- parse_class_values(x[[i]])
+    if (length(classes) < n) {
+      return(NA_character_)
+    }
     classes[n]
-  })
+  }, character(1))
 }
 
 clean_blast_label <- function(x) {
