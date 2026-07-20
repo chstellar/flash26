@@ -1142,6 +1142,45 @@ def find_row_compactor_hit(row, compactor_map, anchor_map, anchor_len, summary_k
     return None
 
 
+def add_sequence_candidate(sequences, value):
+    sequence = clean_sequence_candidate(value)
+    if sequence and sequence not in sequences:
+        sequences.append(sequence)
+
+
+def find_plot_annotation_compactor_hit(
+    row,
+    fieldnames,
+    compactor_map,
+    anchor_map,
+    anchor_len,
+    summary_key_map=None,
+    summary_sequence_map=None,
+):
+    sequences = []
+    add_sequence_candidate(sequences, sequence_from_plot_query(row.get("query")))
+    for col in ("sequence", "extendor", "anchor_target", "anchor_target_sequence"):
+        add_sequence_candidate(sequences, row.get(col))
+    if len(fieldnames) >= 11:
+        add_sequence_candidate(sequences, row.get(fieldnames[10]))
+
+    summary_key_map = summary_key_map or {}
+    summary_sequence_map = summary_sequence_map or {}
+    for sequence in sequences:
+        hit = summary_key_map.get(plot_match_key(row, sequence))
+        if hit:
+            return hit
+    for sequence in sequences:
+        hit = summary_sequence_map.get(sequence)
+        if hit:
+            return hit
+    for sequence in sequences:
+        hit = lookup_compactor_hit(sequence, compactor_map, anchor_map, anchor_len)
+        if hit:
+            return hit
+    return None
+
+
 def fill_plot_annotation_tsv(
     input_path,
     output_path,
@@ -1181,8 +1220,9 @@ def fill_plot_annotation_tsv(
             writer = csv.DictWriter(out_handle, delimiter="\t", fieldnames=fieldnames)
             writer.writeheader()
             for row in reader:
-                compactor_hit = find_row_compactor_hit(
+                compactor_hit = find_plot_annotation_compactor_hit(
                     row,
+                    fieldnames,
                     compactor_map,
                     anchor_map,
                     anchor_len,
@@ -1365,6 +1405,8 @@ def run_compactor_plot_mode(args):
         str(args.plot_sample_seqs),
         "--metadata",
         str(args.plot_metadata),
+        "--compactor_summary",
+        str(prefilled_summary),
         "--output",
         str(output_pdf),
     ]
