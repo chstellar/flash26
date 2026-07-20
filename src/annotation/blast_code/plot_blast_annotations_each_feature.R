@@ -283,7 +283,7 @@ infer_residual_focus_class <- function(category, metadata_source_col, metadata_v
 
 make_plotmath_other_taxa_label <- function(label) {
   label <- replace_na(label, "")
-  label <- str_replace_all(label, "\\s*\\(OTHER TAXA\\)\\s*$", "")
+  label <- str_replace_all(label, "\\s*\\(OTHER TAXA\\)", "")
   label <- str_replace_all(label, "\n", " ")
   label <- str_squish(label)
   label <- str_replace_all(label, "\\\\", "\\\\\\\\")
@@ -1070,17 +1070,16 @@ for (category in categories) {
         mutate(label = single_line_text(label)) %>%
         mutate(label=ifelse(is.na(label), "NO MATCH", label)) %>%
         dplyr::rename(`Blast Label` = label) %>%
-        mutate(label_identity = ifelse(identity == 100 | is.na(identity), "-", paste0(round(identity,2), "%"))) %>%
-        mutate(label_coverage = ifelse(qcovs == 100 | is.na(qcovs), "-", paste0(round(qcovs,2), "%"))) %>%
+        mutate(label_identity = ifelse(is.na(identity), "-", paste0(round(identity,2), "%"))) %>%
+        mutate(label_coverage = ifelse(is.na(qcovs), "-", paste0(round(qcovs,2), "%"))) %>%
         mutate(label_identity = replace_na(label_identity, "-")) %>%
         mutate(label_coverage = replace_na(label_coverage, "-")) %>%
         rowwise() %>%
         mutate(label_quality = ifelse(label_coverage != "-" | label_identity != "-",
-                                      paste0("I:", str_replace(label_identity, "-", "100%"),
-                                             "; C:", str_replace(label_coverage, "-", "100%")), "")) %>%
+                                      paste0("I:", str_replace(label_identity, "-", "NA"),
+                                             "; C:", str_replace(label_coverage, "-", "NA")), "")) %>%
         mutate(point_label = case_when(
           `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ as.character(`Blast Label`),
-          nchar(label_quality) > 0 ~ paste(`Blast Label`, label_quality, sep="\n"),
           TRUE ~ as.character(`Blast Label`)
         )) %>%
         mutate(point_label = ifelse(outside_taxid_only,
@@ -1090,9 +1089,14 @@ for (category in categories) {
         mutate(point_label = ifelse(outside_taxid_only,
                                     paste0(str_trunc(str_replace(point_label, "\\s*\\(OTHER TAXA\\)\\s*$", ""),
                                                      width=65),
-                                           " (OTHER TAXA)"),
+                                          " (OTHER TAXA)"),
                                     preserve_compactor_suffix(point_label, width=80))) %>%
         mutate(point_label = str_wrap(point_label, width=28)) %>%
+        mutate(point_label = ifelse(!`Blast Label` %in% c("NO MATCH", "NO TARGET") &
+                                      nchar(label_quality) > 0 &
+                                      label_quality != "I:100%; C:100%",
+                                    paste(point_label, label_quality, sep="\n"),
+                                    point_label)) %>%
         mutate(point_label_expr = ifelse(outside_taxid_only,
                                          make_plotmath_other_taxa_label(point_label),
                                          NA_character_)) %>%
