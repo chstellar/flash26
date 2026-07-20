@@ -9,7 +9,17 @@ from collections import defaultdict
 from pathlib import Path
 from shutil import which
 
-csv.field_size_limit(sys.maxsize)
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    limit = sys.maxsize
+    while True:
+        limit = int(limit / 10)
+        try:
+            csv.field_size_limit(limit)
+            break
+        except OverflowError:
+            continue
 
 DEFAULT_INPUT_DIR = "/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge"
 DEFAULT_OUTPUT_DIR = (

@@ -52,6 +52,13 @@ set-threads: # set specific threads for each rule
     merge_annotations: 1
     run_blast_nonzero_features: 32
     run_blastp_nonzero_features: 32
+    select_unannotated_extendors_for_compactor: 1
+    run_compactors_for_reannotation: 4
+    merge_compactors_for_reannotation: 1
+    select_compactors_for_reannotation: 1
+    run_blast_compactors_for_reannotation: 32
+    run_blastp_compactors_for_reannotation: 32
+    annotate_compactor_rescue: 1
     merge_blast_results: 1
     merge_blastp_results: 1
     merge_annotations_OHE: 1
@@ -61,6 +68,7 @@ set-threads: # set specific threads for each rule
     merge_blastp_results_OHE: 1
     merge_annotations_genomes: 1
     plot_blast_features: 1
+    plot_blast_features_compactor: 1
     plot_blast_heatmaps: 1
     plot_blast_features_OHE: 1
     plot_blast_heatmaps_OHE: 1
@@ -133,6 +141,24 @@ set-resources: # set specific resources for each rule
     run_blastp_nonzero_features:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         time: "12:00:00"
+    select_unannotated_extendors_for_compactor:
+        mem_mb: 16000
+        time: "1:00:00"
+    merge_compactors_for_reannotation:
+        mem_mb: 16000
+        time: "1:00:00"
+    select_compactors_for_reannotation:
+        mem_mb: 32000
+        time: "1:00:00"
+    run_blast_compactors_for_reannotation:
+        mem_mb: 128000 + ((attempt - 1) * 128000)
+        time: "9:00:00"
+    run_blastp_compactors_for_reannotation:
+        mem_mb: 256000 + ((attempt - 1) * 128000)
+        time: "12:00:00"
+    annotate_compactor_rescue:
+        mem_mb: 32000 + ((attempt - 1) * 32000)
+        time: "2:00:00"
     merge_blast_results:
         mem_mb: 8000 + ((attempt - 1) * 16000)
     merge_blastp_results:
@@ -152,6 +178,10 @@ set-resources: # set specific resources for each rule
     merge_annotations_genomes:
         mem_mb: 32000
     plot_blast_features:
+        mem_mb: 256000 + ((attempt - 1) * 128000)
+        msa: 1
+        time: "4:00:00"
+    plot_blast_features_compactor:
         mem_mb: 256000 + ((attempt - 1) * 128000)
         msa: 1
         time: "4:00:00"
