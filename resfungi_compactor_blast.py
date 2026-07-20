@@ -7,7 +7,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from shutil import which
+from shutil import copyfile, which
 
 csv.field_size_limit(sys.maxsize)
 
@@ -1394,35 +1394,18 @@ def run_compactor_plot_mode(args):
     command = [
         args.plot_rscript,
         "--vanilla",
-        str(REPO_ROOT / "src/annotation/blast_code/plot_blast_annotations_each_feature.R"),
-        "--nonzero_annotations",
-        str(blastp_compactor),
-        "--clusters",
-        str(args.plot_clusters),
-        "--feather_file",
-        str(args.plot_feather),
-        "--sample_seqs",
-        str(args.plot_sample_seqs),
-        "--metadata",
-        str(args.plot_metadata),
-        "--compactor_summary",
+        str(REPO_ROOT / "src/annotation/blast_code/plot_blast_summary_direct.R"),
+        "--summary",
         str(prefilled_summary),
-        "--compactor_anchor_len",
-        str(args.anchor_len),
         "--output",
         str(output_pdf),
+        "--num_hits",
+        "10",
     ]
-    if args.plot_target_vars:
-        command.extend(["--target_vars", args.plot_target_vars])
-    if args.plot_confound_vars:
-        command.extend(["--confound_vars", args.plot_confound_vars])
     run_command(command, cwd=REPO_ROOT)
     generated_summary = pdf_output_path(args.plot_pdf, "_compactor_summary").with_suffix(".tsv")
-    if generated_summary.exists():
-        patched_summary_tmp = tsv_output_path(generated_summary, "_tmp")
-        fill_plot_summary_tsv(generated_summary, patched_summary_tmp, compactor_map, anchor_map, args.anchor_len)
-        patched_summary_tmp.replace(generated_summary)
-        write_fungus_subset(generated_summary, args.fungus_output)
+    copyfile(prefilled_summary, generated_summary)
+    write_fungus_subset(generated_summary, args.fungus_output)
     print(f"Wrote compactor-filled blast plot PDF to {output_pdf}")
     print(f"Wrote compactor-filled plot summary to {generated_summary}")
 
