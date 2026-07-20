@@ -17,4 +17,4 @@ benchmarks/*
 *.out
 example_data/
 containers/hyena_embedder.sif
-__pycache__/
+__pycache__/*
