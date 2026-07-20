@@ -278,6 +278,15 @@ make_plotmath_other_taxa_label <- function(label) {
   paste0("atop(\"", label, "\", italic(\"(OTHER TAXA)\"))")
 }
 
+preserve_compactor_suffix <- function(label, width = 80) {
+  label <- replace_na(as.character(label), "")
+  is_compactor <- str_detect(label, "\\s*\\(COMPACTOR\\)\\s*$")
+  base_label <- str_replace(label, "\\s*\\(COMPACTOR\\)\\s*$", "")
+  ifelse(is_compactor,
+         paste0(str_trunc(base_label, width=max(10, width - 12), side="right"), " (COMPACTOR)"),
+         str_trunc(label, width=width, side="right"))
+}
+
 make_safe_label <- function(value) {
   label <- as.character(value)
   label <- str_replace_all(label, "[ /\\\\]", "_")
@@ -565,6 +574,15 @@ calculate_distance_and_align <- function(sequences) {
 # read in input files
 dt <- fread(opt$nonzero_annotations)
 if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
+for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_length",
+                        "compactor_exact_support", "compactor_raw_annotation")) {
+  if (!compactor_col %in% colnames(dt)) {
+    dt[[compactor_col]] <- NA_character_
+  }
+  if (!compactor_col %in% colnames(dt2)) {
+    dt2[[compactor_col]] <- NA_character_
+  }
+}
 if (!"confounders" %in% colnames(dt)) {
   dt$confounders <- NA_character_
 }
@@ -637,7 +655,10 @@ for (category in categories) {
     summ_dt <- bind_rows(dt, new_dt) %>% filter(!is.na(query)) %>% filter(metadata_category==category) %>%
       mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>%
       mutate(second_coef = get_nth_coef(coefficients,2), second_class=get_nth_class(classes, 2)) %>%
-      arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>% mutate(annotation = str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
+      arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
+      mutate(annotation = str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
+      mutate(annotation = ifelse(has_restricted_label(compactor_annotation),
+                                 compactor_annotation, annotation)) %>%
       rowwise() %>%
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
@@ -674,7 +695,7 @@ for (category in categories) {
         rowwise() %>%
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
-        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, products, genes, confounders) %>%
+        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, products, genes, confounders, compactor_annotation) %>%
         mutate(query = str_remove(query, "^cluster_\\d+_")) %>%
         group_by(cluster) %>%
         ungroup() %>%
@@ -682,6 +703,8 @@ for (category in categories) {
 
       summ_dt2 <- summ_dt2 %>%
         mutate(label = choose_feature_label(products, genes, opt$products)) %>%
+        mutate(label = ifelse(has_restricted_label(compactor_annotation),
+                              compactor_annotation, label)) %>%
         group_by(cluster,query) %>%
         mutate(label=ifelse(!is_empty(unique(na.omit(label))), paste0(unique(na.omit(label)),collapse=";"), NA)) %>%
         distinct(cluster, query, label, .keep_all=T) %>% ungroup()
@@ -760,6 +783,8 @@ for (category in categories) {
       mutate(hist_products = extract_feature_qualifier(feature_text, "product")) %>%
       mutate(hist_genes = extract_feature_qualifier(feature_text, "gene")) %>%
       mutate(hist_label = choose_feature_label(hist_products, hist_genes, opt$products)) %>%
+      mutate(hist_label = ifelse(has_restricted_label(compactor_annotation),
+                                 compactor_annotation, hist_label)) %>%
       mutate(hist_label = case_when(
         str_detect(query, "NNNNNNNN") ~ "NO TARGET",
         !is.na(hist_label) & nchar(hist_label) > 1 ~ hist_label,
@@ -798,7 +823,7 @@ for (category in categories) {
       mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED))*$")) %>%
       mutate(color=ifelse(has_real_label, "blast", color)) %>%
       mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
-      mutate(label = str_wrap(str_trunc(label, width =100, side="right"), width = 25)) %>%
+      mutate(label = str_wrap(preserve_compactor_suffix(label, width=100), width = 25)) %>%
       mutate(label = replace_na(label, ""))
 
     metric_subtitle <- format_model_metric(
@@ -898,6 +923,8 @@ for (category in categories) {
         mutate(direct_products = extract_feature_qualifier(feature_text, "product")) %>%
         mutate(direct_genes = extract_feature_qualifier(feature_text, "gene")) %>%
         mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, opt$products)) %>%
+        mutate(direct_blast_label = ifelse(has_restricted_label(compactor_annotation),
+                                           compactor_annotation, direct_blast_label)) %>%
         group_by(sequence) %>%
         summarise(direct_blast_label = collapse_blast_labels(paste(unique(na.omit(direct_blast_label)), collapse=";")),
                   direct_identity = first_numeric_or_na(identity),
@@ -986,7 +1013,7 @@ for (category in categories) {
                                     paste0(str_trunc(str_replace(point_label, "\\s*\\(OTHER TAXA\\)\\s*$", ""),
                                                      width=65),
                                            " (OTHER TAXA)"),
-                                    str_trunc(point_label, width=80))) %>%
+                                    preserve_compactor_suffix(point_label, width=80))) %>%
         mutate(point_label = str_wrap(point_label, width=28)) %>%
         mutate(point_label_expr = ifelse(outside_taxid_only,
                                          make_plotmath_other_taxa_label(point_label),
