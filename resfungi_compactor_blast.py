@@ -72,6 +72,14 @@ def parse_args():
             "legacy filenames such as resfungi_compactors_blast.tsv."
         ),
     )
+    parser.add_argument(
+        "--compactor_source_stems",
+        default=None,
+        help=(
+            "Comma/semicolon-separated compactor output stems to combine in --noblastp "
+            "plot-rescue mode. Defaults to --output_stem."
+        ),
+    )
     parser.add_argument("--seeds", default=None, help="Defaults to INPUT_DIR/seeds.resfungi.raw")
     parser.add_argument("--taxids", default=DEFAULT_TAXIDS)
     parser.add_argument("--threads", type=int, default=32)
@@ -124,6 +132,14 @@ def parse_args():
     parser.add_argument("--plot_metadata", default=DEFAULT_METADATA)
     parser.add_argument("--plot_target_vars", default="")
     parser.add_argument("--plot_confound_vars", default="")
+    parser.add_argument(
+        "--fungus_output",
+        default=str(REPO_ROOT / "fungus.tsv"),
+        help=(
+            "Output path for rows from the generated compactor plot summary containing "
+            "fungus_species_residual. Defaults to fungus.tsv in the repository root."
+        ),
+    )
     parser.add_argument(
         "--plot_rscript",
         default=os.environ.get("RESFUNGI_PLOT_RSCRIPT", "Rscript"),
@@ -954,6 +970,47 @@ def select_compactor_hit(candidates):
     return sorted(candidates, key=annotation_priority)[0]
 
 
+def merge_compactor_maps(target, source):
+    for sequence, hit in source.items():
+        current = target.get(sequence)
+        if current is None or annotation_priority(hit) < annotation_priority(current):
+            target[sequence] = hit
+
+
+def add_anchor_hits(anchor_map, source):
+    for anchor, hits in source.items():
+        anchor_map.setdefault(anchor, []).extend(hits)
+
+
+def parse_stem_list(value, default_stem):
+    value = value or default_stem
+    stems = [item.strip() for item in re.split(r"[;,]", value) if item.strip()]
+    return stems or [default_stem]
+
+
+def write_fungus_subset(summary_path, output_path):
+    summary_path = Path(summary_path)
+    output_path = Path(output_path)
+    if not summary_path.exists() or summary_path.stat().st_size == 0:
+        print(f"Skipping fungus subset because generated summary does not exist: {summary_path}")
+        return
+
+    kept = 0
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(summary_path, newline="") as in_handle, open(output_path, "w", newline="") as out_handle:
+        reader = csv.reader(in_handle, delimiter="\t")
+        writer = csv.writer(out_handle, delimiter="\t")
+        header = next(reader, None)
+        if header is None:
+            return
+        writer.writerow(header)
+        for row in reader:
+            if "fungus_species_residual" in "\t".join(row):
+                writer.writerow(row)
+                kept += 1
+    print(f"Wrote {kept} fungus_species_residual rows to {output_path}")
+
+
 def build_anchor_annotation_map(compactor_map, anchor_len):
     anchor_map = {}
     for sequence, hit in compactor_map.items():
@@ -1119,40 +1176,42 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
 
 def run_compactor_plot_mode(args):
     output_dir = Path(args.output_dir)
-    paths = output_paths(output_dir, args.output_stem)
-    selected_path = paths["selected"]
-    records = read_selected_compactors(selected_path)
-    if not records:
-        raise FileNotFoundError(f"Missing or empty selected compactor table: {selected_path}")
-
-    blast = paths["blast"]
-    reblast = paths["reblast"]
-    blastp = paths["blastp"]
-    reblastp = paths["reblastp"]
-    annotations = merge_annotation_maps(
-        read_annotation_table(blastp, "blastp", "restricted"),
-        read_annotation_table(blast, "blast", "restricted"),
-        read_annotation_table(reblastp, "blastp", "unrestricted"),
-        read_annotation_table(reblast, "blast", "unrestricted"),
-    )
-    compactor_summary_path = paths["compactor_annotations"]
-    write_compactor_annotation_summary(records, annotations, compactor_summary_path)
-    print(f"Regenerated compactor annotation summary at {compactor_summary_path}")
-
     seeds_path = Path(args.seeds) if args.seeds else Path(args.input_dir) / "seeds.resfungi.raw"
     seed_rows = combine_seed_rows(
         read_seed_rows(seeds_path, args.anchor_len),
         read_plot_summary_seed_rows(args.plot_summary, args.anchor_len),
     )
-    seed_summary_path = paths["seed_annotations"]
-    write_seed_annotation_summary(seed_rows, records_by_anchor(records), annotations, seed_summary_path)
-    print(f"Regenerated seed extendor compactor annotation summary at {seed_summary_path}")
 
-    compactor_map = read_seed_compactor_annotation_map(seed_summary_path)
-    anchor_map = read_compactor_anchor_annotation_map(compactor_summary_path)
-    seed_anchor_map = build_anchor_annotation_map(compactor_map, args.anchor_len)
-    for anchor, hits in seed_anchor_map.items():
-        anchor_map.setdefault(anchor, []).extend(hits)
+    compactor_map = {}
+    anchor_map = {}
+    source_stems = parse_stem_list(args.compactor_source_stems, args.output_stem)
+    for stem in source_stems:
+        paths = output_paths(output_dir, stem)
+        selected_path = paths["selected"]
+        records = read_selected_compactors(selected_path)
+        if not records:
+            raise FileNotFoundError(f"Missing or empty selected compactor table for stem '{stem}': {selected_path}")
+
+        annotations = merge_annotation_maps(
+            read_annotation_table(paths["blastp"], "blastp", "restricted"),
+            read_annotation_table(paths["blast"], "blast", "restricted"),
+            read_annotation_table(paths["reblastp"], "blastp", "unrestricted"),
+            read_annotation_table(paths["reblast"], "blast", "unrestricted"),
+        )
+        compactor_summary_path = paths["compactor_annotations"]
+        write_compactor_annotation_summary(records, annotations, compactor_summary_path)
+        print(f"Regenerated compactor annotation summary for stem '{stem}' at {compactor_summary_path}")
+
+        seed_summary_path = paths["seed_annotations"]
+        write_seed_annotation_summary(seed_rows, records_by_anchor(records), annotations, seed_summary_path)
+        print(f"Regenerated seed extendor compactor annotation summary for stem '{stem}' at {seed_summary_path}")
+
+        stem_compactor_map = read_seed_compactor_annotation_map(seed_summary_path)
+        merge_compactor_maps(compactor_map, stem_compactor_map)
+        add_anchor_hits(anchor_map, read_compactor_anchor_annotation_map(compactor_summary_path))
+        add_anchor_hits(anchor_map, build_anchor_annotation_map(stem_compactor_map, args.anchor_len))
+
+    print(f"Combined compactor rescue sources: {', '.join(source_stems)}")
     print(f"Loaded {len(compactor_map)} seed extendors with usable compactor annotations.")
     print(f"Loaded {len(anchor_map)} seed anchors with usable compactor annotations.")
 
@@ -1196,6 +1255,7 @@ def run_compactor_plot_mode(args):
         patched_summary_tmp = tsv_output_path(generated_summary, "_tmp")
         fill_plot_summary_tsv(generated_summary, patched_summary_tmp, compactor_map, anchor_map, args.anchor_len)
         patched_summary_tmp.replace(generated_summary)
+        write_fungus_subset(generated_summary, args.fungus_output)
     print(f"Wrote compactor-filled blast plot PDF to {output_pdf}")
     print(f"Wrote compactor-filled plot summary to {generated_summary}")
 
