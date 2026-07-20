@@ -53,6 +53,8 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
+message("plot_blast_annotations_each_feature.R build: compactor-finite-coef-v2")
+
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
 within_taxid_label_color <- "#1F3A44"
@@ -953,8 +955,12 @@ for (category in categories) {
       hist_compactor_label_dt
     )
 
+    largest_coef <- suppressWarnings(max(hist_label_dt$max_coefficient, na.rm=TRUE))
+    if (!is.finite(largest_coef) || largest_coef <= 0) {
+      largest_coef <- 1
+    }
     plot_dt <- hist_label_dt %>%
-      mutate(largest_coef=max(max_coefficient)) %>%
+      filter(!is.na(max_coefficient)) %>%
       mutate(coef_mag=max_coefficient/largest_coef) %>%
       group_by(cluster, feature, coef_mag) %>%
       summarise(label=make_histogram_label(label), .groups="drop") %>%
@@ -967,6 +973,9 @@ for (category in categories) {
       mutate(color = ifelse(grepl(known_causes, label, ignore.case=T), "known_cause", color)) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=100), width = 25)) %>%
       mutate(label = replace_na(label, ""))
+    message(paste0("Histogram rows for ", category, ": ",
+                   nrow(plot_dt), " finite rows from ",
+                   nrow(hist_label_dt), " labels."))
     compactor_hist_count <- sum(str_detect(plot_dt$label, "\\(COMPACTOR\\)"), na.rm=TRUE)
     if (compactor_hist_count > 0) {
       message(paste0("Compactor labels in histogram for ", category, ": ", compactor_hist_count))
@@ -1033,8 +1042,20 @@ for (category in categories) {
 
       dt_sub <- summ_dt %>% filter(cluster==my_cluster, feature==my_feature)
 
-      first_beta = unique(dt_sub$first_coef)
-      first_class = unique(dt_sub$first_class)
+      first_beta <- suppressWarnings(as.numeric(unique(dt_sub$first_coef)))
+      first_beta <- first_beta[is.finite(first_beta)]
+      if (length(first_beta) == 0) {
+        message(paste("Skipping detailed plot for", category, my_cluster, my_feature,
+                      "because no finite coefficient was available."))
+        next
+      }
+      first_beta <- first_beta[which.max(abs(first_beta))]
+      first_class = unique(na.omit(dt_sub$first_class))
+      if (length(first_class) == 0) {
+        first_class <- NA_character_
+      } else {
+        first_class <- first_class[1]
+      }
       all_classes = dt_sub[1,]$classes %>% unlist()
       classes_to_plot <- all_classes
       if (length(all_classes) == 1 && all_classes[1] == "residual" && !is_quantitative_target) {
@@ -1178,6 +1199,18 @@ for (category in categories) {
                                          NA_character_)) %>%
         mutate(point_label_color = ifelse(outside_taxid_only, "outside_taxid", "regular")) %>%
         ungroup()
+      message(paste0("Detail rows for ", category, " ", my_cluster, " ", my_feature,
+                     ": rows=", nrow(p_sub),
+                     ", finite_embedding=", sum(is.finite(p_sub$embedding), na.rm=TRUE),
+                     ", finite_lev_dist=", sum(!is.na(p_sub$lev_dist), na.rm=TRUE),
+                     ", finite_total_samples=", sum(is.finite(p_sub$total_samples), na.rm=TRUE)))
+      p_sub <- p_sub %>%
+        filter(is.finite(embedding), !is.na(lev_dist), is.finite(total_samples), total_samples > 0)
+      if (nrow(p_sub) == 0) {
+        message(paste("Skipping detailed plot for", category, my_cluster, my_feature,
+                      "because no finite plotting rows remained after filtering."))
+        next
+      }
       compactor_point_count <- sum(str_detect(p_sub$point_label, "\\(COMPACTOR\\)"), na.rm=TRUE)
       if (compactor_point_count > 0) {
         message(paste0("Compactor labels in detail plot for ", category, " ",
@@ -1191,7 +1224,7 @@ for (category in categories) {
                      label=point_label)) +
           geom_vline(xintercept = 0, lty="dashed") +
           geom_point(stroke=1.4) +
-          scale_y_continuous(breaks=scales::breaks_width(1)) +
+          scale_y_continuous(breaks=scales::breaks_width(1), minor_breaks=NULL) +
           scale_size_continuous(trans = "log", name = "Total Samples",
                                 breaks = c(1, 10, 100, 1000, 10000),
                                 limits = c(1, 10000), labels = scales::label_log()) +
@@ -1211,7 +1244,8 @@ for (category in categories) {
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
           ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
           ggtitle(paste(category, my_cluster, sep=" | "),
-                  subtitle=paste("Color: mean observed", metadata_source_col))
+                  subtitle=paste("Color: mean observed", metadata_source_col)) +
+          theme(panel.grid.minor.y = element_blank())
         print(p2)
         summ_out_dt <- p_sub %>% select(-label2) %>%
           mutate(metadata = paste0("mean_", metadata_source_col, ":", round(mean_metadata, 6),
@@ -1243,7 +1277,7 @@ for (category in categories) {
                        size=total_samples, label=point_label)) +
             geom_vline(xintercept = 0, lty="dashed") +
             geom_point(stroke=1.4) +
-            scale_y_continuous(breaks=scales::breaks_width(1)) +
+            scale_y_continuous(breaks=scales::breaks_width(1), minor_breaks=NULL) +
             scale_size_continuous(trans = "log", name = "Total Samples",
                                   breaks = c(1, 10, 100, 1000, 10000),
                                   limits = c(1, 10000), labels = scales::label_log()) +
@@ -1263,7 +1297,8 @@ for (category in categories) {
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
             ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
             ggtitle(paste(category, my_cluster, sep=" | "),
-                    subtitle=paste("Color: proportion", class_to_plot))
+                    subtitle=paste("Color: proportion", class_to_plot)) +
+            theme(panel.grid.minor.y = element_blank())
           print(p2)
         }
 
