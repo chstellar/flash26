@@ -519,6 +519,26 @@ read_optional_tsv <- function(path) {
   fread(path)
 }
 
+ensure_annotation_columns <- function(tbl) {
+  fallback_cols <- c("metadata_category", "feature", "cluster", "query", "accuracy",
+                     "classes", "coefficients", "identity", "qcovs", "confounders",
+                     "stitle", "features", "features_10000_window", "features_all")
+  for (col in fallback_cols) {
+    if (!col %in% colnames(tbl)) {
+      tbl[[col]] <- NA_character_
+    }
+  }
+  for (col in c("metadata_category", "feature", "cluster", "query", "classes",
+                "coefficients", "confounders", "stitle", "features",
+                "features_10000_window", "features_all")) {
+    tbl[[col]] <- vapply(seq_len(nrow(tbl)), function(i) coerce_scalar_text(tbl[[col]][[i]]), character(1))
+  }
+  tbl$accuracy <- suppressWarnings(as.numeric(tbl$accuracy))
+  tbl$identity <- suppressWarnings(as.numeric(tbl$identity))
+  tbl$qcovs <- suppressWarnings(as.numeric(tbl$qcovs))
+  tbl
+}
+
 has_restricted_label <- function(label) {
   label <- str_squish(as.character(label))
   !is.na(label) & nchar(label) > 1 &
@@ -677,6 +697,8 @@ calculate_distance_and_align <- function(sequences) {
 # read in input files
 dt <- fread(opt$nonzero_annotations)
 if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
+dt <- ensure_annotation_columns(dt)
+dt2 <- ensure_annotation_columns(dt2)
 for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_length",
                         "compactor_exact_support", "compactor_raw_annotation")) {
   if (!compactor_col %in% colnames(dt)) {
@@ -1255,7 +1277,11 @@ for (category in categories) {
     }
 
   }, error = function(e) {
-    message(paste("Error processing category:", category, "\n", e$message))
+    parent_msg <- ""
+    if (!is.null(e$parent) && !is.null(e$parent$message)) {
+      parent_msg <- paste0("\nParent error: ", e$parent$message)
+    }
+    message(paste0("Error processing category: ", category, "\n", e$message, parent_msg))
     # Optionally log the error or take other actions
   })
 
