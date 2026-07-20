@@ -1070,6 +1070,14 @@ def fake_feature_annotation(label):
     )
 
 
+def synthetic_query(cluster, sequence):
+    cluster = "" if cluster is None else str(cluster).strip()
+    sequence = clean_sequence_candidate(sequence)
+    if cluster and sequence:
+        return f"{cluster}_{sequence}"
+    return sequence
+
+
 def summary_compactor_hit(row):
     label = clean_label(row.get("compactor_annotation")) or ""
     if not is_real_annotation(label):
@@ -1086,6 +1094,10 @@ def summary_compactor_hit(row):
         "annotation_source": row.get("annotation_source", "NA"),
         "blast_mode": row.get("blast_mode", "NA"),
         "match_source": "summary",
+        "metadata_category": row.get("metadata_category", ""),
+        "feature": row.get("feature", ""),
+        "cluster": row.get("cluster", ""),
+        "sequence": clean_sequence_candidate(row.get("sequence")),
     }
 
 
@@ -1101,9 +1113,10 @@ def plot_match_key(row, sequence):
 def build_summary_compactor_maps(summary_path):
     key_map = {}
     sequence_hits = defaultdict(list)
+    summary_rows = []
     summary_path = Path(summary_path)
     if not summary_path.exists() or summary_path.stat().st_size == 0:
-        return key_map, {}
+        return key_map, {}, summary_rows
 
     with open(summary_path, newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
@@ -1118,13 +1131,15 @@ def build_summary_compactor_maps(summary_path):
                     break
             if not sequence:
                 continue
-            key_map[plot_match_key(row, sequence)] = hit
+            key = plot_match_key(row, sequence)
+            key_map[key] = hit
             sequence_hits[sequence].append(hit)
+            summary_rows.append({**row, "_sequence": sequence, "_key": key, "_hit": hit})
 
     sequence_map = {}
     for sequence, hits in sequence_hits.items():
         sequence_map[sequence] = select_compactor_hit(hits)
-    return key_map, sequence_map
+    return key_map, sequence_map, summary_rows
 
 
 def find_row_compactor_hit(row, compactor_map, anchor_map, anchor_len, summary_key_map=None, summary_sequence_map=None):
@@ -1160,6 +1175,16 @@ def add_sequence_candidate(sequences, value):
         sequences.append(sequence)
 
 
+def plot_annotation_sequences(row, fieldnames):
+    sequences = []
+    add_sequence_candidate(sequences, sequence_from_plot_query(row.get("query")))
+    for col in ("sequence", "extendor", "anchor_target", "anchor_target_sequence"):
+        add_sequence_candidate(sequences, row.get(col))
+    if len(fieldnames) >= 11:
+        add_sequence_candidate(sequences, row.get(fieldnames[10]))
+    return sequences
+
+
 def find_plot_annotation_compactor_hit(
     row,
     fieldnames,
@@ -1169,12 +1194,7 @@ def find_plot_annotation_compactor_hit(
     summary_key_map=None,
     summary_sequence_map=None,
 ):
-    sequences = []
-    add_sequence_candidate(sequences, sequence_from_plot_query(row.get("query")))
-    for col in ("sequence", "extendor", "anchor_target", "anchor_target_sequence"):
-        add_sequence_candidate(sequences, row.get(col))
-    if len(fieldnames) >= 11:
-        add_sequence_candidate(sequences, row.get(fieldnames[10]))
+    sequences = plot_annotation_sequences(row, fieldnames)
 
     summary_key_map = summary_key_map or {}
     summary_sequence_map = summary_sequence_map or {}
@@ -1193,6 +1213,62 @@ def find_plot_annotation_compactor_hit(
     return None
 
 
+def template_keys(row):
+    metadata_category = row.get("metadata_category", "")
+    feature = row.get("feature", "")
+    cluster = row.get("cluster", "")
+    return [
+        (metadata_category, feature, cluster),
+        (metadata_category, feature, ""),
+        ("", feature, cluster),
+        ("", feature, ""),
+    ]
+
+
+def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False):
+    if not compactor_hit:
+        return False
+    should_fill = force or compactor_hit.get("match_source") == "summary" or not row_has_real_plot_annotation(row, mode)
+    if not should_fill:
+        return False
+
+    row["identity"] = row.get("identity") if has_text(row.get("identity")) else compactor_hit["identity"]
+    row["qcovs"] = row.get("qcovs") if has_text(row.get("qcovs")) else compactor_hit["qcovs"]
+    if mode == "blastp":
+        row["annotation"] = compactor_hit["label"]
+        row["stitle"] = row.get("stitle") if has_text(row.get("stitle")) else compactor_hit["label"]
+    else:
+        feature_annotation = fake_feature_annotation(compactor_hit["label"])
+        row["features"] = row.get("features") if has_text(row.get("features")) else feature_annotation
+        row["features_all"] = row.get("features_all") if has_text(row.get("features_all")) else feature_annotation
+        if "features_10000_window" in row:
+            row["features_10000_window"] = (
+                row.get("features_10000_window")
+                if has_text(row.get("features_10000_window"))
+                else feature_annotation
+            )
+    row["compactor_annotation"] = compactor_hit["label"]
+    row["compactor_query"] = compactor_hit["compactor_query"]
+    row["compactor_length"] = compactor_hit["compactor_length"]
+    row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
+    row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
+    return True
+
+
+def make_synthetic_annotation_row(summary_row, template, fieldnames, mode):
+    row = {col: template.get(col, "NA") for col in fieldnames}
+    for col in ("metadata_category", "feature", "cluster"):
+        if col in fieldnames:
+            row[col] = summary_row.get(col, "NA")
+    if "query" in fieldnames:
+        row["query"] = synthetic_query(summary_row.get("cluster"), summary_row.get("_sequence"))
+    if "evalue" in fieldnames:
+        row["evalue"] = "NA"
+    hit = summary_row["_hit"]
+    apply_compactor_hit_to_annotation_row(row, hit, mode, force=True)
+    return row
+
+
 def fill_plot_annotation_tsv(
     input_path,
     output_path,
@@ -1202,17 +1278,22 @@ def fill_plot_annotation_tsv(
     mode,
     summary_key_map=None,
     summary_sequence_map=None,
+    summary_rows=None,
 ):
     input_path = Path(input_path)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filled = 0
     summary_matches = 0
+    appended = 0
+    skipped_no_template = 0
     if not input_path.exists():
         raise FileNotFoundError(f"Missing plot annotation TSV: {input_path}")
     with open(input_path, newline="") as in_handle:
         reader = csv.DictReader(in_handle, delimiter="\t")
-        fieldnames = list(reader.fieldnames or [])
+        original_fieldnames = list(reader.fieldnames or [])
+        fieldnames = list(original_fieldnames)
+        rows = list(reader)
         for extra_col in (
             "compactor_annotation",
             "compactor_query",
@@ -1229,39 +1310,30 @@ def fill_plot_annotation_tsv(
         if mode == "blast" and "features_all" not in fieldnames:
             fieldnames.append("features_all")
 
+        templates = {}
+        existing_summary_keys = set()
+        for row in rows:
+            for key in template_keys(row):
+                templates.setdefault(key, row)
+            for sequence in plot_annotation_sequences(row, original_fieldnames):
+                existing_summary_keys.add(plot_match_key(row, sequence))
+
         with open(output_path, "w", newline="") as out_handle:
             writer = csv.DictWriter(out_handle, delimiter="\t", fieldnames=fieldnames)
             writer.writeheader()
-            for row in reader:
+            for row in rows:
                 compactor_hit = find_plot_annotation_compactor_hit(
                     row,
-                    fieldnames,
+                    original_fieldnames,
                     compactor_map,
                     anchor_map,
                     anchor_len,
                     summary_key_map,
                     summary_sequence_map,
                 )
-                should_fill = compactor_hit and (
-                    compactor_hit.get("match_source") == "summary" or not row_has_real_plot_annotation(row, mode)
-                )
                 if compactor_hit and compactor_hit.get("match_source") == "summary":
                     summary_matches += 1
-                if should_fill:
-                    row["identity"] = row.get("identity") if has_text(row.get("identity")) else compactor_hit["identity"]
-                    row["qcovs"] = row.get("qcovs") if has_text(row.get("qcovs")) else compactor_hit["qcovs"]
-                    if mode == "blastp":
-                        row["annotation"] = compactor_hit["label"]
-                        row["stitle"] = row.get("stitle") if has_text(row.get("stitle")) else compactor_hit["label"]
-                    else:
-                        feature_annotation = fake_feature_annotation(compactor_hit["label"])
-                        row["features"] = row.get("features") if has_text(row.get("features")) else feature_annotation
-                        row["features_all"] = row.get("features_all") if has_text(row.get("features_all")) else feature_annotation
-                    row["compactor_annotation"] = compactor_hit["label"]
-                    row["compactor_query"] = compactor_hit["compactor_query"]
-                    row["compactor_length"] = compactor_hit["compactor_length"]
-                    row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
-                    row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
+                if apply_compactor_hit_to_annotation_row(row, compactor_hit, mode):
                     filled += 1
                 else:
                     row.setdefault("compactor_annotation", "NA")
@@ -1270,9 +1342,27 @@ def fill_plot_annotation_tsv(
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
+
+            for summary_row in summary_rows or []:
+                key = summary_row.get("_key")
+                if key in existing_summary_keys:
+                    continue
+                template = None
+                for template_key in template_keys(summary_row):
+                    template = templates.get(template_key)
+                    if template is not None:
+                        break
+                if template is None:
+                    skipped_no_template += 1
+                    continue
+                synthetic_row = make_synthetic_annotation_row(summary_row, template, fieldnames, mode)
+                writer.writerow({col: synthetic_row.get(col, "NA") for col in fieldnames})
+                existing_summary_keys.add(key)
+                appended += 1
     print(
         f"Filled {filled} {mode} rows with compactor annotations in {output_path} "
-        f"({summary_matches} exact-summary matches found)."
+        f"({summary_matches} exact-summary matches found, {appended} summary rows appended, "
+        f"{skipped_no_template} summary rows skipped without a template)."
     )
     return output_path, filled
 
@@ -1382,7 +1472,7 @@ def run_compactor_plot_mode(args):
         anchor_map,
         args.anchor_len,
     )
-    summary_key_map, summary_sequence_map = build_summary_compactor_maps(prefilled_summary)
+    summary_key_map, summary_sequence_map, summary_rows = build_summary_compactor_maps(prefilled_summary)
     print(
         f"Loaded {len(summary_key_map)} row-level and {len(summary_sequence_map)} sequence-level "
         "compactor labels from the prefilled plot summary for PDF input."
@@ -1399,6 +1489,7 @@ def run_compactor_plot_mode(args):
         "blastp",
         summary_key_map,
         summary_sequence_map,
+        summary_rows,
     )
     fill_plot_annotation_tsv(
         args.plot_blast_annotated,
@@ -1409,6 +1500,7 @@ def run_compactor_plot_mode(args):
         "blast",
         summary_key_map,
         summary_sequence_map,
+        summary_rows,
     )
 
     output_pdf = pdf_output_path(args.plot_pdf, "_compactor")
