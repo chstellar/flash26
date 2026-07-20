@@ -16,18 +16,6 @@ mamba activate flash
 SNAKEMAKE_FILE="${1:-}"
 FORCE_RULE="${*:2}"
 
-# Friendly aliases for forcing higher-level workflows from run.sh. Snakemake
-# only re-runs rules with real jobs, so aggregate/local wrapper rules are mapped
-# to the concrete rules that update files.
-case "$FORCE_RULE" in
-    compactor_replot)
-        FORCE_RULE="compactor_reannotation"
-        ;;
-    compactor_full_reannotation)
-        FORCE_RULE="select_unannotated_extendors_for_compactor run_compactors_for_reannotation merge_compactors_for_reannotation select_compactors_for_reannotation run_blast_compactors_for_reannotation run_blastp_compactors_for_reannotation annotate_compactor_rescue compactor_reannotation"
-        ;;
-esac
-
 snakemake --unlock -s $SNAKEMAKE_FILE
 
 SNAKEMAKE_CMD="snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/"
