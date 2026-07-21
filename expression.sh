@@ -79,6 +79,7 @@ if [[ $# -ge 3 ]]; then shift 3; elif [[ $# -ge 2 ]]; then shift 2; else shift 1
 
 SATC="${SATC:-results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc.filtered.dump}"
 [[ -s "$SATC" ]] || SATC="results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc_merged.txt"
+ANNOTATION_TSV="${ANNOTATION_TSV:-results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/260714-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
 
 PLOT_MODE="${PLOT_MODE:-plain}"
 ORDER_FLAG=()
@@ -100,6 +101,7 @@ run_anchor() {
   mkdir -p "$(dirname "$out_prefix")" logs
   "$PYTHON" expression.py \
     --anchor "$anchor" --satc "$SATC" --sample_order "$SAMPLE_ORDER" \
+    --annotation_tsv "$ANNOTATION_TSV" \
     --output_prefix "$out_prefix" --plot_mode "$PLOT_MODE" \
     --grid_cols "${GRID_COLS:-3}" --grid_rows "${GRID_ROWS:-3}" \
     "${ORDER_FLAG[@]}" "$@"

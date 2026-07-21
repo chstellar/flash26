@@ -44,6 +44,14 @@ def parse_args():
         help="Output prefix for .target_counts.tsv and .target_expression.pdf.",
     )
     parser.add_argument(
+        "--annotation_tsv",
+        default="",
+        help=(
+            "Optional blast/compactor plot summary TSV. Target panel titles use "
+            "the row whose sequence matches target or anchor+target."
+        ),
+    )
+    parser.add_argument(
         "--top_targets",
         type=int,
         default=0,
@@ -293,6 +301,146 @@ def format_count(value):
     return f"{value:.6g}"
 
 
+def clean_annotation_label(value):
+    if value is None:
+        return ""
+    value = str(value).strip()
+    if not value or value.upper() in {"NA", "NAN", "NULL", "NONE"}:
+        return ""
+    value = re.sub(r"\s*\[[^\]]+\]\s*$", "", value)
+    value = re.sub(r"^RecName\s*:\s*Full=([^;]+).*$", r"\1", value)
+    value = re.sub(r"^SubName\s*:\s*Full=([^;]+).*$", r"\1", value)
+    value = re.sub(r"^AltName\s*:\s*Full=([^;]+).*$", r"\1", value)
+    value = re.sub(r"(^|;\s*)Short=([^;]+).*$", r"\2", value)
+    value = re.sub(r"\b(?:RecName|AltName|SubName)\s*:\s*Full=", "", value)
+    value = re.sub(r"\bFlags\s*:\s*[^;]+;?", "", value)
+    value = re.sub(r"LOC\d+[- ]*", "", value)
+    value = re.sub(r"\s+isoform\s+X\d+\b", "", value)
+    value = re.sub(r"\s+transcript\s+variant\s+X?\d+\b", "", value)
+    value = re.sub(r"\s+variant\s+X?\d+\b", "", value)
+    value = re.sub(r"\s+", " ", value)
+    value = re.sub(r"\s*[,;]\s*$", "", value).strip()
+    if re.search(
+        r"uncharacteri[sz]ed protein|hypothetical protein|predicted protein|unnamed protein",
+        value,
+        flags=re.IGNORECASE,
+    ):
+        return "UNCHARACTERISED"
+    return value
+
+
+def collapse_annotation_labels(values):
+    labels = []
+    seen = set()
+    for value in values:
+        for part in re.split(r";|,", str(value or "")):
+            label = clean_annotation_label(part)
+            if not label or len(label) <= 1:
+                continue
+            key = re.sub(r"[^A-Za-z0-9]+", " ", label).strip().lower()
+            if key not in seen:
+                labels.append(label)
+                seen.add(key)
+    if not labels:
+        return ""
+    special = {"NO TARGET", "NO MATCH", "UNANNOTATED", "UNCHARACTERISED", "NO PROTEIN/GENE HIT"}
+    real = [label for label in labels if label not in special]
+    if not real:
+        return "UNANNOTATED" if "NO PROTEIN/GENE HIT" in labels else labels[0]
+    real.sort(key=lambda label: (bool(re.search(r"hypothetical|uncharacterized|predicted protein|unnamed", label, re.I)), len(label), label))
+    return ";".join(real[:3])
+
+
+def annotation_column_names(headers):
+    exact_priority = [
+        "Blast Label",
+        "compactor_annotation",
+        "compactor_blastp",
+        "compactor_blastp_annotation",
+        "compactor_blastp_label",
+        "blastp_annotation",
+        "blastp_label",
+        "label_blastp",
+        "blast_annotation",
+        "blast_label",
+        "label_blast",
+        "annotation",
+        "stitle",
+    ]
+    selected = [name for name in exact_priority if name in headers]
+    for name in headers:
+        key = name.lower()
+        if name in selected:
+            continue
+        if "blast" in key and any(term in key for term in ("label", "annotation", "stitle", "product", "gene")):
+            selected.append(name)
+    return selected
+
+
+def normalize_sequence_key(sequence):
+    return re.sub(r"^cluster_\d+_", "", str(sequence or "")).replace("-", "").strip()
+
+
+def read_annotation_labels(path):
+    if not path:
+        return {}
+    annotation_path = Path(path)
+    if not annotation_path.exists() or annotation_path.stat().st_size == 0:
+        print(f"Annotation TSV not found or empty, skipping labels: {annotation_path}")
+        return {}
+    lookup = {}
+    with annotation_path.open(newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if not reader.fieldnames:
+            return {}
+        headers = reader.fieldnames
+        sequence_col = "sequence" if "sequence" in headers else headers[3] if len(headers) >= 4 else None
+        label_cols = annotation_column_names(headers)
+        if sequence_col is None or not label_cols:
+            print(f"Annotation TSV missing sequence/annotation columns, skipping labels: {annotation_path}")
+            return {}
+        for row in reader:
+            sequence = normalize_sequence_key(row.get(sequence_col, ""))
+            if not sequence:
+                continue
+            label = collapse_annotation_labels(row.get(col, "") for col in label_cols)
+            if not label:
+                continue
+            if label.endswith("(COMPACTOR)") or "compactor" in " ".join(row.get(col, "") for col in label_cols).lower():
+                if not label.endswith("(COMPACTOR)") and label not in {"NO MATCH", "NO TARGET", "UNANNOTATED"}:
+                    label = f"{label} (COMPACTOR)"
+            lookup.setdefault(sequence, label)
+    return lookup
+
+
+def target_annotation_label(annotation_labels, anchor, target):
+    keys = [
+        normalize_sequence_key(target),
+        normalize_sequence_key(anchor + target),
+        normalize_sequence_key(f"{anchor}-{target}"),
+    ]
+    for key in keys:
+        if key in annotation_labels:
+            return annotation_labels[key]
+    return ""
+
+
+def wrap_title_line(text, width=34):
+    words = str(text).split()
+    if not words:
+        return ""
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        if len(current) + 1 + len(word) <= width:
+            current = f"{current} {word}"
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return "\n".join(lines[:2])
+
+
 def shorten_sequence(sequence, max_len=42):
     if len(sequence) <= max_len:
         return sequence
@@ -301,7 +449,7 @@ def shorten_sequence(sequence, max_len=42):
     return f"{sequence[:left]}...{sequence[-right:]}"
 
 
-def plot_panel_pdf(path, anchor, targets, totals, grouped, grid_cols, grid_rows):
+def plot_panel_pdf(path, anchor, targets, totals, grouped, annotation_labels, grid_cols, grid_rows):
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
 
@@ -356,10 +504,12 @@ def plot_panel_pdf(path, anchor, targets, totals, grouped, grid_cols, grid_rows)
                         label=line,
                         color=line_colors[color_index % len(line_colors)],
                     )
-                ax.set_title(
-                    f"{shorten_sequence(target, 46)}\ntotal={format_count(totals[target])}",
-                    fontsize=9,
-                )
+                title_lines = [shorten_sequence(target, 46)]
+                annotation_label = target_annotation_label(annotation_labels, anchor, target)
+                if annotation_label:
+                    title_lines.append(wrap_title_line(annotation_label, width=36))
+                title_lines.append(f"total={format_count(totals[target])}")
+                ax.set_title("\n".join(title_lines), fontsize=8.5)
                 ax.set_ylabel("Occurrence")
                 ax.set_xticks(x_values)
                 ax.set_xticklabels([x_labels[x] for x in x_values], rotation=45, ha="right", fontsize=8)
@@ -409,6 +559,7 @@ def main():
 
     output_prefix = Path(args.output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
+    annotation_labels = read_annotation_labels(args.annotation_tsv)
 
     tidy_tsv = output_prefix.with_suffix(".target_counts.tsv")
     grouped_tsv = output_prefix.with_suffix(".target_grouped_counts.tsv")
@@ -430,6 +581,7 @@ def main():
         targets,
         totals,
         grouped,
+        annotation_labels,
         grid_cols=args.grid_cols,
         grid_rows=args.grid_rows,
     )
@@ -437,6 +589,8 @@ def main():
     print(f"Anchor: {args.anchor}")
     print(f"Observed samples with this anchor: {len(observed_samples)}")
     print(f"Targets plotted: {len(targets)}")
+    if annotation_labels:
+        print(f"Annotation labels loaded: {len(annotation_labels)}")
     print(f"Wrote counts: {tidy_tsv}")
     print(f"Wrote grouped counts: {grouped_tsv}")
     print(f"Wrote plot: {plot_path}")
