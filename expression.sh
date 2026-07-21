@@ -10,10 +10,25 @@
 
 set -euo pipefail
 
-ml purge
-eval "$(/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/bin/conda shell.bash hook)" 
-eval "$(mamba shell hook --shell bash)"
-mamba activate biopython_env-R
+if command -v ml >/dev/null 2>&1; then
+  ml purge
+elif command -v module >/dev/null 2>&1; then
+  module purge
+fi
+unset PYTHONPATH PYTHONHOME
+
+FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
+if [[ -x "$FLASH_CONDA/bin/conda" ]]; then
+  eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
+fi
+if command -v mamba >/dev/null 2>&1; then
+  eval "$(mamba shell hook --shell bash)"
+  mamba activate "${FLASH_PY_ENV:-biopython_env-R}"
+else
+  conda activate "${FLASH_PY_ENV:-biopython_env-R}"
+fi
+PYTHON="${PYTHON:-python}"
+export MPLBACKEND="${MPLBACKEND:-Agg}"
 
 join_csv() { local IFS=,; echo "$*"; }
 
@@ -47,13 +62,19 @@ manipulation_samples() {
 }
 
 usage() {
-  echo "Usage: sbatch expression.sh ANCHOR [tc7|manipulation|auto|SAMPLE_CSV] [OUTPUT_PREFIX] [extra expression.py args...]"
+  echo "Usage: sbatch expression.sh ANCHOR_OR_ANCHOR_TXT [tc7|manipulation|auto|SAMPLE_CSV] [OUTPUT_PREFIX] [extra expression.py args...]"
+  echo "If ANCHOR_OR_ANCHOR_TXT is a file, it should contain one anchor sequence per row."
 }
 
 [[ "${1:-}" =~ ^(-h|--help)$ ]] && { usage; exit 0; }
-ANCHOR="${1:-${ANCHOR:-}}"; [[ -n "$ANCHOR" ]] || { usage; exit 2; }
+ANCHOR_INPUT="${1:-${ANCHOR:-}}"; [[ -n "$ANCHOR_INPUT" ]] || { usage; exit 2; }
 PRESET="${2:-${SAMPLE_PRESET:-tc7}}"
-OUT="${3:-results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/expression_${ANCHOR}_${PRESET}}"
+if [[ -f "$ANCHOR_INPUT" ]]; then
+  DEFAULT_OUT="results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/expression_$(basename "$ANCHOR_INPUT" .txt)_${PRESET}"
+else
+  DEFAULT_OUT="results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/expression_${ANCHOR_INPUT}_${PRESET}"
+fi
+OUT="${3:-$DEFAULT_OUT}"
 if [[ $# -ge 3 ]]; then shift 3; elif [[ $# -ge 2 ]]; then shift 2; else shift 1; fi
 
 SATC="${SATC:-results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc.filtered.dump}"
@@ -68,9 +89,30 @@ case "$PRESET" in
   *) SAMPLE_ORDER="$PRESET"; PLOT_MODE="${PLOT_MODE_OVERRIDE:-$PLOT_MODE}"; [[ "${ONLY_ORDERED_SAMPLES:-1}" == 1 ]] && ORDER_FLAG=(--only_ordered_samples) ;;
 esac
 
-mkdir -p "$(dirname "$OUT")" logs
-python3 expression.py \
-  --anchor "$ANCHOR" --satc "$SATC" --sample_order "$SAMPLE_ORDER" \
-  --output_prefix "$OUT" --plot_mode "$PLOT_MODE" \
-  --grid_cols "${GRID_COLS:-3}" --grid_rows "${GRID_ROWS:-3}" \
-  "${ORDER_FLAG[@]}" "$@"
+safe_anchor_name() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'
+}
+
+run_anchor() {
+  local anchor="$1"
+  local out_prefix="$2"
+  shift 2
+  mkdir -p "$(dirname "$out_prefix")" logs
+  "$PYTHON" expression.py \
+    --anchor "$anchor" --satc "$SATC" --sample_order "$SAMPLE_ORDER" \
+    --output_prefix "$out_prefix" --plot_mode "$PLOT_MODE" \
+    --grid_cols "${GRID_COLS:-3}" --grid_rows "${GRID_ROWS:-3}" \
+    "${ORDER_FLAG[@]}" "$@"
+}
+
+if [[ -f "$ANCHOR_INPUT" ]]; then
+  while IFS= read -r anchor || [[ -n "$anchor" ]]; do
+    anchor="${anchor//$'\r'/}"
+    anchor="${anchor%%[[:space:]]*}"
+    [[ -n "$anchor" ]] || continue
+    [[ "$anchor" == \#* ]] && continue
+    run_anchor "$anchor" "${OUT}_$(safe_anchor_name "$anchor")" "$@"
+  done < "$ANCHOR_INPUT"
+else
+  run_anchor "$ANCHOR_INPUT" "$OUT" "$@"
+fi

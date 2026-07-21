@@ -60,7 +60,7 @@ known_causes = "NNNNNNNNNNNNNNN"
 within_taxid_label_color <- "#E64B35"
 outside_taxid_label_color <- "#4DBBD5"
 histogram_bar_color <- "#F8766D"
-no_taxon_label_color <- "#777777"
+no_taxon_label_color <- "#009E73"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
@@ -1007,33 +1007,6 @@ for (category in categories) {
       )) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=120), width = 38)) %>%
       mutate(label = replace_na(label, ""))
-    extendor_source_dt <- summ_dt %>%
-      mutate(sequence = query) %>%
-      left_join(outside_taxid_label_dt, by="sequence") %>%
-      left_join(category_compactor_summary_dt %>%
-                  select(cluster, feature, sequence, compactor_summary_label),
-                by=c("cluster", "feature", "sequence")) %>%
-      mutate(has_within_taxid_signal =
-               has_restricted_label(label) |
-               has_restricted_label(label_blastp) |
-               has_restricted_label(label_blast) |
-               has_restricted_label(annotation) |
-               has_restricted_label(compactor_summary_label) |
-               !is.na(identity) | !is.na(qcovs) |
-               !is.na(`identity.y`) | !is.na(`qcovs.y`),
-             has_outside_taxid_signal = has_restricted_label(outside_taxid_label)) %>%
-      mutate(taxon_source = case_when(
-        has_within_taxid_signal ~ "within_taxid",
-        has_outside_taxid_signal ~ "outside_taxid",
-        TRUE ~ "no_taxon"
-      )) %>%
-      distinct(cluster, feature, sequence, taxon_source)
-    plot_stack_dt <- extendor_source_dt %>%
-      group_by(cluster, feature, taxon_source) %>%
-      summarise(extendor_n=n(), .groups="drop_last") %>%
-      mutate(total_extendors=sum(extendor_n)) %>%
-      ungroup() %>%
-      inner_join(plot_dt %>% select(cluster, feature, rank), by=c("cluster", "feature"))
     message(paste0("Histogram rows for ", category, ": ",
                    nrow(plot_dt), " finite rows from ",
                    nrow(hist_label_dt), " labels."))
@@ -1055,7 +1028,64 @@ for (category in categories) {
     make_title <- paste(category, "in", dataset)
 
     plot_dt_top <- plot_dt %>% head(opt$num_hits)
-    plot_stack_top <- plot_stack_dt %>% filter(rank %in% plot_dt_top$rank)
+    full_cluster_extendors <- map_dfr(seq_len(nrow(plot_dt_top)), function(i) {
+      cluster_name <- plot_dt_top$cluster[[i]]
+      feature_name <- plot_dt_top$feature[[i]]
+      rank_value <- plot_dt_top$rank[[i]]
+      cluster_idx <- suppressWarnings(as.numeric(str_extract(cluster_name, "\\d+")))
+      if (!is.finite(cluster_idx)) {
+        return(tibble(cluster=character(), feature=character(), rank=integer(), sequence=character()))
+      }
+      seq_dt <- read_nth_cluster(opt$sample_seqs, cluster_idx, opt$cluster_length)
+      if (nrow(seq_dt) == 0 || !"sequence" %in% colnames(seq_dt)) {
+        return(tibble(cluster=character(), feature=character(), rank=integer(), sequence=character()))
+      }
+      seq_dt %>%
+        transmute(cluster=cluster_name,
+                  feature=feature_name,
+                  rank=rank_value,
+                  sequence=as.character(sequence)) %>%
+        filter(!is.na(sequence), nchar(sequence) > 0) %>%
+        distinct(cluster, feature, rank, sequence)
+    })
+    extendor_annotation_dt <- summ_dt %>%
+      mutate(sequence = query) %>%
+      left_join(outside_taxid_label_dt, by="sequence") %>%
+      left_join(category_compactor_summary_dt %>%
+                  select(cluster, feature, sequence, compactor_summary_label),
+                by=c("cluster", "feature", "sequence")) %>%
+      mutate(has_within_taxid_signal =
+               has_restricted_label(label) |
+               has_restricted_label(label_blastp) |
+               has_restricted_label(label_blast) |
+               has_restricted_label(annotation) |
+               has_restricted_label(compactor_summary_label) |
+               !is.na(identity) | !is.na(qcovs) |
+               !is.na(`identity.y`) | !is.na(`qcovs.y`),
+             has_outside_taxid_signal = has_restricted_label(outside_taxid_label)) %>%
+      group_by(cluster, feature, sequence) %>%
+      summarise(has_within_taxid_signal=any(has_within_taxid_signal, na.rm=TRUE),
+                has_outside_taxid_signal=any(has_outside_taxid_signal, na.rm=TRUE),
+                .groups="drop")
+    compactor_annotation_dt <- category_compactor_summary_dt %>%
+      mutate(has_compactor_annotation=has_restricted_label(compactor_summary_label)) %>%
+      group_by(cluster, feature, sequence) %>%
+      summarise(has_compactor_annotation=any(has_compactor_annotation, na.rm=TRUE),
+                .groups="drop")
+    plot_stack_top <- full_cluster_extendors %>%
+      left_join(extendor_annotation_dt, by=c("cluster", "feature", "sequence")) %>%
+      left_join(compactor_annotation_dt, by=c("cluster", "feature", "sequence")) %>%
+      mutate(across(c(has_within_taxid_signal, has_outside_taxid_signal,
+                      has_compactor_annotation), \(x) replace_na(x, FALSE))) %>%
+      mutate(taxon_source = case_when(
+        has_within_taxid_signal | has_compactor_annotation ~ "within_taxid",
+        has_outside_taxid_signal ~ "outside_taxid",
+        TRUE ~ "no_taxon"
+      )) %>%
+      count(cluster, feature, rank, taxon_source, name="extendor_n")
+    message(paste0("Stacked extendor-count histogram rows for ", category, ": ",
+                   sum(plot_stack_top$extendor_n), " unique extendors across ",
+                   n_distinct(paste(plot_stack_top$cluster, plot_stack_top$feature)), " plotted features."))
     p <- ggplot(plot_dt_top, aes(x=rank, y=coef_mag)) +
       geom_col(fill=histogram_bar_color) +
       geom_text(data=plot_dt_top,
@@ -1089,7 +1119,7 @@ for (category in categories) {
                                  "outside_taxid"=outside_taxid_label_color,
                                  "no_taxon"=no_taxon_label_color),
                         labels=c("Within requested taxids", "Outside requested taxids",
-                                 "No BLAST / no taxon annotation"),
+                                 "No hit"),
                         name="Taxon source") +
       ggtitle(make_title,
               subtitle="Extendor annotation source composition") +
@@ -1346,7 +1376,7 @@ for (category in categories) {
                                       "outside_taxid"=outside_taxid_label_color,
                                       "no_taxon"=no_taxon_label_color),
                              labels=c("Within requested taxids", "Outside requested taxids",
-                                      "No BLAST / no taxon annotation"),
+                                      "No hit"),
                              name="Taxon source") +
           guides(fill=guide_colorbar(order=1),
                  size=guide_legend(order=2,
@@ -1413,7 +1443,7 @@ for (category in categories) {
                                         "outside_taxid"=outside_taxid_label_color,
                                         "no_taxon"=no_taxon_label_color),
                                labels=c("Within requested taxids", "Outside requested taxids",
-                                        "No BLAST / no taxon annotation"),
+                                        "No hit"),
                                name="Taxon source") +
             guides(fill=guide_colorbar(order=1),
                    size=guide_legend(order=2,
