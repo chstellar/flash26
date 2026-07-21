@@ -999,16 +999,26 @@ for (category in categories) {
       mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED))*$")) %>%
       mutate(color=ifelse(has_real_label, "within_taxid", color)) %>%
       mutate(color=ifelse(str_detect(label, "\\(OTHER TAXA\\)"), "outside_taxid", color)) %>%
+      mutate(label_size = case_when(
+        str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)$") ~ 3.35,
+        nchar(label) <= 55 ~ 2.65,
+        nchar(label) <= 95 ~ 2.25,
+        TRUE ~ 1.85
+      )) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=120), width = 38)) %>%
       mutate(label = replace_na(label, ""))
     extendor_source_dt <- summ_dt %>%
       mutate(sequence = query) %>%
       left_join(outside_taxid_label_dt, by="sequence") %>%
+      left_join(category_compactor_summary_dt %>%
+                  select(cluster, feature, sequence, compactor_summary_label),
+                by=c("cluster", "feature", "sequence")) %>%
       mutate(has_within_taxid_signal =
                has_restricted_label(label) |
                has_restricted_label(label_blastp) |
                has_restricted_label(label_blast) |
                has_restricted_label(annotation) |
+               has_restricted_label(compactor_summary_label) |
                !is.na(identity) | !is.na(qcovs) |
                !is.na(`identity.y`) | !is.na(`qcovs.y`),
              has_outside_taxid_signal = has_restricted_label(outside_taxid_label)) %>%
@@ -1049,8 +1059,9 @@ for (category in categories) {
     p <- ggplot(plot_dt_top, aes(x=rank, y=coef_mag)) +
       geom_col(fill=histogram_bar_color) +
       geom_text(data=plot_dt_top,
-                aes(x=rank, y=coef_mag + 0.05, label=label, hjust=0),
-                angle=45, size=2.25, color="#222222") +
+                aes(x=rank, y=coef_mag + 0.05, label=label, hjust=0, size=label_size),
+                angle=45, color="#222222", show.legend=FALSE) +
+      scale_size_identity() +
       scale_y_continuous("Magnitude relative to\nlargest nonzero coefficient",
                          limits = c(0,1.6),
                          labels=scales::label_percent(), breaks=seq(0,1,0.25),
@@ -1337,6 +1348,12 @@ for (category in categories) {
                              labels=c("Within requested taxids", "Outside requested taxids",
                                       "No BLAST / no taxon annotation"),
                              name="Taxon source") +
+          guides(fill=guide_colorbar(order=1),
+                 size=guide_legend(order=2,
+                                   override.aes=list(shape=16, color="black",
+                                                     fill="black", alpha=1)),
+                 color=guide_legend(order=3,
+                                    override.aes=list(label="A", size=4))) +
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
           ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
           ggtitle(paste(category, my_cluster, sep=" | "),
@@ -1398,6 +1415,12 @@ for (category in categories) {
                                labels=c("Within requested taxids", "Outside requested taxids",
                                         "No BLAST / no taxon annotation"),
                                name="Taxon source") +
+            guides(fill=guide_colorbar(order=1),
+                   size=guide_legend(order=2,
+                                     override.aes=list(shape=16, color="black",
+                                                       fill="black", alpha=1)),
+                   color=guide_legend(order=3,
+                                      override.aes=list(label="A", size=4))) +
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
             ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
             ggtitle(paste(category, my_cluster, sep=" | "),
