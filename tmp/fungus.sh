@@ -1,0 +1,1 @@
+awk -F'\t' '{seq=$4; gsub(/[^ACGTNacgtn]/,"",seq); comp=$32 $33 $34 $35 $36; gsub(/NA|[[:space:]]/,"",comp); if (length(seq)>=31 && comp=="") print $2 "\t" substr(seq,length(seq)-30)}' fungus.tsv

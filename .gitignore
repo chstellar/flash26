@@ -6,8 +6,8 @@ slurm-*
 results/*
 src/*.tar
 tempClustalOmega.aln
-tmp
-tmp/*
+# tmp
+# tmp/*
 splash-*/
 benchmarks
 benchmarks/*
@@ -18,4 +18,4 @@ benchmarks/*
 example_data/
 containers/hyena_embedder.sif
 __pycache__/
-**/__pycache__/
+__pycache__/*
