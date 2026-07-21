@@ -59,6 +59,8 @@ message("plot_blast_annotations_each_feature.R build: robust-coef-parser-v1")
 known_causes = "NNNNNNNNNNNNNNN"
 within_taxid_label_color <- "#E64B35"
 outside_taxid_label_color <- "#4DBBD5"
+histogram_bar_color <- "#F8766D"
+no_taxon_label_color <- "#777777"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
@@ -999,18 +1001,27 @@ for (category in categories) {
       mutate(color=ifelse(str_detect(label, "\\(OTHER TAXA\\)"), "outside_taxid", color)) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=120), width = 38)) %>%
       mutate(label = replace_na(label, ""))
-    plot_stack_dt <- hist_label_dt %>%
-      filter(!is.na(max_coefficient)) %>%
-      mutate(coef_mag=max_coefficient/largest_coef) %>%
+    extendor_source_dt <- summ_dt %>%
+      mutate(sequence = query) %>%
+      left_join(outside_taxid_label_dt, by="sequence") %>%
+      mutate(has_within_taxid_signal =
+               has_restricted_label(label) |
+               has_restricted_label(label_blastp) |
+               has_restricted_label(label_blast) |
+               has_restricted_label(annotation) |
+               !is.na(identity) | !is.na(qcovs) |
+               !is.na(`identity.y`) | !is.na(`qcovs.y`),
+             has_outside_taxid_signal = has_restricted_label(outside_taxid_label)) %>%
       mutate(taxon_source = case_when(
-        str_detect(label, "\\(OTHER TAXA\\)") ~ "outside_taxid",
-        str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)$") ~ "no_taxon",
-        TRUE ~ "within_taxid"
+        has_within_taxid_signal ~ "within_taxid",
+        has_outside_taxid_signal ~ "outside_taxid",
+        TRUE ~ "no_taxon"
       )) %>%
-      group_by(cluster, feature, coef_mag, taxon_source) %>%
-      summarise(source_n=n(), .groups="drop_last") %>%
-      mutate(source_fraction=source_n/sum(source_n),
-             segment_height=coef_mag*source_fraction) %>%
+      distinct(cluster, feature, sequence, taxon_source)
+    plot_stack_dt <- extendor_source_dt %>%
+      group_by(cluster, feature, taxon_source) %>%
+      summarise(extendor_n=n(), .groups="drop_last") %>%
+      mutate(total_extendors=sum(extendor_n)) %>%
       ungroup() %>%
       inner_join(plot_dt %>% select(cluster, feature, rank), by=c("cluster", "feature"))
     message(paste0("Histogram rows for ", category, ": ",
@@ -1035,33 +1046,47 @@ for (category in categories) {
 
     plot_dt_top <- plot_dt %>% head(opt$num_hits)
     plot_stack_top <- plot_stack_dt %>% filter(rank %in% plot_dt_top$rank)
-    p <- ggplot() +
-      geom_col(data=plot_stack_top,
-               aes(x=rank, y=segment_height, fill=taxon_source),
-               position="stack") +
+    p <- ggplot(plot_dt_top, aes(x=rank, y=coef_mag)) +
+      geom_col(fill=histogram_bar_color) +
       geom_text(data=plot_dt_top,
                 aes(x=rank, y=coef_mag + 0.05, label=label, hjust=0),
-                angle=45, size=3, color="#222222") +
+                angle=45, size=2.25, color="#222222") +
       scale_y_continuous("Magnitude relative to\nlargest nonzero coefficient",
                          limits = c(0,1.6),
                          labels=scales::label_percent(), breaks=seq(0,1,0.25),
                          expand=c(0,0)) +
       xlab("Rank of nonzero coefficient (by magnitude)") +
-      scale_fill_manual(breaks=c("within_taxid","outside_taxid","no_taxon"),
-                        values=c("within_taxid"="#E64B35",
-                                 "outside_taxid"="#4DBBD5",
-                                 "no_taxon"="#777777"),
-                        labels=c("Within requested taxids", "Outside requested taxids",
-                                 "No taxon annotation"),
-                        name="Taxon source") +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
-              subtitle = hist_subtitle) +
+              subtitle = paste(c("Coefficient magnitude", hist_subtitle)[c("Coefficient magnitude", hist_subtitle) != ""],
+                               collapse="\n")) +
+      theme_pubr() +
+      theme(plot.subtitle = element_text(size=8, lineheight=0.95))
+
+    print(p)
+
+    p_stack <- ggplot(plot_stack_top,
+                      aes(x=rank, y=extendor_n, fill=taxon_source)) +
+      geom_col(position="stack") +
+      scale_y_continuous("Number of extendors",
+                         breaks=scales::breaks_pretty(n=6),
+                         expand=expansion(mult=c(0, 0.08))) +
+      xlab("Rank of nonzero coefficient (same order as previous histogram)") +
+      scale_x_continuous(breaks=seq(1,10,1)) +
+      scale_fill_manual(breaks=c("within_taxid","outside_taxid","no_taxon"),
+                        values=c("within_taxid"=histogram_bar_color,
+                                 "outside_taxid"=outside_taxid_label_color,
+                                 "no_taxon"=no_taxon_label_color),
+                        labels=c("Within requested taxids", "Outside requested taxids",
+                                 "No BLAST / no taxon annotation"),
+                        name="Taxon source") +
+      ggtitle(make_title,
+              subtitle="Extendor annotation source composition") +
       theme_pubr() +
       theme(legend.position="right",
             plot.subtitle = element_text(size=8, lineheight=0.95))
 
-    print(p)
+    print(p_stack)
 
     # select the top N coefficients
     interesting_clusters <- summ_dt %>% distinct(cluster, feature, max_coefficient) %>%
@@ -1247,7 +1272,11 @@ for (category in categories) {
         mutate(point_label_expr = ifelse(outside_taxid_only,
                                          make_plotmath_other_taxa_label(point_label),
                                          NA_character_)) %>%
-        mutate(point_label_color = ifelse(outside_taxid_only, "outside_taxid", "regular")) %>%
+        mutate(point_label_color = case_when(
+          outside_taxid_only ~ "outside_taxid",
+          `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ "no_taxon",
+          TRUE ~ "within_taxid"
+        )) %>%
         ungroup()
       if (!"total_samples" %in% colnames(p_sub)) {
         missing_class_cols <- setdiff(all_classes, colnames(p_sub))
@@ -1279,34 +1308,40 @@ for (category in categories) {
       if (is_quantitative_target) {
         p_sub <- p_sub %>% mutate(color_value = mean_metadata)
         p2 <- p_sub %>%
-          ggplot(aes(x=embedding, y=lev_dist, color=color_value, size=total_samples,
+          ggplot(aes(x=embedding, y=lev_dist, fill=color_value, size=total_samples,
                      label=point_label)) +
           geom_vline(xintercept = 0, lty="dashed") +
-          geom_point(stroke=1.4) +
+          geom_point(shape=21, color="grey25", stroke=0.35) +
           scale_y_continuous(breaks=scales::breaks_width(1), minor_breaks=NULL) +
           scale_size_continuous(trans = "log", name = "Total Samples",
                                 breaks = c(1, 10, 100, 1000, 10000),
                                 limits = c(1, 10000), labels = scales::label_log()) +
-          ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
-                                   size=3.2, color=within_taxid_label_color, max.overlaps=Inf,
+          ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color != "outside_taxid"),
+                                   aes(color=point_label_color),
+                                   size=3.2, max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
                                    segment.size=0.25, box.padding=0.75,
                                    point.padding=0.8, force=6, force_pull=0.08) +
           ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
-                                   aes(label=point_label_expr),
-                                   size=3.2, color=outside_taxid_label_color, max.overlaps=Inf,
+                                   aes(label=point_label_expr, color=point_label_color),
+                                   size=3.2, max.overlaps=Inf,
                                    min.segment.length=0, segment.color="grey45",
                                    segment.size=0.25, box.padding=0.75,
                                    point.padding=0.8, force=6, force_pull=0.08, parse=TRUE) +
-          scale_color_gradient(paste0("Mean\n", metadata_source_col),
-                               low = "blue", high = "red") +
+          scale_fill_gradient(paste0("Mean\n", metadata_source_col),
+                              low = "blue", high = "red") +
+          scale_color_manual(breaks=c("within_taxid","outside_taxid","no_taxon"),
+                             values=c("within_taxid"=histogram_bar_color,
+                                      "outside_taxid"=outside_taxid_label_color,
+                                      "no_taxon"=no_taxon_label_color),
+                             labels=c("Within requested taxids", "Outside requested taxids",
+                                      "No BLAST / no taxon annotation"),
+                             name="Taxon source") +
           theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
           ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
           ggtitle(paste(category, my_cluster, sep=" | "),
                   subtitle=paste("Color: mean observed", metadata_source_col)) +
-          theme(panel.grid.minor.y = element_blank(),
-                plot.caption = element_text(hjust=0, size=8, color="grey30")) +
-          labs(caption="Text color: red = within requested taxids; blue = outside requested taxids")
+          theme(panel.grid.minor.y = element_blank())
         print(p2)
         summ_out_dt <- p_sub %>% select(-label2) %>%
           mutate(metadata = paste0("mean_", metadata_source_col, ":", round(mean_metadata, 6),
@@ -1334,34 +1369,40 @@ for (category in categories) {
                                              !!sym(class_to_plot) / total_samples,
                                              NA_real_))
           p2 <- p_class %>%
-            ggplot(aes(x=embedding, y=lev_dist, color=class_proportion,
+            ggplot(aes(x=embedding, y=lev_dist, fill=class_proportion,
                        size=total_samples, label=point_label)) +
             geom_vline(xintercept = 0, lty="dashed") +
-            geom_point(stroke=1.4) +
+            geom_point(shape=21, color="grey25", stroke=0.35) +
             scale_y_continuous(breaks=scales::breaks_width(1), minor_breaks=NULL) +
             scale_size_continuous(trans = "log", name = "Total Samples",
                                   breaks = c(1, 10, 100, 1000, 10000),
                                   limits = c(1, 10000), labels = scales::label_log()) +
-            ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "regular"),
-                                     size=3.2, color=within_taxid_label_color, max.overlaps=Inf,
+            ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color != "outside_taxid"),
+                                     aes(color=point_label_color),
+                                     size=3.2, max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
                                      segment.size=0.25, box.padding=0.75,
                                      point.padding=0.8, force=6, force_pull=0.08) +
             ggrepel::geom_text_repel(data = \(x) filter(x, point_label_color == "outside_taxid"),
-                                     aes(label=point_label_expr),
-                                     size=3.2, color=outside_taxid_label_color, max.overlaps=Inf,
+                                     aes(label=point_label_expr, color=point_label_color),
+                                     size=3.2, max.overlaps=Inf,
                                      min.segment.length=0, segment.color="grey45",
                                      segment.size=0.25, box.padding=0.75,
                                      point.padding=0.8, force=6, force_pull=0.08, parse=TRUE) +
-            scale_color_gradient(paste0("Proportion\n", class_to_plot),
-                                 low = "blue", high = "red", limits = c(0, 1)) +
+            scale_fill_gradient(paste0("Proportion\n", class_to_plot),
+                                low = "blue", high = "red", limits = c(0, 1)) +
+            scale_color_manual(breaks=c("within_taxid","outside_taxid","no_taxon"),
+                               values=c("within_taxid"=histogram_bar_color,
+                                        "outside_taxid"=outside_taxid_label_color,
+                                        "no_taxon"=no_taxon_label_color),
+                               labels=c("Within requested taxids", "Outside requested taxids",
+                                        "No BLAST / no taxon annotation"),
+                               name="Taxon source") +
             theme_minimal() + xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
             ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
             ggtitle(paste(category, my_cluster, sep=" | "),
                     subtitle=paste("Color: proportion", class_to_plot)) +
-            theme(panel.grid.minor.y = element_blank(),
-                  plot.caption = element_text(hjust=0, size=8, color="grey30")) +
-            labs(caption="Text color: red = within requested taxids; blue = outside requested taxids")
+            theme(panel.grid.minor.y = element_blank())
           print(p2)
         }
 
