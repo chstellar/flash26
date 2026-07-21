@@ -53,7 +53,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: compactor-finite-coef-v2")
+message("plot_blast_annotations_each_feature.R build: robust-coef-parser-v1")
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
@@ -111,8 +111,14 @@ parse_coef_values <- function(value) {
   if (is.na(value)) {
     return(numeric(0))
   }
-  value <- gsub("^\\[|\\]$", "", value)
-  nums <- suppressWarnings(as.numeric(strsplit(value, ",", fixed = TRUE)[[1]]))
+  # Coefficients appear in a few serialized shapes across old/new FLASH runs:
+  # [-0.1,0.2], c(-0.1, 0.2), "-0.1 0.2", or list-like scalar text.
+  # Extract numeric tokens directly so plotting does not depend on one delimiter.
+  nums_chr <- str_extract_all(
+    value,
+    "[-+]?(?:\\d*\\.\\d+|\\d+\\.?\\d*)(?:[eE][-+]?\\d+)?"
+  )[[1]]
+  nums <- suppressWarnings(as.numeric(nums_chr))
   nums[!is.na(nums)]
 }
 
