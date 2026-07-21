@@ -57,8 +57,8 @@ message("plot_blast_annotations_each_feature.R build: compactor-finite-coef-v2")
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
-within_taxid_label_color <- "#0072B2"
-outside_taxid_label_color <- "#D55E00"
+within_taxid_label_color <- "#E64B35"
+outside_taxid_label_color <- "#4DBBD5"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
@@ -976,6 +976,20 @@ for (category in categories) {
       mutate(color=ifelse(str_detect(label, "\\(OTHER TAXA\\)"), "outside_taxid", color)) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=120), width = 38)) %>%
       mutate(label = replace_na(label, ""))
+    plot_stack_dt <- hist_label_dt %>%
+      filter(!is.na(max_coefficient)) %>%
+      mutate(coef_mag=max_coefficient/largest_coef) %>%
+      mutate(taxon_source = case_when(
+        str_detect(label, "\\(OTHER TAXA\\)") ~ "outside_taxid",
+        str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)$") ~ "no_taxon",
+        TRUE ~ "within_taxid"
+      )) %>%
+      group_by(cluster, feature, coef_mag, taxon_source) %>%
+      summarise(source_n=n(), .groups="drop_last") %>%
+      mutate(source_fraction=source_n/sum(source_n),
+             segment_height=coef_mag*source_fraction) %>%
+      ungroup() %>%
+      inner_join(plot_dt %>% select(cluster, feature, rank), by=c("cluster", "feature"))
     message(paste0("Histogram rows for ", category, ": ",
                    nrow(plot_dt), " finite rows from ",
                    nrow(hist_label_dt), " labels."))
@@ -996,23 +1010,23 @@ for (category in categories) {
     dataset <- str_extract(opt$nonzero_annotations, "results/([A-Za-z\\d-]+)/filter", group=1)
     make_title <- paste(category, "in", dataset)
 
-    p <- plot_dt %>% head(opt$num_hits) %>%
-      ggplot(aes(x=rank, y=coef_mag, fill=color, label=label)) +
-      geom_col() +
-      ggrepel::geom_text_repel(aes(y=coef_mag + 0.05),
-                               angle=28, hjust=0, size=3.1, color="#1A1A1A",
-                               max.overlaps=Inf, min.segment.length=0,
-                               segment.color="grey45", segment.size=0.25,
-                               box.padding=0.55, point.padding=0.35,
-                               force=5, force_pull=0.15, direction="both") +
+    plot_dt_top <- plot_dt %>% head(opt$num_hits)
+    plot_stack_top <- plot_stack_dt %>% filter(rank %in% plot_dt_top$rank)
+    p <- ggplot() +
+      geom_col(data=plot_stack_top,
+               aes(x=rank, y=segment_height, fill=taxon_source),
+               position="stack") +
+      geom_text(data=plot_dt_top,
+                aes(x=rank, y=coef_mag + 0.05, label=label, hjust=0),
+                angle=45, size=3, color="#222222") +
       scale_y_continuous("Magnitude relative to\nlargest nonzero coefficient",
-                         limits = c(0,1.8),
+                         limits = c(0,1.6),
                          labels=scales::label_percent(), breaks=seq(0,1,0.25),
                          expand=c(0,0)) +
       xlab("Rank of nonzero coefficient (by magnitude)") +
       scale_fill_manual(breaks=c("within_taxid","outside_taxid","no_taxon"),
-                        values=c("within_taxid"="#0072B2",
-                                 "outside_taxid"="#D55E00",
+                        values=c("within_taxid"="#E64B35",
+                                 "outside_taxid"="#4DBBD5",
                                  "no_taxon"="#777777"),
                         labels=c("Within requested taxids", "Outside requested taxids",
                                  "No taxon annotation"),
@@ -1021,10 +1035,8 @@ for (category in categories) {
       ggtitle(make_title,
               subtitle = hist_subtitle) +
       theme_pubr() +
-      coord_cartesian(clip="off") +
       theme(legend.position="right",
-            plot.subtitle = element_text(size=8, lineheight=0.95),
-            plot.margin = margin(10, 35, 10, 10))
+            plot.subtitle = element_text(size=8, lineheight=0.95))
 
     print(p)
 
@@ -1214,6 +1226,15 @@ for (category in categories) {
                                          NA_character_)) %>%
         mutate(point_label_color = ifelse(outside_taxid_only, "outside_taxid", "regular")) %>%
         ungroup()
+      if (!"total_samples" %in% colnames(p_sub)) {
+        missing_class_cols <- setdiff(all_classes, colnames(p_sub))
+        for (missing_class_col in missing_class_cols) {
+          p_sub[[missing_class_col]] <- 0
+        }
+        p_sub <- p_sub %>%
+          mutate(across(all_of(all_classes), \(x) replace_na(x, 0))) %>%
+          mutate(total_samples = rowSums(across(all_of(all_classes))))
+      }
       message(paste0("Detail rows for ", category, " ", my_cluster, " ", my_feature,
                      ": rows=", nrow(p_sub),
                      ", finite_embedding=", sum(is.finite(p_sub$embedding), na.rm=TRUE),
@@ -1262,7 +1283,7 @@ for (category in categories) {
                   subtitle=paste("Color: mean observed", metadata_source_col)) +
           theme(panel.grid.minor.y = element_blank(),
                 plot.caption = element_text(hjust=0, size=8, color="grey30")) +
-          labs(caption="Text color: blue = within requested taxids; orange = outside requested taxids")
+          labs(caption="Text color: red = within requested taxids; blue = outside requested taxids")
         print(p2)
         summ_out_dt <- p_sub %>% select(-label2) %>%
           mutate(metadata = paste0("mean_", metadata_source_col, ":", round(mean_metadata, 6),
@@ -1317,7 +1338,7 @@ for (category in categories) {
                     subtitle=paste("Color: proportion", class_to_plot)) +
             theme(panel.grid.minor.y = element_blank(),
                   plot.caption = element_text(hjust=0, size=8, color="grey30")) +
-            labs(caption="Text color: blue = within requested taxids; orange = outside requested taxids")
+            labs(caption="Text color: red = within requested taxids; blue = outside requested taxids")
           print(p2)
         }
 
