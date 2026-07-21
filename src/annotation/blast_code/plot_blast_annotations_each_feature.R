@@ -60,7 +60,7 @@ known_causes = "NNNNNNNNNNNNNNN"
 within_taxid_label_color <- "#E64B35"
 outside_taxid_label_color <- "#4DBBD5"
 histogram_bar_color <- "#F8766D"
-no_taxon_label_color <- "#009E73"
+no_taxon_label_color <- "#7A7A7A"
 
 # # testing
 # setwd("/oak/stanford/groups/horence/dcotter1/projects/metaSPLASH_pipeline")
@@ -1001,9 +1001,9 @@ for (category in categories) {
       mutate(color=ifelse(str_detect(label, "\\(OTHER TAXA\\)"), "outside_taxid", color)) %>%
       mutate(label_size = case_when(
         str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)$") ~ 3.35,
-        nchar(label) <= 55 ~ 2.65,
-        nchar(label) <= 95 ~ 2.25,
-        TRUE ~ 1.85
+        nchar(label) <= 55 ~ 2.85,
+        nchar(label) <= 95 ~ 2.55,
+        TRUE ~ 2.25
       )) %>%
       mutate(label = str_wrap(preserve_compactor_suffix(label, width=120), width = 38)) %>%
       mutate(label = replace_na(label, ""))
