@@ -1386,7 +1386,15 @@ unannotated_summary <- all_features_summary %>%
   arrange(desc(metadata_specificity_score), desc(total_samples), metadata_normalized_entropy) %>%
   relocate(metadata_category, feature, cluster)
 
-all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$output, ".pdf", "_summary.tsv"))
+default_summary_path <- str_replace(opt$output, ".pdf", "_summary.tsv")
+if (nchar(opt$compactor_summary) > 0) {
+  if (file.exists(default_summary_path)) {
+    unlink(default_summary_path)
+  }
+  message(paste0("Using compactor-filled summary as canonical summary: ", opt$compactor_summary))
+} else {
+  all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = default_summary_path)
+}
 unannotated_summary %>% write_tsv(file = str_replace(opt$output, ".pdf", "_unannotated.tsv"))
 all_blastp_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(opt$nonzero_annotations, "blastp_annotated.tsv$", "blastp_all.tsv"))
 all_blast_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = str_replace(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations), "blast_annotated.tsv$", "blast_all.tsv"))
