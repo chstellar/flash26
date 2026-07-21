@@ -10,12 +10,20 @@
 
 set -euo pipefail
 
+if command -v ml >/dev/null 2>&1; then
+  ml purge
+elif command -v module >/dev/null 2>&1; then
+  module purge
+fi
+unset PYTHONPATH PYTHONHOME
+
 FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
 FLASH_PY_ENV="${FLASH_PY_ENV:-$FLASH_CONDA/envs/biopython_env-R}"
 if [[ -f "$FLASH_CONDA/bin/activate" ]]; then
   source "$FLASH_CONDA/bin/activate" "$FLASH_PY_ENV"
 fi
 PYTHON="${PYTHON:-python}"
+export MPLBACKEND="${MPLBACKEND:-Agg}"
 
 join_csv() { local IFS=,; echo "$*"; }
 
