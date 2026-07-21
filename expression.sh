@@ -10,20 +10,10 @@
 
 set -euo pipefail
 
-if command -v ml >/dev/null 2>&1; then
-  ml purge
-elif command -v module >/dev/null 2>&1; then
-  module purge
-fi
-unset PYTHONPATH PYTHONHOME
-
-FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
-FLASH_PY_ENV="${FLASH_PY_ENV:-$FLASH_CONDA/envs/biopython_env-R}"
-if [[ -f "$FLASH_CONDA/bin/activate" ]]; then
-  source "$FLASH_CONDA/bin/activate" "$FLASH_PY_ENV"
-fi
-PYTHON="${PYTHON:-python}"
-export MPLBACKEND="${MPLBACKEND:-Agg}"
+ml purge
+eval "$(/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/bin/conda shell.bash hook)" 
+eval "$(mamba shell hook --shell bash)"
+mamba activate biopython_env-R
 
 join_csv() { local IFS=,; echo "$*"; }
 
@@ -79,7 +69,7 @@ case "$PRESET" in
 esac
 
 mkdir -p "$(dirname "$OUT")" logs
-"$PYTHON" expression.py \
+python3 expression.py \
   --anchor "$ANCHOR" --satc "$SATC" --sample_order "$SAMPLE_ORDER" \
   --output_prefix "$OUT" --plot_mode "$PLOT_MODE" \
   --grid_cols "${GRID_COLS:-3}" --grid_rows "${GRID_ROWS:-3}" \
