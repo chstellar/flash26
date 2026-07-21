@@ -2,10 +2,9 @@
 """
 Prepare and apply compactor rescue annotations for FLASH BLAST plots.
 
-This script is intentionally small glue around the existing compactor annotation
-helpers in resfungi_compactor_blast.py.  It keeps the Snakemake rules readable
-while preserving the parsing and label-selection behavior that has already been
-debugged for the manual rescue workflow.
+This script is intentionally small glue around packaged FLASH compactor
+reannotation helpers. It keeps the Snakemake rules readable while preserving
+the parsing and label-selection behavior used by the automated rescue workflow.
 """
 
 import argparse
@@ -14,20 +13,10 @@ import sys
 from pathlib import Path
 
 
-def find_repo_root(start_path):
-    for parent in [start_path, *start_path.parents]:
-        if (parent / "resfungi_compactor_blast.py").exists():
-            return parent
-    raise RuntimeError(
-        "Could not locate resfungi_compactor_blast.py from "
-        f"{start_path}. Run this script from the FLASH repository checkout."
-    )
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
-
-REPO_ROOT = find_repo_root(Path(__file__).resolve())
-sys.path.insert(0, str(REPO_ROOT))
-
-import resfungi_compactor_blast as rescue  # noqa: E402
+import compactor_reannotation_lib as rescue  # noqa: E402
 
 
 UNANNOTATED_LABELS = {
