@@ -533,7 +533,9 @@ read_optional_tsv <- function(path) {
 ensure_annotation_columns <- function(tbl) {
   fallback_cols <- c("metadata_category", "feature", "cluster", "query", "accuracy",
                      "classes", "coefficients", "identity", "qcovs", "confounders",
-                     "stitle", "features", "features_10000_window", "features_all")
+                     "stitle", "features", "features_10000_window", "features_all",
+                     "first_class", "first_coef", "second_coef", "second_class",
+                     "max_coefficient")
   for (col in fallback_cols) {
     if (!col %in% colnames(tbl)) {
       tbl[[col]] <- NA_character_
@@ -547,7 +549,24 @@ ensure_annotation_columns <- function(tbl) {
   tbl$accuracy <- suppressWarnings(as.numeric(tbl$accuracy))
   tbl$identity <- suppressWarnings(as.numeric(tbl$identity))
   tbl$qcovs <- suppressWarnings(as.numeric(tbl$qcovs))
+  tbl$first_coef <- suppressWarnings(as.numeric(tbl$first_coef))
+  tbl$second_coef <- suppressWarnings(as.numeric(tbl$second_coef))
+  tbl$max_coefficient <- suppressWarnings(as.numeric(tbl$max_coefficient))
   tbl
+}
+
+with_plot_coefficients <- function(tbl) {
+  tbl %>%
+    mutate(parsed_first_coef = get_first_coef(coefficients),
+           parsed_second_coef = get_nth_coef(coefficients, 2),
+           parsed_first_class = get_first_class(classes),
+           parsed_second_class = get_nth_class(classes, 2)) %>%
+    mutate(first_coef = coalesce(suppressWarnings(as.numeric(first_coef)), parsed_first_coef),
+           second_coef = coalesce(suppressWarnings(as.numeric(second_coef)), parsed_second_coef),
+           first_class = coalesce(first_class, parsed_first_class),
+           second_class = coalesce(second_class, parsed_second_class),
+           max_coefficient = coalesce(suppressWarnings(as.numeric(max_coefficient)), abs(first_coef))) %>%
+    select(-parsed_first_coef, -parsed_second_coef, -parsed_first_class, -parsed_second_class)
 }
 
 has_restricted_label <- function(label) {
@@ -798,9 +817,8 @@ for (category in categories) {
     new_dt <- dt %>% filter(is.na(query)) %>% select(-query) %>% left_join(all_clusters %>% mutate(query = paste0(cluster, "_", seq)) %>% select(-seq), by="cluster", relationship="many-to-many") %>%
       filter(!is.na(query))
     summ_dt <- bind_rows(dt, new_dt) %>% filter(!is.na(query)) %>% filter(metadata_category==category) %>%
-      mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>%
-      mutate(second_coef = get_nth_coef(coefficients,2), second_class=get_nth_class(classes, 2)) %>%
-      arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
+      with_plot_coefficients() %>%
+      arrange(-max_coefficient) %>%
       mutate(annotation = str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
       mutate(annotation = ifelse(has_restricted_label(compactor_annotation),
                                  compactor_plot_label(compactor_annotation), annotation)) %>%
@@ -835,8 +853,8 @@ for (category in categories) {
         separate_longer_delim(feature_text, delim = "},") %>%
         mutate(products=extract_feature_qualifier(feature_text, "product")) %>%
         mutate(genes=extract_feature_qualifier(feature_text, "gene")) %>%
-        select(-feature_text) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>%
-        arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
+        select(-feature_text) %>% with_plot_coefficients() %>%
+        arrange(-max_coefficient) %>%
         rowwise() %>%
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
@@ -938,8 +956,7 @@ for (category in categories) {
         !is.na(identity) | !is.na(qcovs) ~ "UNANNOTATED",
         TRUE ~ NA_character_
       )) %>%
-      mutate(first_coef=get_first_coef(coefficients)) %>%
-      mutate(max_coefficient=abs(first_coef)) %>%
+      with_plot_coefficients() %>%
       select(cluster, feature, max_coefficient, label=hist_label)
     hist_compactor_label_dt <- category_compactor_summary_dt %>%
       left_join(summ_dt %>% distinct(cluster, feature, max_coefficient),
