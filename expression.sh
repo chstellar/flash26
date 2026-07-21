@@ -1,11 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/bash
+#
 #SBATCH --job-name=anchor_expression
-#SBATCH --partition=horence,owners,normal
+#SBATCH --partition=horence
 #SBATCH --time=2:00:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --output=logs/anchor_expression.%j.out
-#SBATCH --error=logs/anchor_expression.%j.err
+#SBATCH --mail-type=FAIL,END
+#SBATCH --mail-user=chesteryu@stanford.edu
 
 set -euo pipefail
 

@@ -1,0 +1,29 @@
+ml python/3.9.0 py-pandas/2.0.1_py39
+
+python3 - <<'PY'
+import pandas as pd
+base="results/260720-00-3ants-challenge/filter1/noCluster/hyena/normalized/260720-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8"
+files=[
+  base+"_nonzero_coefficients_blastp_annotated_compactor.tsv",
+  base+"_nonzero_coefficients_blast_annotated_compactor.tsv",
+  base+"_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv",
+]
+for f in files:
+    print("\n###", f)
+    df=pd.read_csv(f, sep="\t", dtype=str)
+    print("shape", df.shape)
+    print("columns", list(df))
+    keep=[c for c in ["metadata_category","feature","cluster","query","sequence","classes","coefficients","embedding","Blast Label","compactor_annotation","identity","qcovs"] if c in df.columns]
+    print(df[keep].head(5).to_csv(sep="\t", index=False))
+PY
+
+python3 - <<'PY'
+import pandas as pd
+base="results/260720-00-3ants-challenge/filter1/noCluster/hyena/normalized/260720-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8"
+for suffix in ["_nonzero_coefficients_blastp_annotated_compactor.tsv","_nonzero_coefficients_blast_annotated_compactor.tsv","_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv"]:
+    f=base+suffix
+    df=pd.read_csv(f, sep="\t", dtype=str)
+    print("\n###", suffix)
+    sub=df[df.get("metadata_category","").eq("fungus_species")].head(3)
+    print(sub.to_csv(sep="\t", index=False))
+PY
