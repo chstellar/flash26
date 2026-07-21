@@ -1099,8 +1099,7 @@ for (category in categories) {
       xlab("Rank of nonzero coefficient (by magnitude)") +
       scale_x_continuous(breaks=seq(1,10,1)) +
       ggtitle(make_title,
-              subtitle = paste(c("Coefficient magnitude", hist_subtitle)[c("Coefficient magnitude", hist_subtitle) != ""],
-                               collapse="\n")) +
+              subtitle = hist_subtitle) +
       theme_pubr() +
       theme(plot.subtitle = element_text(size=8, lineheight=0.95))
 
@@ -1122,7 +1121,7 @@ for (category in categories) {
                                  "No hit"),
                         name="Taxon source") +
       ggtitle(make_title,
-              subtitle="Extendor annotation source composition") +
+              subtitle = hist_subtitle) +
       theme_pubr() +
       theme(legend.position="right",
             plot.subtitle = element_text(size=8, lineheight=0.95))
