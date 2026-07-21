@@ -2,9 +2,9 @@
 #
 #SBATCH --job-name=anchor_expression
 #SBATCH --partition=horence
-#SBATCH --time=2:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=16G
+#SBATCH --mem=4G
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu
 
