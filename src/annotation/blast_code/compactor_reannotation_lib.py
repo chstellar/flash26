@@ -645,6 +645,10 @@ def read_annotation_table(path, mode, source):
             qcovs = row.get("qcovs", "NA")
             species_origin = species_from_stitle(row.get("stitle"))
             staxids = row.get("staxids", "NA")
+            blast_subject_id = row.get("subject", row.get("sseqid", "NA"))
+            blast_accession = row.get("sacc", row.get("NCBI_protein_accession", "NA"))
+            ncbi_protein_accession = row.get("NCBI_protein_accession", "NA")
+            uniprot_accession = row.get("UniProt_accession", "NA")
             annotations[query].append(
                 {
                     "annotation_label": label,
@@ -657,12 +661,18 @@ def read_annotation_table(path, mode, source):
                     "qcovs": qcovs,
                     "species_origin": species_origin,
                     "staxids": staxids,
+                    "blast_subject_id": blast_subject_id,
+                    "blast_accession": blast_accession,
+                    "ncbi_protein_accession": ncbi_protein_accession,
+                    "uniprot_accession": uniprot_accession,
                     "raw_annotation": raw_annotation,
                     f"{source}_{mode}_label": label,
                     f"{source}_{mode}_identity": identity,
                     f"{source}_{mode}_qcovs": qcovs,
                     f"{source}_{mode}_species": species_origin,
                     f"{source}_{mode}_staxids": staxids,
+                    f"{source}_{mode}_subject_id": blast_subject_id,
+                    f"{source}_{mode}_accession": blast_accession,
                 }
             )
     return annotations
@@ -686,6 +696,10 @@ def no_hit_entry():
         "qcovs": "NA",
         "species_origin": "NA",
         "staxids": "NA",
+        "blast_subject_id": "NA",
+        "blast_accession": "NA",
+        "ncbi_protein_accession": "NA",
+        "uniprot_accession": "NA",
         "raw_annotation": "NA",
     }
 
@@ -710,6 +724,10 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "qcovs",
         "species_origin",
         "staxids",
+        "blast_subject_id",
+        "blast_accession",
+        "ncbi_protein_accession",
+        "uniprot_accession",
         "raw_annotation",
         "restricted_blastp_label",
         "restricted_blast_label",
@@ -723,6 +741,14 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "restricted_blast_staxids",
         "unrestricted_blastp_staxids",
         "unrestricted_blast_staxids",
+        "restricted_blastp_subject_id",
+        "restricted_blast_subject_id",
+        "unrestricted_blastp_subject_id",
+        "unrestricted_blast_subject_id",
+        "restricted_blastp_accession",
+        "restricted_blast_accession",
+        "unrestricted_blastp_accession",
+        "unrestricted_blast_accession",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     source_counts = defaultdict(int)
@@ -858,6 +884,10 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "qcovs",
         "species_origin",
         "staxids",
+        "blast_subject_id",
+        "blast_accession",
+        "ncbi_protein_accession",
+        "uniprot_accession",
         "raw_annotation",
         "restricted_blastp_label",
         "restricted_blast_label",
@@ -871,6 +901,14 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "restricted_blast_staxids",
         "unrestricted_blastp_staxids",
         "unrestricted_blast_staxids",
+        "restricted_blastp_subject_id",
+        "restricted_blast_subject_id",
+        "unrestricted_blastp_subject_id",
+        "unrestricted_blast_subject_id",
+        "restricted_blastp_accession",
+        "restricted_blast_accession",
+        "unrestricted_blastp_accession",
+        "unrestricted_blast_accession",
         "seed_source",
         "raw_seed_row",
     ]
@@ -964,6 +1002,10 @@ def read_seed_compactor_annotation_map(path):
                 "raw_annotation": row.get("raw_annotation", "NA"),
                 "species_origin": row.get("species_origin", "NA"),
                 "staxids": row.get("staxids", "NA"),
+                "blast_subject_id": row.get("blast_subject_id", "NA"),
+                "blast_accession": row.get("blast_accession", "NA"),
+                "ncbi_protein_accession": row.get("ncbi_protein_accession", "NA"),
+                "uniprot_accession": row.get("uniprot_accession", "NA"),
                 "compactor_query": row.get("compactor_query", "NA"),
                 "compactor": row.get("compactor", "NA"),
                 "compactor_length": row.get("compactor_length", "NA"),
@@ -1000,6 +1042,10 @@ def compactor_hit_from_row(row):
         "raw_annotation": row.get("raw_annotation", "NA"),
         "species_origin": row.get("species_origin", "NA"),
         "staxids": row.get("staxids", "NA"),
+        "blast_subject_id": row.get("blast_subject_id", "NA"),
+        "blast_accession": row.get("blast_accession", "NA"),
+        "ncbi_protein_accession": row.get("ncbi_protein_accession", "NA"),
+        "uniprot_accession": row.get("uniprot_accession", "NA"),
         "compactor_query": row.get("query") or row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
         "compactor_length": row.get("length") or row.get("compactor_length", "NA"),
@@ -1307,6 +1353,18 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
     row["compactor_species"] = compactor_hit.get("species_origin", "NA")
     row["compactor_staxids"] = compactor_hit.get("staxids", "NA")
+    row["compactor_blast_subject_id"] = compactor_hit.get("blast_subject_id", "NA")
+    row["compactor_blast_accession"] = compactor_hit.get("blast_accession", "NA")
+    row["compactor_ncbi_protein_accession"] = compactor_hit.get("ncbi_protein_accession", "NA")
+    row["compactor_uniprot_accession"] = compactor_hit.get("uniprot_accession", "NA")
+    row["blast_subject_id_origin"] = compactor_hit.get("blast_subject_id", "NA")
+    row["blast_accession_origin"] = compactor_hit.get("blast_accession", "NA")
+    row["blast_annotation_source_id"] = (
+        compactor_hit.get("blast_accession")
+        or compactor_hit.get("blast_subject_id")
+        or compactor_hit.get("staxids")
+        or "NA"
+    )
     return True
 
 
@@ -1357,6 +1415,13 @@ def fill_plot_annotation_tsv(
             "compactor_raw_annotation",
             "compactor_species",
             "compactor_staxids",
+            "compactor_blast_subject_id",
+            "compactor_blast_accession",
+            "compactor_ncbi_protein_accession",
+            "compactor_uniprot_accession",
+            "blast_subject_id_origin",
+            "blast_accession_origin",
+            "blast_annotation_source_id",
         ):
             if extra_col not in fieldnames:
                 fieldnames.append(extra_col)
@@ -1444,9 +1509,34 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
             "compactor_raw_annotation",
             "compactor_species",
             "compactor_staxids",
+            "compactor_blast_subject_id",
+            "compactor_blast_accession",
+            "compactor_ncbi_protein_accession",
+            "compactor_uniprot_accession",
+            "blast_subject_id_origin",
+            "blast_accession_origin",
+            "blast_annotation_source_id",
         ):
             if col not in fieldnames:
                 fieldnames.append(col)
+        trace_columns = [
+            "blast_annotation_source_id",
+            "blast_accession_origin",
+            "blast_subject_id_origin",
+            "compactor_blast_accession",
+            "compactor_blast_subject_id",
+            "compactor_ncbi_protein_accession",
+            "compactor_uniprot_accession",
+        ]
+        fieldnames = [col for col in fieldnames if col not in trace_columns]
+        if "blast_staxids_origin" in fieldnames:
+            insert_after = "blast_staxids_origin"
+        elif "Blast Label" in fieldnames:
+            insert_after = "Blast Label"
+        else:
+            insert_after = None
+        insert_at = fieldnames.index(insert_after) + 1 if insert_after in fieldnames else len(fieldnames)
+        fieldnames[insert_at:insert_at] = trace_columns
         with open(output_path, "w", newline="") as out_handle:
             writer = csv.DictWriter(out_handle, delimiter="\t", fieldnames=fieldnames)
             writer.writeheader()
@@ -1472,6 +1562,18 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
                     row["compactor_species"] = compactor_hit.get("species_origin", "NA")
                     row["compactor_staxids"] = compactor_hit.get("staxids", "NA")
+                    row["compactor_blast_subject_id"] = compactor_hit.get("blast_subject_id", "NA")
+                    row["compactor_blast_accession"] = compactor_hit.get("blast_accession", "NA")
+                    row["compactor_ncbi_protein_accession"] = compactor_hit.get("ncbi_protein_accession", "NA")
+                    row["compactor_uniprot_accession"] = compactor_hit.get("uniprot_accession", "NA")
+                    row["blast_subject_id_origin"] = compactor_hit.get("blast_subject_id", "NA")
+                    row["blast_accession_origin"] = compactor_hit.get("blast_accession", "NA")
+                    row["blast_annotation_source_id"] = (
+                        compactor_hit.get("blast_accession")
+                        or compactor_hit.get("blast_subject_id")
+                        or compactor_hit.get("staxids")
+                        or "NA"
+                    )
                     filled += 1
                 else:
                     row.setdefault("compactor_annotation", "NA")
@@ -1481,6 +1583,20 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row.setdefault("compactor_raw_annotation", "NA")
                     row.setdefault("compactor_species", "NA")
                     row.setdefault("compactor_staxids", "NA")
+                    row.setdefault("compactor_blast_subject_id", "NA")
+                    row.setdefault("compactor_blast_accession", "NA")
+                    row.setdefault("compactor_ncbi_protein_accession", "NA")
+                    row.setdefault("compactor_uniprot_accession", "NA")
+                    row.setdefault("blast_subject_id_origin", row.get("blast_subject_id_origin", "NA"))
+                    row.setdefault("blast_accession_origin", row.get("blast_accession_origin", "NA"))
+                    row.setdefault(
+                        "blast_annotation_source_id",
+                        row.get("blast_annotation_source_id")
+                        or row.get("blast_accession_origin")
+                        or row.get("blast_subject_id_origin")
+                        or row.get("blast_staxids_origin")
+                        or "NA",
+                    )
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
     print(f"Filled {filled} unresolved plot summary rows with compactor annotations in {output_path}")
     return output_path, filled

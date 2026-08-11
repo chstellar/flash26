@@ -53,7 +53,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: robust-coef-parser-v1")
+message("plot_blast_annotations_each_feature.R build: robust-reblast-schema-v2")
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
@@ -561,11 +561,39 @@ read_optional_tsv <- function(path) {
   fread(path)
 }
 
+ensure_columns <- function(tbl, cols) {
+  tbl <- as_tibble(tbl)
+  for (col in cols) {
+    if (!col %in% colnames(tbl)) {
+      tbl[[col]] <- NA_character_
+    }
+  }
+  tbl
+}
+
+normalize_reblast_table <- function(tbl, mode=c("blast", "blastp")) {
+  mode <- match.arg(mode)
+  common_cols <- c("metadata_category", "query", "stitle", "staxids", "identity", "qcovs",
+                   "subject", "sacc", "NCBI_protein_accession", "UniProt_accession")
+  blast_cols <- c("features", "features_all", "features_10000_window")
+  cols <- if (mode == "blast") c(common_cols, blast_cols) else common_cols
+  tbl <- ensure_columns(tbl, cols)
+  for (col in cols) {
+    tbl[[col]] <- vapply(seq_len(nrow(tbl)), function(i) coerce_scalar_text(tbl[[col]][[i]]), character(1))
+  }
+  tbl$identity <- suppressWarnings(as.numeric(tbl$identity))
+  tbl$qcovs <- suppressWarnings(as.numeric(tbl$qcovs))
+  tbl
+}
+
 ensure_annotation_columns <- function(tbl) {
   fallback_cols <- c("metadata_category", "feature", "cluster", "query", "accuracy",
                      "classes", "coefficients", "identity", "qcovs", "confounders",
                      "stitle", "staxids", "features", "features_10000_window", "features_all",
                      "compactor_species", "compactor_staxids",
+                     "subject", "sacc", "NCBI_protein_accession", "UniProt_accession",
+                     "compactor_blast_subject_id", "compactor_blast_accession",
+                     "compactor_ncbi_protein_accession", "compactor_uniprot_accession",
                      "first_class", "first_coef", "second_coef", "second_class",
                      "max_coefficient")
   for (col in fallback_cols) {
@@ -575,7 +603,10 @@ ensure_annotation_columns <- function(tbl) {
   }
   for (col in c("metadata_category", "feature", "cluster", "query", "classes",
                 "coefficients", "confounders", "stitle", "staxids", "features",
-                "features_10000_window", "features_all", "compactor_species", "compactor_staxids")) {
+                "features_10000_window", "features_all", "compactor_species", "compactor_staxids",
+                "subject", "sacc", "NCBI_protein_accession", "UniProt_accession",
+                "compactor_blast_subject_id", "compactor_blast_accession",
+                "compactor_ncbi_protein_accession", "compactor_uniprot_accession")) {
     tbl[[col]] <- vapply(seq_len(nrow(tbl)), function(i) coerce_scalar_text(tbl[[col]][[i]]), character(1))
   }
   tbl$accuracy <- suppressWarnings(as.numeric(tbl$accuracy))
@@ -619,13 +650,18 @@ make_compactor_summary_label_dt <- function(path) {
   empty_dt <- tibble(metadata_category=character(), feature=character(), cluster=character(),
                      sequence=character(), compactor_summary_label=character(),
                      compactor_summary_identity=numeric(), compactor_summary_qcovs=numeric(),
-                     compactor_summary_species=character(), compactor_summary_staxids=character())
+                     compactor_summary_species=character(), compactor_summary_staxids=character(),
+                     compactor_summary_subject_id=character(), compactor_summary_accession=character(),
+                     compactor_summary_ncbi_protein_accession=character(),
+                     compactor_summary_uniprot_accession=character())
   if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
     return(empty_dt)
   }
   compactor_dt <- fread(path)
   for (col in c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
-                "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids")) {
+                "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids",
+                "compactor_blast_subject_id", "compactor_blast_accession",
+                "compactor_ncbi_protein_accession", "compactor_uniprot_accession")) {
     if (!col %in% colnames(compactor_dt)) {
       compactor_dt[[col]] <- NA_character_
     }
@@ -642,6 +678,10 @@ make_compactor_summary_label_dt <- function(path) {
               compactor_summary_qcovs = first_numeric_or_na(qcovs),
               compactor_summary_species = collapse_species_values(compactor_species),
               compactor_summary_staxids = first_text_or_na(compactor_staxids),
+              compactor_summary_subject_id = first_text_or_na(compactor_blast_subject_id),
+              compactor_summary_accession = first_text_or_na(compactor_blast_accession),
+              compactor_summary_ncbi_protein_accession = first_text_or_na(compactor_ncbi_protein_accession),
+              compactor_summary_uniprot_accession = first_text_or_na(compactor_uniprot_accession),
               .groups="drop")
 }
 
@@ -649,19 +689,26 @@ make_reblastp_label_dt <- function(reblastp_dt, category) {
   if (nrow(reblastp_dt) == 0 || !"query" %in% colnames(reblastp_dt)) {
     return(tibble(sequence=character(), outside_taxid_label=character(),
                   outside_taxid_identity=numeric(), outside_taxid_qcovs=numeric(),
-                  outside_taxid_species=character(), outside_taxid_staxids=character()))
+                  outside_taxid_species=character(), outside_taxid_staxids=character(),
+                  outside_taxid_subject_id=character(), outside_taxid_accession=character()))
   }
+  reblastp_dt <- ensure_columns(reblastp_dt, c("metadata_category", "query", "stitle", "staxids", "identity", "qcovs",
+                                               "subject", "sacc", "NCBI_protein_accession", "UniProt_accession"))
   reblastp_dt %>%
     filter(metadata_category == category) %>%
     mutate(sequence = str_remove(query, "^cluster_\\d+_")) %>%
     mutate(outside_taxid_label = clean_blast_label(str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial"))) %>%
     mutate(outside_taxid_species = extract_blast_species(stitle)) %>%
+    mutate(outside_taxid_subject_id = coalesce(subject, NCBI_protein_accession, sacc)) %>%
+    mutate(outside_taxid_accession = coalesce(NCBI_protein_accession, UniProt_accession, sacc, subject)) %>%
     group_by(sequence) %>%
     summarise(outside_taxid_label = collapse_blast_labels(paste(unique(na.omit(outside_taxid_label)), collapse=";")),
               outside_taxid_identity = first_numeric_or_na(identity),
               outside_taxid_qcovs = first_numeric_or_na(qcovs),
               outside_taxid_species = collapse_species_values(outside_taxid_species),
               outside_taxid_staxids = first_text_or_na(staxids),
+              outside_taxid_subject_id = first_text_or_na(outside_taxid_subject_id),
+              outside_taxid_accession = first_text_or_na(outside_taxid_accession),
               .groups="drop")
 }
 
@@ -669,8 +716,12 @@ make_reblast_label_dt <- function(reblast_dt, category) {
   if (nrow(reblast_dt) == 0 || !"query" %in% colnames(reblast_dt)) {
     return(tibble(sequence=character(), outside_taxid_label=character(),
                   outside_taxid_identity=numeric(), outside_taxid_qcovs=numeric(),
-                  outside_taxid_species=character(), outside_taxid_staxids=character()))
+                  outside_taxid_species=character(), outside_taxid_staxids=character(),
+                  outside_taxid_subject_id=character(), outside_taxid_accession=character()))
   }
+  reblast_dt <- ensure_columns(reblast_dt, c("metadata_category", "query", "stitle", "staxids", "identity", "qcovs",
+                                             "subject", "sacc", "NCBI_protein_accession", "UniProt_accession",
+                                             "features", "features_all", "features_10000_window"))
   reblast_dt %>%
     filter(metadata_category == category) %>%
     mutate(sequence = str_remove(query, "^cluster_\\d+_")) %>%
@@ -681,12 +732,16 @@ make_reblast_label_dt <- function(reblast_dt, category) {
     mutate(outside_genes = extract_feature_qualifier(feature_text, "gene")) %>%
     mutate(outside_taxid_label = choose_feature_label(outside_products, outside_genes, opt$products)) %>%
     mutate(outside_taxid_species = extract_blast_species(stitle)) %>%
+    mutate(outside_taxid_subject_id = coalesce(subject, sacc, NCBI_protein_accession)) %>%
+    mutate(outside_taxid_accession = coalesce(sacc, NCBI_protein_accession, UniProt_accession, subject)) %>%
     group_by(sequence) %>%
     summarise(outside_taxid_label = collapse_blast_labels(paste(unique(na.omit(outside_taxid_label)), collapse=";")),
               outside_taxid_identity = first_numeric_or_na(identity),
               outside_taxid_qcovs = first_numeric_or_na(qcovs),
               outside_taxid_species = collapse_species_values(outside_taxid_species),
               outside_taxid_staxids = first_text_or_na(staxids),
+              outside_taxid_subject_id = first_text_or_na(outside_taxid_subject_id),
+              outside_taxid_accession = first_text_or_na(outside_taxid_accession),
               .groups="drop")
 }
 
@@ -868,7 +923,10 @@ for (category in categories) {
       rowwise() %>%
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
-      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient, cluster, feature, query, identity, qcovs, stitle, staxids, annotation, confounders) %>%
+      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient,
+             cluster, feature, query, identity, qcovs, stitle, staxids,
+             subject, sacc, NCBI_protein_accession, UniProt_accession,
+             annotation, confounders) %>%
       mutate(query = str_remove(query, "cluster_\\d+_")) %>%
       distinct(cluster,annotation,query,.keep_all = T) %>% group_by(cluster)
 
@@ -877,6 +935,8 @@ for (category in categories) {
       mutate(label=ifelse(!is_empty(unique(na.omit(annotation))), paste0(unique(na.omit(annotation)),collapse=";"), NA)) %>%
       mutate(blastp_species=collapse_species_values(extract_blast_species(stitle))) %>%
       mutate(blastp_staxids=first_text_or_na(staxids)) %>%
+      mutate(blastp_subject_id=first_text_or_na(coalesce(subject, NCBI_protein_accession, sacc))) %>%
+      mutate(blastp_accession=first_text_or_na(coalesce(NCBI_protein_accession, UniProt_accession, sacc, subject))) %>%
       distinct(cluster, query, label, .keep_all=T) %>% ungroup()
 
     summ_dt_blastp_only <- summ_dt
@@ -903,7 +963,12 @@ for (category in categories) {
         rowwise() %>%
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
-        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, stitle, staxids, products, genes, confounders, compactor_annotation, compactor_species, compactor_staxids) %>%
+        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient,
+               cluster, feature, query, identity, qcovs, stitle, staxids,
+               subject, sacc, NCBI_protein_accession, UniProt_accession,
+               products, genes, confounders, compactor_annotation, compactor_species, compactor_staxids,
+               compactor_blast_subject_id, compactor_blast_accession,
+               compactor_ncbi_protein_accession, compactor_uniprot_accession) %>%
         mutate(query = str_remove(query, "^cluster_\\d+_")) %>%
         group_by(cluster) %>%
         ungroup() %>%
@@ -913,22 +978,38 @@ for (category in categories) {
         mutate(label = choose_feature_label(products, genes, opt$products)) %>%
         mutate(blast_species = coalesce(extract_blast_species(stitle), compactor_species)) %>%
         mutate(blast_staxids = coalesce(staxids, compactor_staxids)) %>%
+        mutate(blast_subject_id = coalesce(subject, sacc, NCBI_protein_accession,
+                                           compactor_blast_subject_id,
+                                           compactor_ncbi_protein_accession,
+                                           compactor_blast_accession)) %>%
+        mutate(blast_accession = coalesce(sacc, NCBI_protein_accession, UniProt_accession,
+                                          compactor_blast_accession,
+                                          compactor_ncbi_protein_accession,
+                                          compactor_uniprot_accession,
+                                          subject)) %>%
         mutate(label = ifelse(has_restricted_label(compactor_annotation),
                               compactor_plot_label(compactor_annotation), label)) %>%
         group_by(cluster,query) %>%
         mutate(label=ifelse(!is_empty(unique(na.omit(label))), paste0(unique(na.omit(label)),collapse=";"), NA)) %>%
         mutate(blast_species=collapse_species_values(blast_species)) %>%
         mutate(blast_staxids=first_text_or_na(blast_staxids)) %>%
+        mutate(blast_subject_id=first_text_or_na(blast_subject_id)) %>%
+        mutate(blast_accession=first_text_or_na(blast_accession)) %>%
         distinct(cluster, query, label, .keep_all=T) %>% ungroup()
-      summ_dt2 <- summ_dt2 %>% select(cluster, query, identity, qcovs, label, blast_species, blast_staxids) %>%
-        dplyr::rename(label2=label, blast_species2=blast_species, blast_staxids2=blast_staxids)
+      summ_dt2 <- summ_dt2 %>% select(cluster, query, identity, qcovs, label, blast_species, blast_staxids,
+                                      blast_subject_id, blast_accession) %>%
+        dplyr::rename(label2=label, blast_species2=blast_species, blast_staxids2=blast_staxids,
+                      blast_subject_id2=blast_subject_id, blast_accession2=blast_accession)
       summ_dt <- summ_dt %>% left_join(summ_dt2 %>%
-                                         select(cluster, query, identity, qcovs, label2, blast_species2, blast_staxids2), by=c("cluster", "query")) %>%
+                                         select(cluster, query, identity, qcovs, label2, blast_species2, blast_staxids2,
+                                                blast_subject_id2, blast_accession2), by=c("cluster", "query")) %>%
         dplyr::rename(identity=`identity.x`, qcovs=`qcovs.x`) %>%
         mutate(identity = ifelse(is.na(label) & !is.na(label2), `identity.y`, identity)) %>%
         mutate(qcovs = ifelse(is.na(label) & !is.na(label2), `qcovs.y`, qcovs)) %>%
         mutate(direct_blast_species = coalesce(blastp_species, blast_species2),
-               direct_blast_staxids = coalesce(blastp_staxids, blast_staxids2)) %>%
+               direct_blast_staxids = coalesce(blastp_staxids, blast_staxids2),
+               direct_blast_subject_id = coalesce(blastp_subject_id, blast_subject_id2),
+               direct_blast_accession = coalesce(blastp_accession, blast_accession2)) %>%
         mutate(label_blastp = label, label_blast = label2) %>%
         mutate(label = combine_blast_labels(label_blastp, label_blast)) %>%
         mutate(label = ifelse(is.na(label) & !is.na(label_blast), label_blast, label)) %>%
@@ -952,13 +1033,17 @@ for (category in categories) {
                     outside_taxid_identity_blastp = outside_taxid_identity,
                     outside_taxid_qcovs_blastp = outside_taxid_qcovs,
                     outside_taxid_species_blastp = outside_taxid_species,
-                    outside_taxid_staxids_blastp = outside_taxid_staxids)
+                    outside_taxid_staxids_blastp = outside_taxid_staxids,
+                    outside_taxid_subject_id_blastp = outside_taxid_subject_id,
+                    outside_taxid_accession_blastp = outside_taxid_accession)
     reblast_label_dt <- make_reblast_label_dt(dt_reblast, category) %>%
       dplyr::rename(outside_taxid_label_blast = outside_taxid_label,
                     outside_taxid_identity_blast = outside_taxid_identity,
                     outside_taxid_qcovs_blast = outside_taxid_qcovs,
                     outside_taxid_species_blast = outside_taxid_species,
-                    outside_taxid_staxids_blast = outside_taxid_staxids)
+                    outside_taxid_staxids_blast = outside_taxid_staxids,
+                    outside_taxid_subject_id_blast = outside_taxid_subject_id,
+                    outside_taxid_accession_blast = outside_taxid_accession)
     outside_taxid_label_dt <- full_join(reblastp_label_dt, reblast_label_dt, by="sequence") %>%
       mutate(outside_taxid_label = combine_blast_labels(outside_taxid_label_blastp, outside_taxid_label_blast)) %>%
       mutate(outside_taxid_label = ifelse(is.na(outside_taxid_label) & !is.na(outside_taxid_label_blast), outside_taxid_label_blast, outside_taxid_label)) %>%
@@ -966,9 +1051,11 @@ for (category in categories) {
       mutate(outside_taxid_identity = coalesce(outside_taxid_identity_blastp, outside_taxid_identity_blast),
              outside_taxid_qcovs = coalesce(outside_taxid_qcovs_blastp, outside_taxid_qcovs_blast),
              outside_taxid_species = coalesce(outside_taxid_species_blastp, outside_taxid_species_blast),
-             outside_taxid_staxids = coalesce(outside_taxid_staxids_blastp, outside_taxid_staxids_blast)) %>%
+             outside_taxid_staxids = coalesce(outside_taxid_staxids_blastp, outside_taxid_staxids_blast),
+             outside_taxid_subject_id = coalesce(outside_taxid_subject_id_blastp, outside_taxid_subject_id_blast),
+             outside_taxid_accession = coalesce(outside_taxid_accession_blastp, outside_taxid_accession_blast)) %>%
       select(sequence, outside_taxid_label, outside_taxid_identity, outside_taxid_qcovs,
-             outside_taxid_species, outside_taxid_staxids)
+             outside_taxid_species, outside_taxid_staxids, outside_taxid_subject_id, outside_taxid_accession)
     category_compactor_summary_dt <- compactor_summary_label_dt %>%
       filter(metadata_category == category)
 
@@ -982,7 +1069,8 @@ for (category in categories) {
       mutate(classes = map_chr(classes, \(x) paste(x, collapse=","))) %>%
       select(any_of(c("metadata_category", "accuracy", "classes", "first_class", "first_coef", "second_coef", "second_class",
                       "max_coefficient", "cluster", "feature", "query", "identity", "qcovs",
-                      "blastp_species", "blastp_staxids", "label", "blast_source")))
+                      "blastp_species", "blastp_staxids", "blastp_subject_id", "blastp_accession",
+                      "label", "blast_source")))
 
     blast_all_dt <- summ_dt %>%
       mutate(blast_source = "blast") %>%
@@ -995,10 +1083,13 @@ for (category in categories) {
       mutate(classes = map_chr(classes, \(x) paste(x, collapse=","))) %>%
       select(any_of(c("metadata_category", "accuracy", "classes", "first_class", "first_coef", "second_coef", "second_class",
                       "max_coefficient", "cluster", "feature", "query", "identity.y", "qcovs.y",
-                      "direct_blast_species", "direct_blast_staxids", "label", "blast_source"))) %>%
+                      "direct_blast_species", "direct_blast_staxids", "direct_blast_subject_id",
+                      "direct_blast_accession", "label", "blast_source"))) %>%
       dplyr::rename(identity = `identity.y`, qcovs = `qcovs.y`,
                     blast_species = direct_blast_species,
-                    blast_staxids = direct_blast_staxids)
+                    blast_staxids = direct_blast_staxids,
+                    blast_subject_id = direct_blast_subject_id,
+                    blast_accession = direct_blast_accession)
 
     all_blastp_summary <- bind_rows(all_blastp_summary, blastp_all_dt)
     all_blast_summary <- bind_rows(all_blast_summary, blast_all_dt)
@@ -1266,6 +1357,15 @@ for (category in categories) {
         mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, opt$products)) %>%
         mutate(direct_blast_species = coalesce(extract_blast_species(stitle), compactor_species)) %>%
         mutate(direct_blast_staxids = coalesce(staxids, compactor_staxids)) %>%
+        mutate(direct_blast_subject_id = coalesce(subject, sacc, NCBI_protein_accession,
+                                                  compactor_blast_subject_id,
+                                                  compactor_ncbi_protein_accession,
+                                                  compactor_blast_accession)) %>%
+        mutate(direct_blast_accession = coalesce(sacc, NCBI_protein_accession, UniProt_accession,
+                                                 compactor_blast_accession,
+                                                 compactor_ncbi_protein_accession,
+                                                 compactor_uniprot_accession,
+                                                 subject)) %>%
         mutate(direct_blast_label = ifelse(has_restricted_label(compactor_annotation),
                                            compactor_plot_label(compactor_annotation), direct_blast_label)) %>%
         group_by(sequence) %>%
@@ -1274,12 +1374,17 @@ for (category in categories) {
                   direct_qcovs = first_numeric_or_na(qcovs),
                   direct_blast_species = collapse_species_values(direct_blast_species),
                   direct_blast_staxids = first_text_or_na(direct_blast_staxids),
+                  direct_blast_subject_id = first_text_or_na(direct_blast_subject_id),
+                  direct_blast_accession = first_text_or_na(direct_blast_accession),
                   .groups="drop")
       compactor_detail_label_dt <- category_compactor_summary_dt %>%
         filter(cluster == my_cluster, feature == my_feature) %>%
         select(sequence, compactor_summary_label,
                compactor_summary_identity, compactor_summary_qcovs,
-               compactor_summary_species, compactor_summary_staxids)
+               compactor_summary_species, compactor_summary_staxids,
+               compactor_summary_subject_id, compactor_summary_accession,
+               compactor_summary_ncbi_protein_accession,
+               compactor_summary_uniprot_accession)
 
       label_dt <- dt_sub %>%
         mutate(any_identity = coalesce(`identity.y`, identity),
@@ -1288,7 +1393,8 @@ for (category in categories) {
         mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blast), label_blast, combined_label)) %>%
         mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blastp), label_blastp, combined_label)) %>%
         select(query, accuracy, any_identity, any_qcovs, combined_label, label2,
-               direct_blast_species, direct_blast_staxids) %>%
+               direct_blast_species, direct_blast_staxids,
+               direct_blast_subject_id, direct_blast_accession) %>%
         dplyr::rename(label=combined_label) %>%
         dplyr::rename(identity=any_identity, qcovs=any_qcovs) %>%
         dplyr::rename(sequence=query)
@@ -1325,7 +1431,9 @@ for (category in categories) {
         mutate(identity = coalesce(identity, direct_identity),
                qcovs = coalesce(qcovs, direct_qcovs),
                direct_blast_species = coalesce(direct_blast_species.x, direct_blast_species.y),
-               direct_blast_staxids = coalesce(direct_blast_staxids.x, direct_blast_staxids.y)) %>%
+               direct_blast_staxids = coalesce(direct_blast_staxids.x, direct_blast_staxids.y),
+               direct_blast_subject_id = coalesce(direct_blast_subject_id.x, direct_blast_subject_id.y),
+               direct_blast_accession = coalesce(direct_blast_accession.x, direct_blast_accession.y)) %>%
         mutate(label = ifelse(!has_restricted_label(label) &
                                 has_restricted_label(compactor_summary_label),
                               compactor_summary_label, label)) %>%
@@ -1338,16 +1446,36 @@ for (category in categories) {
                                              compactor_summary_species, direct_blast_species),
                direct_blast_staxids = ifelse(has_restricted_label(compactor_summary_label) &
                                                (is.na(direct_blast_staxids) | nchar(direct_blast_staxids) == 0),
-                                             compactor_summary_staxids, direct_blast_staxids)) %>%
+                                             compactor_summary_staxids, direct_blast_staxids),
+               direct_blast_subject_id = ifelse(has_restricted_label(compactor_summary_label) &
+                                                  (is.na(direct_blast_subject_id) | nchar(direct_blast_subject_id) == 0),
+                                                coalesce(compactor_summary_subject_id,
+                                                         compactor_summary_ncbi_protein_accession,
+                                                         compactor_summary_accession),
+                                                direct_blast_subject_id),
+               direct_blast_accession = ifelse(has_restricted_label(compactor_summary_label) &
+                                                 (is.na(direct_blast_accession) | nchar(direct_blast_accession) == 0),
+                                               coalesce(compactor_summary_accession,
+                                                        compactor_summary_ncbi_protein_accession,
+                                                        compactor_summary_uniprot_accession,
+                                                        compactor_summary_subject_id),
+                                               direct_blast_accession)) %>%
         mutate(outside_taxid_only = !has_restricted_label(label) &
                  !is.na(outside_taxid_label) & nchar(outside_taxid_label) > 1) %>%
         mutate(label = ifelse(outside_taxid_only, outside_taxid_label, label)) %>%
         mutate(identity = ifelse(outside_taxid_only & is.na(identity), outside_taxid_identity, identity),
                qcovs = ifelse(outside_taxid_only & is.na(qcovs), outside_taxid_qcovs, qcovs),
                direct_blast_species = ifelse(outside_taxid_only, outside_taxid_species, direct_blast_species),
-               direct_blast_staxids = ifelse(outside_taxid_only, outside_taxid_staxids, direct_blast_staxids)) %>%
+               direct_blast_staxids = ifelse(outside_taxid_only, outside_taxid_staxids, direct_blast_staxids),
+               direct_blast_subject_id = ifelse(outside_taxid_only, outside_taxid_subject_id, direct_blast_subject_id),
+               direct_blast_accession = ifelse(outside_taxid_only, outside_taxid_accession, direct_blast_accession)) %>%
         mutate(blast_species_origin = direct_blast_species,
-               blast_staxids_origin = direct_blast_staxids) %>%
+               blast_staxids_origin = direct_blast_staxids,
+               blast_subject_id_origin = direct_blast_subject_id,
+               blast_accession_origin = direct_blast_accession,
+               blast_annotation_source_id = coalesce(direct_blast_accession,
+                                                     direct_blast_subject_id,
+                                                     direct_blast_staxids)) %>%
         mutate(has_blast_hit = !is.na(identity) | !is.na(qcovs) |
                  (!is.na(label) & label != "NO MATCH") |
                  (!is.na(label2) & nchar(label2) > 1)) %>%
