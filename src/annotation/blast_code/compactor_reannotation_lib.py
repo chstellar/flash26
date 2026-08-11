@@ -1597,16 +1597,9 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                         break
                 compactor_hit = lookup_compactor_hit(sequence, compactor_map, anchor_map, anchor_len)
                 label = row.get("Blast Label") or row.get("label") or row.get("annotation")
-                if compactor_hit and not is_real_annotation(label):
-                    if "Blast Label" in fieldnames:
-                        row["Blast Label"] = compactor_hit["label"]
-                    elif "label" in fieldnames:
-                        row["label"] = compactor_hit["label"]
-                    elif "annotation" in fieldnames:
-                        row["annotation"] = compactor_hit["label"]
-                    row["compactor_annotation"] = compactor_hit["label"]
-                    row["compactor_query"] = compactor_hit["compactor_query"]
+                if compactor_hit:
                     row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
+                    row["compactor_query"] = compactor_hit["compactor_query"]
                     row["compactor_length"] = compactor_hit["compactor_length"]
                     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
                     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
@@ -1625,6 +1618,14 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                         or compactor_hit.get("staxids")
                         or "NA"
                     )
+                if compactor_hit and not is_real_annotation(label):
+                    if "Blast Label" in fieldnames:
+                        row["Blast Label"] = compactor_hit["label"]
+                    elif "label" in fieldnames:
+                        row["label"] = compactor_hit["label"]
+                    elif "annotation" in fieldnames:
+                        row["annotation"] = compactor_hit["label"]
+                    row["compactor_annotation"] = compactor_hit["label"]
                     filled += 1
                 else:
                     row.setdefault("compactor_annotation", "NA")

@@ -55,7 +55,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: clean-summary-cols-v9")
+message("plot_blast_annotations_each_feature.R build: compactor-unannotated-seq-v10")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
@@ -802,7 +802,8 @@ make_compactor_summary_label_dt <- function(path) {
     mutate(compactor_summary_label = ifelse(has_restricted_label(compactor_annotation),
                                             compactor_annotation, `Blast Label`)) %>%
     mutate(compactor_summary_label = compactor_plot_label(compactor_summary_label)) %>%
-    filter(has_restricted_label(compactor_summary_label)) %>%
+    filter(has_restricted_label(compactor_summary_label) |
+             (!is.na(compactor_sequence) & nchar(compactor_sequence) > 0 & compactor_sequence != "NA")) %>%
     group_by(metadata_category, feature, cluster, sequence) %>%
     summarise(compactor_summary_label = collapse_blast_labels(paste(unique(na.omit(compactor_summary_label)), collapse=";")),
               compactor_summary_identity = first_numeric_or_na(identity),
