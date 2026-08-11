@@ -3,7 +3,7 @@
 set -euo pipefail
 
 INPUT_DIR=/scratch/users/jiamuyu/proj_botryllus/flash/results
-INPUT_PAT="260720-00-3ants-challenge" # can contain trailing `*` to capture multiple dirs at once
+INPUT_PAT="${1:-260720-00-3ants-challenge*}" # can contain trailing `*` to capture multiple dirs at once
 OUTPUT_DIR=/scratch/groups/horence/chester/flash2share
 
 # derive subdirectory name from INPUT_PAT with the trailing * removed
