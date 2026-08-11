@@ -95,11 +95,24 @@ cat("\n")
 cat("###################################################################\n\n")
 
 
-## load the data
-# read in the headers of the input file to identify the effect_size_bin column
-## load the data
-# read in the headers of the input file to identify the effect_size_bin column
-headers <- fread(opt$input, nrows = 2, header = TRUE)
+read_score_lines <- function(path, n = 2) {
+  if (grepl("\\.gz$", path)) {
+    con <- gzfile(path, open = "rt")
+  } else {
+    con <- file(path, open = "rt")
+  }
+  on.exit(close(con))
+  readLines(con, n = n, warn = FALSE)
+}
+
+score_header_lines <- read_score_lines(opt$input, n = 2)
+if (length(score_header_lines) < 2) {
+  stop("Input score file must contain a header and at least one data row")
+}
+header_names <- strsplit(score_header_lines[1], "\t", fixed = TRUE)[[1]]
+first_data_fields <- strsplit(score_header_lines[2], "\t", fixed = TRUE)[[1]]
+headers <- as.data.frame(as.list(first_data_fields), stringsAsFactors = FALSE)
+names(headers) <- header_names
 
 if (nchar(headers$anchor[1]) < 12) {
   opt$effect_size <- 0.1 # change if using short anchors
