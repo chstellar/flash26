@@ -47,7 +47,7 @@ empty_blastp_df <- function() {
          q_start=numeric(), q_end=numeric(), s_start=numeric(), s_end=numeric(),
          sstrand=character(), evalue=numeric(), qcovs=numeric(), qframe=character(),
          sgi=character(), sacc=character(), slen=numeric(), staxids=character(),
-         stitle=character())
+         sscinames=character(), stitle=character())
 }
 
 read_blastp_file <- function(file) {
@@ -58,17 +58,23 @@ read_blastp_file <- function(file) {
   if (is.null(preview) || ncol(preview) == 0) {
     return(empty_blastp_df())
   }
-  if (ncol(preview) == 19) {
+  if (ncol(preview) == 20) {
     return(fread(file, sep="\t", col.names = c("query", "subject", "identity", "alignment_length",
                                                "mismatches", "gap_opens", "q_start", "q_end",
                                                "s_start", "s_end", "sstrand", "evalue", "qcovs", "qframe",
-                                               "sgi", "sacc", "slen", "staxids", "stitle")))
+                                               "sgi", "sacc", "slen", "staxids", "sscinames", "stitle")))
+  } else if (ncol(preview) == 19) {
+    return(fread(file, sep="\t", col.names = c("query", "subject", "identity", "alignment_length",
+                                               "mismatches", "gap_opens", "q_start", "q_end",
+                                               "s_start", "s_end", "sstrand", "evalue", "qcovs", "qframe",
+                                               "sgi", "sacc", "slen", "staxids", "stitle")) %>%
+             mutate(sscinames=NA_character_))
   }
   fread(file, sep="\t", col.names = c("query", "subject", "identity", "alignment_length",
                                       "mismatches", "gap_opens", "q_start", "q_end",
                                       "s_start", "s_end", "sstrand", "evalue", "qcovs",
                                       "sgi", "sacc", "slen", "staxids", "stitle")) %>%
-    mutate(qframe="-")
+    mutate(qframe="-", sscinames=NA_character_)
 }
 
 blast_dfs <- future_map(blast_files, read_blastp_file)
@@ -84,7 +90,7 @@ if (length(df_lengths) == 0) {
   empty_blastp_df() %>%
     mutate(NCBI_protein_accession=character(), UniProt_accession=character(),
            method=character(), GO=character()) %>%
-    select(query, identity, evalue, qcovs, qframe, staxids, stitle,
+    select(query, identity, evalue, qcovs, qframe, staxids, sscinames, stitle,
            NCBI_protein_accession, UniProt_accession, method, GO) %>%
     write_tsv(opt$output_file, col_names = T, quote="needed")
   quit(save="no", status=0)
@@ -120,10 +126,14 @@ merge_on_go_terms <- function(file, df, uniprot_mapping, go_mapping) {
 if (TRUE) {
   merged_df <- map(blast_dfs, \(x) x %>% mutate(staxids=as.character(staxids))) %>% bind_rows() %>% mutate(NCBI_protein_accession=str_extract(subject, "ref\\|(.+)\\|", group=1)) %>%
     mutate(UniProt_accession=str_extract(subject, "sp\\|(.+)\\|", group=1), method=NA, GO=NA) %>%
-    select(query, identity, evalue, qcovs, qframe, staxids, stitle, NCBI_protein_accession, UniProt_accession, method, GO)
+    select(query, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO)
 } else {
   merged_df <- future_map2(blast_files, blast_dfs, \(x,y) merge_on_go_terms(x,y,opt$uniprot_mapping_path,opt$go_mapping_path)) %>% bind_rows()
 }
 
-merged_df %>% select(query, identity, evalue, qcovs, qframe, staxids, stitle, NCBI_protein_accession, UniProt_accession, method, GO) %>%
+if (!"sscinames" %in% colnames(merged_df)) {
+  merged_df$sscinames <- NA_character_
+}
+
+merged_df %>% select(query, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO) %>%
   write_tsv(opt$output_file, col_names = T, quote="needed")

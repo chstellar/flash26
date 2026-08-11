@@ -396,14 +396,15 @@ def write_empty_blastn(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "query\tsubject\tidentity\talignment_length\tmismatches\tgap_opens\tq_start\tq_end\t"
-        "s_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tstitle\tspecies_origin\tfeatures\tfeatures_10000_window\n"
+        "s_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tsscinames\tstitle\t"
+        "species_origin\tfeatures\tfeatures_10000_window\n"
     )
 
 
 def write_empty_blastp(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "query\tidentity\tevalue\tqcovs\tqframe\tstaxids\tstitle\t"
+        "query\tidentity\tevalue\tqcovs\tqframe\tstaxids\tsscinames\tstitle\t"
         "NCBI_protein_accession\tUniProt_accession\tmethod\tGO\n"
     )
 
@@ -599,9 +600,18 @@ def species_from_stitle(value):
     return species if species else "NA"
 
 
+def species_from_blast_fields(row):
+    for col in ("species_origin", "sscinames"):
+        if has_text(row.get(col)):
+            value = clean_label(row.get(col))
+            if value and value.upper() not in {"NA", "N/A", "NONE", "NAN"}:
+                return value
+    return species_from_stitle(row.get("stitle"))
+
+
 def raw_blastn_annotation(row):
     values = []
-    for col in ("stitle", "features", "features_10000_window"):
+    for col in ("sscinames", "stitle", "features", "features_10000_window"):
         if has_text(row.get(col)):
             values.append(f"{col}={str(row.get(col)).replace(chr(9), ' ')}")
     return " | ".join(values) if values else "NA"
@@ -609,7 +619,7 @@ def raw_blastn_annotation(row):
 
 def raw_blastp_annotation(row):
     values = []
-    for col in ("stitle", "NCBI_protein_accession", "UniProt_accession", "GO"):
+    for col in ("sscinames", "stitle", "NCBI_protein_accession", "UniProt_accession", "GO"):
         if has_text(row.get(col)):
             values.append(f"{col}={str(row.get(col)).replace(chr(9), ' ')}")
     return " | ".join(values) if values else "NA"
@@ -643,8 +653,9 @@ def read_annotation_table(path, mode, source):
                 label = "UNANNOTATED" if raw_annotation != "NA" else "NO MATCH"
             identity = row.get("identity", "NA")
             qcovs = row.get("qcovs", "NA")
-            species_origin = species_from_stitle(row.get("stitle"))
+            species_origin = species_from_blast_fields(row)
             staxids = row.get("staxids", "NA")
+            sscinames = row.get("sscinames", "NA")
             blast_subject_id = row.get("subject", row.get("sseqid", "NA"))
             blast_accession = row.get("sacc", row.get("NCBI_protein_accession", "NA"))
             ncbi_protein_accession = row.get("NCBI_protein_accession", "NA")
@@ -661,6 +672,7 @@ def read_annotation_table(path, mode, source):
                     "qcovs": qcovs,
                     "species_origin": species_origin,
                     "staxids": staxids,
+                    "sscinames": sscinames,
                     "blast_subject_id": blast_subject_id,
                     "blast_accession": blast_accession,
                     "ncbi_protein_accession": ncbi_protein_accession,
@@ -671,6 +683,7 @@ def read_annotation_table(path, mode, source):
                     f"{source}_{mode}_qcovs": qcovs,
                     f"{source}_{mode}_species": species_origin,
                     f"{source}_{mode}_staxids": staxids,
+                    f"{source}_{mode}_sscinames": sscinames,
                     f"{source}_{mode}_subject_id": blast_subject_id,
                     f"{source}_{mode}_accession": blast_accession,
                 }
@@ -696,6 +709,7 @@ def no_hit_entry():
         "qcovs": "NA",
         "species_origin": "NA",
         "staxids": "NA",
+        "sscinames": "NA",
         "blast_subject_id": "NA",
         "blast_accession": "NA",
         "ncbi_protein_accession": "NA",
@@ -724,6 +738,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "qcovs",
         "species_origin",
         "staxids",
+        "sscinames",
         "blast_subject_id",
         "blast_accession",
         "ncbi_protein_accession",
@@ -741,6 +756,10 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "restricted_blast_staxids",
         "unrestricted_blastp_staxids",
         "unrestricted_blast_staxids",
+        "restricted_blastp_sscinames",
+        "restricted_blast_sscinames",
+        "unrestricted_blastp_sscinames",
+        "unrestricted_blast_sscinames",
         "restricted_blastp_subject_id",
         "restricted_blast_subject_id",
         "unrestricted_blastp_subject_id",
@@ -884,6 +903,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "qcovs",
         "species_origin",
         "staxids",
+        "sscinames",
         "blast_subject_id",
         "blast_accession",
         "ncbi_protein_accession",
@@ -901,6 +921,10 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "restricted_blast_staxids",
         "unrestricted_blastp_staxids",
         "unrestricted_blast_staxids",
+        "restricted_blastp_sscinames",
+        "restricted_blast_sscinames",
+        "unrestricted_blastp_sscinames",
+        "unrestricted_blast_sscinames",
         "restricted_blastp_subject_id",
         "restricted_blast_subject_id",
         "unrestricted_blastp_subject_id",
@@ -1002,6 +1026,7 @@ def read_seed_compactor_annotation_map(path):
                 "raw_annotation": row.get("raw_annotation", "NA"),
                 "species_origin": row.get("species_origin", "NA"),
                 "staxids": row.get("staxids", "NA"),
+                "sscinames": row.get("sscinames", "NA"),
                 "blast_subject_id": row.get("blast_subject_id", "NA"),
                 "blast_accession": row.get("blast_accession", "NA"),
                 "ncbi_protein_accession": row.get("ncbi_protein_accession", "NA"),
@@ -1042,6 +1067,7 @@ def compactor_hit_from_row(row):
         "raw_annotation": row.get("raw_annotation", "NA"),
         "species_origin": row.get("species_origin", "NA"),
         "staxids": row.get("staxids", "NA"),
+        "sscinames": row.get("sscinames", "NA"),
         "blast_subject_id": row.get("blast_subject_id", "NA"),
         "blast_accession": row.get("blast_accession", "NA"),
         "ncbi_protein_accession": row.get("ncbi_protein_accession", "NA"),
@@ -1353,6 +1379,7 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
     row["compactor_species"] = compactor_hit.get("species_origin", "NA")
     row["compactor_staxids"] = compactor_hit.get("staxids", "NA")
+    row["compactor_sscinames"] = compactor_hit.get("sscinames", "NA")
     row["compactor_blast_subject_id"] = compactor_hit.get("blast_subject_id", "NA")
     row["compactor_blast_accession"] = compactor_hit.get("blast_accession", "NA")
     row["compactor_ncbi_protein_accession"] = compactor_hit.get("ncbi_protein_accession", "NA")
@@ -1415,6 +1442,7 @@ def fill_plot_annotation_tsv(
             "compactor_raw_annotation",
             "compactor_species",
             "compactor_staxids",
+            "compactor_sscinames",
             "compactor_blast_subject_id",
             "compactor_blast_accession",
             "compactor_ncbi_protein_accession",
@@ -1509,6 +1537,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
             "compactor_raw_annotation",
             "compactor_species",
             "compactor_staxids",
+            "compactor_sscinames",
             "compactor_blast_subject_id",
             "compactor_blast_accession",
             "compactor_ncbi_protein_accession",
@@ -1562,6 +1591,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
                     row["compactor_species"] = compactor_hit.get("species_origin", "NA")
                     row["compactor_staxids"] = compactor_hit.get("staxids", "NA")
+                    row["compactor_sscinames"] = compactor_hit.get("sscinames", "NA")
                     row["compactor_blast_subject_id"] = compactor_hit.get("blast_subject_id", "NA")
                     row["compactor_blast_accession"] = compactor_hit.get("blast_accession", "NA")
                     row["compactor_ncbi_protein_accession"] = compactor_hit.get("ncbi_protein_accession", "NA")
@@ -1583,6 +1613,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row.setdefault("compactor_raw_annotation", "NA")
                     row.setdefault("compactor_species", "NA")
                     row.setdefault("compactor_staxids", "NA")
+                    row.setdefault("compactor_sscinames", "NA")
                     row.setdefault("compactor_blast_subject_id", "NA")
                     row.setdefault("compactor_blast_accession", "NA")
                     row.setdefault("compactor_ncbi_protein_accession", "NA")

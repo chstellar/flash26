@@ -46,15 +46,26 @@ extract_blast_species <- function(x) {
   }, character(1))
 }
 
+clean_blast_species_field <- function(x) {
+  x <- stringr::str_squish(as.character(x))
+  x[x == "" | toupper(x) %in% c("NA", "N/A", "NONE", "NAN")] <- NA_character_
+  x
+}
+
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
 if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   annotations <- annotations %>%
-    select(query, evalue, identity, qcovs, qframe, stitle, any_of(c("staxids", "species_origin")), `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
+    select(query, evalue, identity, qcovs, qframe, stitle, any_of(c("staxids", "sscinames", "species_origin")), `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+  if (!"sscinames" %in% colnames(annotations)) {
+    annotations$sscinames <- NA_character_
+  }
   if (!"species_origin" %in% colnames(annotations)) {
-    annotations <- annotations %>% mutate(species_origin = extract_blast_species(stitle))
+    annotations <- annotations %>% mutate(species_origin = coalesce(clean_blast_species_field(sscinames), extract_blast_species(stitle)))
+  } else {
+    annotations <- annotations %>% mutate(species_origin = coalesce(clean_blast_species_field(species_origin), clean_blast_species_field(sscinames), extract_blast_species(stitle)))
   }
 
   # we also add on the translated sequence for as a column. The query column contains cluster_X_{Sequence} and the qframe column contains the frame
@@ -144,10 +155,15 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   annotations <- annotations %>% left_join(sequence_dt, by = c("query", "qframe"))
 } else {
   annotations <- annotations %>%
-    select(query, evalue, identity, qcovs, any_of(c("subject", "sacc", "staxids", "stitle", "species_origin")), features, contains("window")) %>%
+    select(query, evalue, identity, qcovs, any_of(c("subject", "sacc", "staxids", "sscinames", "stitle", "species_origin")), features, contains("window")) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+  if (!"sscinames" %in% colnames(annotations)) {
+    annotations$sscinames <- NA_character_
+  }
   if (!"species_origin" %in% colnames(annotations) && "stitle" %in% colnames(annotations)) {
-    annotations <- annotations %>% mutate(species_origin = extract_blast_species(stitle))
+    annotations <- annotations %>% mutate(species_origin = coalesce(clean_blast_species_field(sscinames), extract_blast_species(stitle)))
+  } else if ("species_origin" %in% colnames(annotations) && "stitle" %in% colnames(annotations)) {
+    annotations <- annotations %>% mutate(species_origin = coalesce(clean_blast_species_field(species_origin), clean_blast_species_field(sscinames), extract_blast_species(stitle)))
   }
 }
 

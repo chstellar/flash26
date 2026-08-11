@@ -32,6 +32,8 @@ option_list <- list(
 opt_parser <- OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
+message("plot_nonzero_features_heatmap.R build: confusion-log-classwise-v1")
+
 # Check if all required arguments are provided
 if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   print_help(opt_parser)
@@ -93,6 +95,7 @@ get_first_class <- function(x) {
 }
 
 clean_blast_label <- function(x) {
+  x <- as.character(x)
   x <- replace_na(x, "")
   x <- str_replace_all(x, "LOC\\d+[- ]*", "")
   x <- str_replace_all(x, "\\s+", " ")
@@ -116,17 +119,219 @@ choose_feature_label <- function(products, genes, prefer_products = FALSE) {
   clean_blast_label(label)
 }
 
+parse_vector_text <- function(x) {
+  x <- as.character(x)
+  x <- str_replace_all(x, "^\\s*\\[|\\]\\s*$", "")
+  x <- str_replace_all(x, "^\\s*c\\(|\\)\\s*$", "")
+  vals <- str_split(x, ",", simplify = FALSE)[[1]]
+  vals <- str_trim(str_replace_all(vals, "^['\"]|['\"]$", ""))
+  vals[vals != ""]
+}
+
+parse_coef_values <- function(x) {
+  suppressWarnings(as.numeric(parse_vector_text(x)))
+}
+
+parse_class_values <- function(x) {
+  parse_vector_text(x)
+}
+
+safe_file_label <- function(x) {
+  x <- as.character(x)
+  x <- ifelse(is.na(x) | nchar(x) == 0, "all", x)
+  x <- str_replace_all(x, "[^A-Za-z0-9._-]+", "_")
+  str_replace_all(x, "_+", "_")
+}
+
+get_confusion_log_path <- function(nonzero_path, metadata_path) {
+  base <- nonzero_path
+  base <- str_replace(base, "_nonzero_coefficients_blastp_annotated.*\\.tsv$", "_confusion_matrices")
+  base <- str_replace(base, "_nonzero_coefficients_blast_annotated.*\\.tsv$", "_confusion_matrices")
+  base <- str_replace(base, "_nonzero_coefficients_annotated.*\\.tsv$", "_confusion_matrices")
+  ext <- tolower(tools::file_ext(metadata_path))
+  if (ext == "csv") {
+    paste0(base, ".csv")
+  } else {
+    paste0(base, ".tsv")
+  }
+}
+
+read_confusion_log <- function(nonzero_path, metadata_path) {
+  log_path <- get_confusion_log_path(nonzero_path, metadata_path)
+  if (!file.exists(log_path)) {
+    message("No confusion/scatter log found at ", log_path, "; falling back to coefficient-derived heatmaps.")
+    return(NULL)
+  }
+  sep <- ifelse(tolower(tools::file_ext(log_path)) == "csv", ",", "\t")
+  fread(log_path, sep = sep, fill = TRUE, colClasses = "character")
+}
+
+make_coef_long <- function(dt) {
+  if (!"coefficients" %in% colnames(dt) && "first_coef" %in% colnames(dt)) {
+    rows <- list()
+    if (!"first_class" %in% colnames(dt)) {
+      dt$first_class <- vapply(dt$classes, function(x) {
+        vals <- parse_class_values(x)
+        if (length(vals) == 0) "residual" else vals[[1]]
+      }, character(1))
+    }
+    rows[[length(rows) + 1]] <- dt %>%
+      transmute(metadata_category,
+                accuracy = if ("accuracy" %in% colnames(dt)) accuracy else NA_character_,
+                feature, cluster,
+                class_label = as.character(first_class),
+                class_coef = suppressWarnings(as.numeric(first_coef)))
+    if ("second_coef" %in% colnames(dt) && "second_class" %in% colnames(dt)) {
+      rows[[length(rows) + 1]] <- dt %>%
+        transmute(metadata_category,
+                  accuracy = if ("accuracy" %in% colnames(dt)) accuracy else NA_character_,
+                  feature, cluster,
+                  class_label = as.character(second_class),
+                  class_coef = suppressWarnings(as.numeric(second_coef)))
+    }
+    return(bind_rows(rows) %>%
+             filter(!is.na(class_label), nchar(class_label) > 0, is.finite(class_coef)) %>%
+             mutate(abs_coef = abs(class_coef)))
+  }
+
+  if (!"coefficients" %in% colnames(dt)) {
+    stop("Coefficient table must contain either coefficients or first_coef columns.")
+  }
+
+  rows <- vector("list", nrow(dt))
+  for (i in seq_len(nrow(dt))) {
+    classes <- parse_class_values(dt$classes[[i]])
+    coefs <- parse_coef_values(dt$coefficients[[i]])
+    if (length(coefs) == 0 || all(is.na(coefs))) {
+      next
+    }
+    if (length(classes) == 0) {
+      classes <- rep("residual", length(coefs))
+    }
+    n <- min(length(classes), length(coefs))
+    rows[[i]] <- tibble(
+      metadata_category = dt$metadata_category[[i]],
+      accuracy = if ("accuracy" %in% colnames(dt)) dt$accuracy[[i]] else NA_character_,
+      feature = dt$feature[[i]],
+      cluster = dt$cluster[[i]],
+      class_label = classes[seq_len(n)],
+      class_coef = coefs[seq_len(n)]
+    )
+  }
+  bind_rows(rows) %>%
+    filter(is.finite(class_coef)) %>%
+    mutate(abs_coef = abs(class_coef))
+}
+
+build_feature_labels <- function(dt, dt2) {
+  labels1 <- tibble(feature = character(), cluster = character(), label = character())
+  if ("stitle" %in% colnames(dt)) {
+    labels1 <- dt %>%
+      mutate(annotation = str_remove_all(as.character(stitle), "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
+      mutate(label = clean_blast_label(annotation)) %>%
+      select(feature, cluster, label)
+  } else if ("label" %in% colnames(dt)) {
+    labels1 <- dt %>% mutate(label = clean_blast_label(label)) %>% select(feature, cluster, label)
+  }
+
+  labels2 <- tibble(feature = character(), cluster = character(), label = character())
+  if (!is.null(dt2) && "features" %in% colnames(dt2)) {
+    labels2 <- dt2 %>%
+      separate_longer_delim(features, delim = "},") %>%
+      mutate(products = extract_feature_qualifier(features, "product"),
+             genes = extract_feature_qualifier(features, "gene"),
+             label = choose_feature_label(products, genes, opt$products)) %>%
+      select(feature, cluster, label)
+  } else if (!is.null(dt2) && "label" %in% colnames(dt2)) {
+    labels2 <- dt2 %>% mutate(label = clean_blast_label(label)) %>% select(feature, cluster, label)
+  }
+
+  bind_rows(labels1, labels2) %>%
+    filter(!is.na(label), nchar(label) > 0) %>%
+    group_by(feature, cluster) %>%
+    summarise(label = paste(unique(label), collapse = "; "), .groups = "drop")
+}
+
+draw_feature_heatmap <- function(matrix_data, annotation_df, annotation_colors, column_labels, title) {
+  if (nrow(matrix_data) == 0 || ncol(matrix_data) == 0) {
+    message("Skipping empty heatmap: ", title)
+    return(invisible(NULL))
+  }
+  matrix_data[!is.finite(matrix_data)] <- 0
+  if (length(annotation_colors) > 0) {
+    ha <- rowAnnotation(df = annotation_df, col = annotation_colors)
+  } else {
+    ha <- rowAnnotation(df = annotation_df)
+  }
+  lim <- max(abs(matrix_data), na.rm = TRUE)
+  if (!is.finite(lim) || lim == 0) {
+    lim <- 1
+  }
+  heatmap_plot <- Heatmap(
+    matrix_data,
+    name = "Value",
+    column_labels = column_labels[colnames(matrix_data)],
+    left_annotation = ha,
+    cluster_rows = TRUE,
+    cluster_columns = FALSE,
+    show_row_names = FALSE,
+    show_column_names = TRUE,
+    heatmap_legend_param = list(
+      title = expression("embedding" %*% ~ beta),
+      at = c(-lim, 0, lim),
+      labels = c("Negative", "Zero", "Positive")
+    ),
+    column_title = "Embedding features",
+    row_title = "Samples"
+  )
+  draw(heatmap_plot, column_title = title, column_title_gp = grid::gpar(fontsize = 16),
+       padding = unit(c(100, 2, 2, 2), "pt"))
+}
+
+draw_correlation_heatmap <- function(matrix_data, column_labels, title) {
+  if (nrow(matrix_data) < 2 || ncol(matrix_data) < 2) {
+    message("Skipping correlation heatmap with too few rows/columns: ", title)
+    return(NULL)
+  }
+  matrix_data[!is.finite(matrix_data)] <- NA_real_
+  cor_mat <- suppressWarnings(cor(matrix_data, use = "pairwise.complete.obs"))
+  cor_mat[!is.finite(cor_mat)] <- NA_real_
+  cor_heatmap <- Heatmap(
+    cor_mat,
+    name = "Correlation",
+    cluster_rows = TRUE,
+    cluster_columns = TRUE,
+    show_row_names = TRUE,
+    show_column_names = TRUE,
+    column_labels = column_labels[colnames(cor_mat)],
+    row_labels = column_labels[rownames(cor_mat)],
+    cell_fun = function(j, i, x, y, width, height, fill) {
+      if (is.finite(cor_mat[i, j])) {
+        grid.text(sprintf("%.2f", cor_mat[i, j]), x, y, gp = gpar(fontsize = 6))
+      }
+    },
+    heatmap_legend_param = list(title = "Correlation", at = c(-1, 0, 1), labels = c("-1", "0", "1")),
+    column_title = "Embedding features",
+    row_title = "Embedding features"
+  )
+  draw(cor_heatmap, column_title = title, column_title_gp = grid::gpar(fontsize = 16),
+       padding = unit(c(100, 2, 2, 2), "pt"))
+  cor_mat
+}
+
 # read in input files
 dt <- fread(opt$nonzero_annotations)
-if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
-all_clusters <- fread(opt$clusters) %>% select(-kmer)
-feather_dt <- feather::read_feather(opt$feather)
+blast_annotated_path <- gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations)
+dt2 <- if (file.exists(blast_annotated_path)) fread(blast_annotated_path) else NULL
+feather_dt <- feather::read_feather(opt$feather_file)
 all_metadata <- fread(opt$metadata)
+confusion_log <- read_confusion_log(opt$nonzero_annotations, opt$metadata)
 
-categories <- dt %>% select(metadata_category, accuracy) %>% distinct() %>% arrange(-accuracy) %>% pull(metadata_category)
+coef_long <- make_coef_long(dt)
+feature_labels <- build_feature_labels(dt, dt2)
 
 out_csvs_prefix <- file.path(dirname(opt$output), "raw_matrices", tools::file_path_sans_ext(basename(opt$output)))
-system(paste("mkdir -p", file.path(dirname(opt$output), "raw_matrices")))
+dir.create(file.path(dirname(opt$output), "raw_matrices"), recursive = TRUE, showWarnings = FALSE)
 
 pdf(opt$output, width=20, height=16)
 
@@ -139,228 +344,194 @@ text(5, 5, paramaters['model'])
 text(5, 4, paste("At most", paramaters['num_clusters'], "clusters"))
 text(5,3, paste(Sys.Date()))
 
-for (category in categories) {
+if (!"sample_name" %in% colnames(feather_dt)) {
+  stop("Feather matrix must contain a sample_name column.")
+}
+
+if (!is.null(confusion_log) && "row_type" %in% colnames(confusion_log) && "sample_name" %in% colnames(confusion_log)) {
+  categorical_specs <- confusion_log %>%
+    filter(row_type == "sample") %>%
+    mutate(true_label = as.character(true_label),
+           predicted_label = as.character(predicted_label)) %>%
+    group_by(metadata_category, matrix) %>%
+    summarise(focus_class = list(sort(unique(c(true_label, predicted_label)))),
+              .groups = "drop") %>%
+    unnest(focus_class) %>%
+    mutate(kind = "classification")
+
+  regression_specs <- confusion_log %>%
+    filter(row_type == "prediction") %>%
+    distinct(metadata_category, matrix) %>%
+    mutate(focus_class = "residual", kind = "regression")
+
+  specs <- bind_rows(categorical_specs, regression_specs)
+} else {
+  specs <- coef_long %>%
+    distinct(metadata_category, class_label) %>%
+    mutate(matrix = "all_samples",
+           focus_class = class_label,
+           kind = ifelse(class_label == "residual", "regression", "classification")) %>%
+    select(metadata_category, matrix, focus_class, kind)
+}
+
+for (i in seq_len(nrow(specs))) {
+  spec <- specs[i,]
   tryCatch({
-    new_dt <- dt %>% filter(is.na(query)) %>% select(-query) %>% left_join(all_clusters %>% mutate(query = paste0(cluster, "_", seq)) %>% select(-seq), by="cluster", relationship="many-to-many") %>% 
-      filter(!is.na(query))
-    summ_dt <- bind_rows(dt, new_dt) %>% filter(!is.na(query)) %>% filter(metadata_category==category) %>%
-      mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>% 
-      arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>% mutate(annotation = str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial")) %>%
-      rowwise() %>%
-      mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
-      ungroup() %>%
-      select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, qcovs, annotation) %>%
-      mutate(query = str_remove(query, "cluster_\\d+_")) %>%
-      distinct(cluster,annotation,query,.keep_all = T) %>% group_by(cluster)  
-    
-    
-    summ_dt <- summ_dt %>% group_by(cluster,query) %>%
-      mutate(label=ifelse(!is_empty(unique(na.omit(annotation))), paste(unique(na.omit(annotation)),collapse=";"), NA)) %>%
-      distinct(cluster, query, label, .keep_all=T) %>% ungroup()
-    
-    if (TRUE) {
-      summ_dt2 <- dt2 %>% filter(metadata_category==category) %>%
-        separate_longer_delim(features, delim = "},") %>% 
-        mutate(products=extract_feature_qualifier(features, "product")) %>% 
-        mutate(genes=extract_feature_qualifier(features, "gene")) %>% 
-        select(-features) %>% mutate(first_coef=get_first_coef(coefficients)) %>% mutate(max_coefficient=abs(first_coef)) %>% 
-        arrange(-max_coefficient) %>% mutate(first_class=get_first_class(classes)) %>%
-        rowwise() %>%
-        mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
-        ungroup() %>%
-        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient, cluster, feature, query, identity, products, genes) %>%
-        mutate(query = str_remove(query, "cluster_\\d+_")) %>%
-        group_by(cluster) %>%
-        ungroup() %>%
-        distinct(cluster,products,query,genes,.keep_all = T) %>% group_by(cluster) 
-      
-      summ_dt2 <- summ_dt2 %>%
-        mutate(label = choose_feature_label(products, genes, opt$products)) %>%
-        group_by(cluster,query) %>%
-        mutate(label=ifelse(!is_empty(unique(na.omit(label))), paste(unique(na.omit(label)),collapse=";"), NA)) %>%
-        distinct(cluster, query, label, .keep_all=T) %>% ungroup()
-      if (!"qcovs" %in% colnames(summ_dt2)) {
-        summ_dt2$qcovs <- NA
+    category <- spec$metadata_category
+    matrix_name <- spec$matrix
+    focus_class <- spec$focus_class
+    kind <- spec$kind
+
+    category_coef <- coef_long %>%
+      filter(metadata_category == category)
+
+    if (kind == "classification") {
+      category_coef <- category_coef %>% filter(class_label == focus_class)
+    }
+
+    important_features <- category_coef %>%
+      arrange(desc(abs_coef)) %>%
+      distinct(feature, .keep_all = TRUE) %>%
+      head(max_features_per_heatmap) %>%
+      select(feature, class_coef) %>%
+      deframe()
+
+    important_features <- important_features[names(important_features) %in% colnames(feather_dt)]
+    if (length(important_features) == 0) {
+      message("No finite coefficients/features for ", category, " ", matrix_name, " ", focus_class)
+      next
+    }
+
+    if (!is.null(confusion_log) && "sample_name" %in% colnames(confusion_log)) {
+      if (kind == "classification") {
+        sample_rows <- confusion_log %>%
+          filter(row_type == "sample",
+                 metadata_category == category,
+                 matrix == matrix_name,
+                 true_label == focus_class | predicted_label == focus_class) %>%
+          transmute(sample_name,
+                    true_label = as.character(true_label),
+                    predicted_label = as.character(predicted_label),
+                    focus_role = case_when(
+                      true_label == focus_class & predicted_label == focus_class ~ "true+predicted",
+                      true_label == focus_class ~ "true",
+                      predicted_label == focus_class ~ "predicted",
+                      TRUE ~ "other"
+                    )) %>%
+          distinct()
+      } else {
+        sample_rows <- confusion_log %>%
+          filter(row_type == "prediction",
+                 metadata_category == category,
+                 matrix == matrix_name) %>%
+          transmute(sample_name,
+                    observed = suppressWarnings(as.numeric(true_label)),
+                    predicted = suppressWarnings(as.numeric(predicted_label))) %>%
+          distinct()
       }
-      summ_dt2 <- summ_dt2 %>% select(cluster, query, identity, qcovs, label) %>% dplyr::rename(label2=label)
-      summ_dt <- summ_dt %>% left_join(summ_dt2 %>% 
-                                         select(cluster, query, identity, qcovs, label2), by=c("cluster", "query")) %>% 
-        dplyr::rename(identity=`identity.x`, qcovs=`qcovs.x`) %>%
-        mutate(identity = ifelse(is.na(label) & !is.na(label2), `identity.y`, identity)) %>%
-        mutate(qcovs = ifelse(is.na(label) & !is.na(label2), `qcovs.y`, qcovs)) %>%
-        mutate(label = ifelse(is.na(label) & !is.na(label2), label2, label)) %>%
-        mutate(label = ifelse(is.na(label) | nchar(label)<2, NA, label))
+    } else {
+      sample_rows <- all_metadata %>% select(sample_name)
+      if (kind == "classification" && category %in% colnames(all_metadata)) {
+        sample_rows <- all_metadata %>%
+          select(sample_name, all_of(category)) %>%
+          dplyr::rename(true_label = all_of(category)) %>%
+          mutate(predicted_label = NA_character_,
+                 focus_role = ifelse(as.character(true_label) == focus_class, "true", "other")) %>%
+          filter(focus_role == "true")
+      } else if (kind == "regression") {
+        sample_rows <- sample_rows %>%
+          mutate(observed = NA_real_, predicted = NA_real_)
+      }
     }
-    
-    summ_dt <- summ_dt %>% group_by(feature) %>% mutate(label = ifelse(rep(sum(!is.na(label))==0, length(label)) & (is.na(label)) & (!is.na(identity) | !is.na(identity.y)), "NO PROTEIN/GENE HIT", label))
-    
-    summ_dt <- summ_dt %>% group_by(cluster) %>% 
-      mutate(label=ifelse(label=="",annotation,label)) %>%
-      mutate(label = ifelse(rep(sum(!is.na(label))==0, length(label)), "NO MATCH", label)) %>% 
-      mutate(hypothetical=length(unique(label))>1 & sum(str_detect(label, "(?i)hypothetical|uncharacterized"))>0) %>%
-      mutate(hypothetical=replace_na(hypothetical, FALSE)) %>% 
-      rowwise() %>%
-      mutate(label = map2_vec(label, hypothetical, \(x,y) if (y) {str_c(str_trim(unlist(str_split(x, ";"))[str_detect(unlist(str_split(x, ";")), "(?i)hypothetical|uncharact", negate=T)]),sep = ",", collapse=",")} else {x})) %>%
-      ungroup()
-    
-    my_classes <- summ_dt[1,]$classes %>% unlist()
-    
-    if (sum(str_detect(my_classes, "0.0")) > 0) {
-      my_classes <- as.numeric(my_classes)
+
+    sub_feather_unscaled <- feather_dt %>%
+      select(sample_name, all_of(names(important_features))) %>%
+      inner_join(sample_rows, by = "sample_name")
+
+    if (nrow(sub_feather_unscaled) == 0) {
+      message("No samples for ", category, " ", matrix_name, " ", focus_class)
+      next
     }
-    
-    summ_dt <- summ_dt %>% group_by(cluster, feature, max_coefficient, first_coef) %>% summarise(label=paste(unique(na.omit(label)), collapse=","), label2=paste(unique(na.omit(label2)), collapse=",")) %>% 
-      arrange(-max_coefficient) %>% ungroup()
-    
-    important_features <- summ_dt %>% select(feature, first_coef) %>% head(max_features_per_heatmap) %>% deframe()
-    
-    sub_feather_dt <- feather_dt %>% select(sample_name, all_of(names(important_features)))
-    
-    sub_feather_unscaled <- sub_feather_dt
-    
-    sub_feather_dt <- sub_feather_dt %>% mutate(across(all_of(names(important_features)), \(x) x * important_features[cur_column()]))
-    
-    sub_feather_dt <- sub_feather_dt %>% left_join(all_metadata %>% select(sample_name, !!category) %>% dplyr::rename(class:=!!category)) %>% 
-      relocate(class, .after=sample_name) 
-    
-    sub_feather_unscaled <- sub_feather_unscaled %>% left_join(all_metadata %>% select(sample_name, !!category) %>% dplyr::rename(class:=!!category)) %>% 
-      relocate(class, .after=sample_name) 
-    
-    column_labels <- summ_dt %>% ungroup() %>% select(feature,cluster,label) %>%
-      filter(feature %in% names(important_features)) %>%
-      # mutate(label=str_c(cluster, label, sep=" ")) %>% 
-      select(-cluster) %>%
-      mutate(label=str_wrap(str_trunc(gsub(",",", ", label), 80, side="right"), 40)) %>% deframe()
-    
-    # Reshape the data to wide format for heatmap
-    heatmap_data <- sub_feather_dt %>%
-      filter(class %in% my_classes) %>%
-      select(-class) %>%
-      column_to_rownames("sample_name") %>%
-      as.matrix()
-    
+
+    sample_order <- sub_feather_unscaled$sample_name
     unscaled_heatmap_data <- sub_feather_unscaled %>%
-      filter(class %in% my_classes) %>%
-      select(-class) %>%
+      select(sample_name, all_of(names(important_features))) %>%
       column_to_rownames("sample_name") %>%
       as.matrix()
-    
-    # define dynamic colors
-    n_colors <- min(length(my_classes), 8)  # Set2 has max 8 colors
-    class_palette <- colorRampPalette(brewer.pal(max(n_colors,3), "Dark2"))(length(my_classes))
-    class_colors <- setNames(class_palette, my_classes)
-    
-    
-    # Create class annotation 
-    class_annotation <- sub_feather_dt %>%
-      filter(class %in% my_classes) %>%
-      select(sample_name, class) %>%
-      distinct() %>%
-      column_to_rownames("sample_name")
-    
-    # Create a heatmap annotation for classes
-    ha <- rowAnnotation(df = class_annotation, 
-                        col = list(class = class_colors))
-    
-    # Create the heatmap with hierarchical clustering
-    heatmap_plot <- Heatmap(heatmap_data, 
-                            name = "Value",
-                            column_labels = column_labels[colnames(heatmap_data)],
-                            left_annotation = ha,
-                            cluster_rows = TRUE,  # Enable hierarchical clustering for rows
-                            cluster_columns = FALSE,  # Enable hierarchical clustering for columns
-                            show_row_names = FALSE, 
-                            show_column_names = TRUE,
-                            heatmap_legend_param = list(title = expression("embedding" %*% ~ beta), at = c(min(heatmap_data), 0, max(heatmap_data)), labels = c("Negative", "Zero", "Positive")),
-                            column_title = "Embedding Features",
-                            row_title = "Samples",
-                            
-    )
-    
-    
-    draw(heatmap_plot,column_title=category, column_title_gp=grid::gpar(fontsize=16),padding=unit(c(100,2,2,2), "pt"))
-    
-    cov_mat <- cov(heatmap_data)
-    
-    cov_heatmap <- Heatmap(cov_mat, 
-                           name = "Covariance",
-                           cluster_rows = TRUE,  # Enable hierarchical clustering for rows
-                           cluster_columns = TRUE,  # Enable hierarchical clustering for columns
-                           show_row_names = TRUE, 
-                           show_column_names = TRUE,
-                           column_labels = column_labels[colnames(cov_mat)],
-                           row_labels = column_labels[rownames(cov_mat)],
-                           cell_fun = function(j, i, x, y, width, height, fill) {
-                             grid.text(sprintf("%.2f", cov_mat[i, j]), x, y, gp = gpar(fontsize = 6))},
-                           heatmap_legend_param = list(title = "Covariance", at = c(min(cov_mat), 0, max(cov_mat)), labels = c("Negative", "Zero", "Positive")),
-                           column_title = "Embedding Features",
-                           row_title = "Embedding Features",
-                           
-    )
-    
-    draw(cov_heatmap)
+    scaled_heatmap_data <- sweep(unscaled_heatmap_data, 2, important_features[colnames(unscaled_heatmap_data)], `*`)
 
-    category_file_label <- str_replace_all(category, "/", "_")
-
-    is_categorical_target <- !any(my_classes == "residual")
-    if (is_categorical_target && nrow(heatmap_data) > 0 && ncol(heatmap_data) > 0) {
-      cor_mat <- suppressWarnings(cor(heatmap_data, use = "pairwise.complete.obs"))
-      cor_mat[!is.finite(cor_mat)] <- NA_real_
-      cor_heatmap <- Heatmap(cor_mat,
-                             name = "Correlation",
-                             cluster_rows = TRUE,
-                             cluster_columns = TRUE,
-                             show_row_names = TRUE,
-                             show_column_names = TRUE,
-                             column_labels = column_labels[colnames(cor_mat)],
-                             row_labels = column_labels[rownames(cor_mat)],
-                             cell_fun = function(j, i, x, y, width, height, fill) {
-                               if (is.finite(cor_mat[i, j])) {
-                                 grid.text(sprintf("%.2f", cor_mat[i, j]), x, y, gp = gpar(fontsize = 6))
-                               }
-                             },
-                             heatmap_legend_param = list(title = "Correlation", at = c(-1, 0, 1), labels = c("-1", "0", "1")),
-                             column_title = "Embedding Features",
-                             row_title = "Embedding Features")
-      draw(cor_heatmap, column_title=paste(category, "feature correlation"),
-           column_title_gp=grid::gpar(fontsize=16), padding=unit(c(100,2,2,2), "pt"))
-
-      out_csv_cor_name <- paste(out_csvs_prefix, category_file_label, "categorical_feature_correlation_matrix.csv", sep = "_")
-      write_csv(cor_mat %>% as.data.frame() %>% rownames_to_column("feature"), out_csv_cor_name, col_names = T, quote="needed")
-
-      clustered_order <- rownames(heatmap_data)
-      if (nrow(heatmap_data) > 1) {
-        clustering_matrix <- heatmap_data
-        clustering_matrix[!is.finite(clustering_matrix)] <- 0
-        clustered_order <- rownames(heatmap_data)[hclust(dist(clustering_matrix))$order]
-      }
-      clustered_scaled <- heatmap_data[clustered_order, , drop = FALSE] %>%
-        as.data.frame() %>%
-        rownames_to_column("sample_name") %>%
-        left_join(class_annotation %>% rownames_to_column("sample_name"), by = "sample_name") %>%
-        relocate(class, .after = sample_name)
-      clustered_unscaled <- unscaled_heatmap_data[clustered_order, , drop = FALSE] %>%
-        as.data.frame() %>%
-        rownames_to_column("sample_name") %>%
-        left_join(class_annotation %>% rownames_to_column("sample_name"), by = "sample_name") %>%
-        relocate(class, .after = sample_name)
-
-      out_csv_clustered_scaled_name <- paste(out_csvs_prefix, category_file_label, "categorical_sample_by_feature_clustered_scaled_by_beta.csv", sep = "_")
-      out_csv_clustered_unscaled_name <- paste(out_csvs_prefix, category_file_label, "categorical_sample_by_feature_clustered_unscaled.csv", sep = "_")
-      write_csv(clustered_scaled, out_csv_clustered_scaled_name, col_names = T, quote="needed")
-      write_csv(clustered_unscaled, out_csv_clustered_unscaled_name, col_names = T, quote="needed")
+    label_map <- category_coef %>%
+      filter(feature %in% names(important_features)) %>%
+      arrange(match(feature, names(important_features))) %>%
+      distinct(feature, cluster) %>%
+      left_join(feature_labels, by = c("feature", "cluster")) %>%
+      mutate(label = ifelse(is.na(label) | nchar(label) == 0, "NO MATCH", label),
+             label = str_wrap(str_trunc(gsub(",", ", ", label), 80, side = "right"), 40)) %>%
+      select(feature, label) %>%
+      deframe()
+    missing_labels <- setdiff(colnames(scaled_heatmap_data), names(label_map))
+    if (length(missing_labels) > 0) {
+      label_map[missing_labels] <- missing_labels
     }
-    
-    out_csv_beta_name <- paste(out_csvs_prefix, category_file_label, "nonzero_feature_matrix_scaled_by_beta.csv", sep = "_")
-    write_csv(heatmap_data %>% as.data.frame() %>% rownames_to_column("sample_name"), out_csv_beta_name, col_names = T, quote="needed")
-    
-    out_csv_no_beta_name <- paste(out_csvs_prefix, category_file_label, "nonzero_feature_matrix_unsacled.csv", sep="_")
-    write_csv(unscaled_heatmap_data %>% as.data.frame() %>% rownames_to_column("sample_name"), out_csv_no_beta_name, col_names = T, quote="needed")
-    
+    label_map <- label_map[colnames(scaled_heatmap_data)]
+
+    if (kind == "classification") {
+      ann <- sample_rows %>%
+        filter(sample_name %in% sample_order) %>%
+        arrange(match(sample_name, sample_order)) %>%
+        select(sample_name, true_label, predicted_label, focus_role) %>%
+        column_to_rownames("sample_name")
+      all_labels <- sort(unique(c(ann$true_label, ann$predicted_label)))
+      label_cols <- setNames(colorRampPalette(brewer.pal(max(3, min(8, length(all_labels))), "Dark2"))(length(all_labels)), all_labels)
+      role_cols <- c("true+predicted" = "#1b1b1b", "true" = "#d73027", "predicted" = "#4575b4", "other" = "#bdbdbd")
+      annotation_colors <- list(true_label = label_cols, predicted_label = label_cols, focus_role = role_cols)
+      title_prefix <- paste(category, matrix_name, "class", focus_class, sep = " | ")
+    } else {
+      ann <- sample_rows %>%
+        filter(sample_name %in% sample_order) %>%
+        arrange(match(sample_name, sample_order)) %>%
+        select(sample_name, observed, predicted) %>%
+        column_to_rownames("sample_name")
+      annotation_colors <- list()
+      title_prefix <- paste(category, matrix_name, "regression", sep = " | ")
+    }
+
+    draw_feature_heatmap(scaled_heatmap_data, ann, annotation_colors, label_map,
+                         paste(title_prefix, "sample by feature"))
+    cor_mat <- draw_correlation_heatmap(scaled_heatmap_data, label_map,
+                                        paste(title_prefix, "feature correlation"))
+
+    clustered_order <- rownames(scaled_heatmap_data)
+    if (nrow(scaled_heatmap_data) > 1) {
+      clustering_matrix <- scaled_heatmap_data
+      clustering_matrix[!is.finite(clustering_matrix)] <- 0
+      clustered_order <- rownames(scaled_heatmap_data)[hclust(dist(clustering_matrix))$order]
+    }
+
+    file_label <- paste(safe_file_label(category), safe_file_label(matrix_name), safe_file_label(focus_class), sep = "_")
+    write_csv(
+      scaled_heatmap_data[clustered_order, , drop = FALSE] %>%
+        as.data.frame() %>% rownames_to_column("sample_name") %>%
+        left_join(ann %>% rownames_to_column("sample_name"), by = "sample_name"),
+      paste(out_csvs_prefix, file_label, "sample_by_feature_clustered_scaled_by_beta.csv", sep = "_"),
+      col_names = TRUE, quote = "needed"
+    )
+    write_csv(
+      unscaled_heatmap_data[clustered_order, , drop = FALSE] %>%
+        as.data.frame() %>% rownames_to_column("sample_name") %>%
+        left_join(ann %>% rownames_to_column("sample_name"), by = "sample_name"),
+      paste(out_csvs_prefix, file_label, "sample_by_feature_clustered_unscaled.csv", sep = "_"),
+      col_names = TRUE, quote = "needed"
+    )
+    if (!is.null(cor_mat)) {
+      write_csv(
+        cor_mat %>% as.data.frame() %>% rownames_to_column("feature"),
+        paste(out_csvs_prefix, file_label, "feature_correlation_matrix.csv", sep = "_"),
+        col_names = TRUE, quote = "needed"
+      )
+    }
   }, error = function(e) {
-    message(paste("Error processing category:", category, "\n", e$message))
-    # Optionally log the error or take other actions
+    message(paste("Error processing heatmap panel:", paste(spec, collapse = " "), "\n", e$message))
   })
-  
 }
 dev.off()

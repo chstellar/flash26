@@ -35,7 +35,9 @@ option_list <- list(
   make_option(c("--num_hits"), type="numeric", default=10,
               help = "num nonzero coefficients to plot", metavar = "numeric"),
   make_option(c("--cluster_length"), type="integer", default=NULL,
-              help = "Length of each concatenated anchor-target sequence. Defaults to k value parsed from input filename, then 54.", metavar = "integer")
+              help = "Length of each concatenated anchor-target sequence. Defaults to k value parsed from input filename, then 54.", metavar = "integer"),
+  make_option(c("--taxid_name_cache"), type="character", default=NULL,
+              help = "Optional TSV cache for resolving BLAST staxids to scientific species names.", metavar = "character")
 )
 
 # Parse command line options
@@ -53,7 +55,11 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: robust-summary-types-v3")
+message("plot_blast_annotations_each_feature.R build: blast-sscinames-v5")
+
+if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
+  opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
+}
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
@@ -228,6 +234,124 @@ extract_blast_species <- function(x) {
     }
     clean_blast_label(match[nrow(match), 2])
   })
+}
+
+extract_taxid_values <- function(x) {
+  x <- coerce_scalar_text(x)
+  if (is.na(x)) {
+    return(character(0))
+  }
+  vals <- str_extract_all(x, "\\d+")[[1]]
+  unique(vals[!is.na(vals) & nchar(vals) > 0])
+}
+
+taxid_cache_env <- new.env(parent = emptyenv())
+taxid_cache_env$loaded <- FALSE
+taxid_cache_env$map <- setNames(character(0), character(0))
+
+load_taxid_species_cache <- function(cache_path) {
+  if (isTRUE(taxid_cache_env$loaded)) {
+    return(invisible(NULL))
+  }
+  taxid_cache_env$loaded <- TRUE
+  if (!is.null(cache_path) && file.exists(cache_path) && file.info(cache_path)$size > 0) {
+    cache_dt <- tryCatch(fread(cache_path, colClasses = "character"), error = function(e) data.table())
+    if (nrow(cache_dt) > 0 && all(c("taxid", "species") %in% colnames(cache_dt))) {
+      cache_dt <- cache_dt %>%
+        filter(!is.na(taxid), nchar(taxid) > 0, !is.na(species), nchar(species) > 0) %>%
+        distinct(taxid, .keep_all = TRUE)
+      taxid_cache_env$map <- setNames(cache_dt$species, cache_dt$taxid)
+    }
+  }
+  invisible(NULL)
+}
+
+save_taxid_species_cache <- function(cache_path) {
+  if (is.null(cache_path) || is.na(cache_path) || nchar(cache_path) == 0) {
+    return(invisible(NULL))
+  }
+  dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
+  cache_dt <- tibble(taxid = names(taxid_cache_env$map),
+                     species = unname(taxid_cache_env$map)) %>%
+    filter(!is.na(taxid), nchar(taxid) > 0, !is.na(species), nchar(species) > 0) %>%
+    distinct(taxid, .keep_all = TRUE) %>%
+    arrange(suppressWarnings(as.numeric(taxid)))
+  fwrite(cache_dt, cache_path, sep = "\t")
+  invisible(NULL)
+}
+
+fetch_taxid_species_from_ncbi <- function(taxids) {
+  taxids <- unique(taxids[!is.na(taxids) & nchar(taxids) > 0])
+  if (length(taxids) == 0) {
+    return(setNames(character(0), character(0)))
+  }
+  fetched <- setNames(rep(NA_character_, length(taxids)), taxids)
+  batches <- split(taxids, ceiling(seq_along(taxids) / 100))
+  for (batch in batches) {
+    url <- paste0(
+      "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?",
+      "db=taxonomy&retmode=xml&id=",
+      URLencode(paste(batch, collapse = ","), reserved = FALSE)
+    )
+    xml <- tryCatch({
+      old_timeout <- getOption("timeout")
+      options(timeout = max(20, min(old_timeout, 60)))
+      on.exit(options(timeout = old_timeout), add = TRUE)
+      paste(readLines(url, warn = FALSE), collapse = "\n")
+    }, error = function(e) {
+      message("Could not resolve NCBI taxonomy names for taxids ",
+              paste(batch, collapse = ","), ": ", e$message)
+      NA_character_
+    })
+    if (is.na(xml) || nchar(xml) == 0) {
+      next
+    }
+    taxa <- str_split(xml, "<Taxon>", simplify = FALSE)[[1]]
+    for (taxon_xml in taxa) {
+      taxid <- str_match(taxon_xml, "<TaxId>([^<]+)</TaxId>")[,2]
+      species <- str_match(taxon_xml, "<ScientificName>([^<]+)</ScientificName>")[,2]
+      if (!is.na(taxid) && taxid %in% batch && !is.na(species) && nchar(species) > 0) {
+        fetched[[taxid]] <- species
+      }
+    }
+    Sys.sleep(0.34)
+  }
+  fetched[!is.na(fetched) & nchar(fetched) > 0]
+}
+
+taxids_to_species <- function(staxids, cache_path = opt$taxid_name_cache) {
+  load_taxid_species_cache(cache_path)
+  taxid_list <- lapply(staxids, extract_taxid_values)
+  all_taxids <- unique(unlist(taxid_list, use.names = FALSE))
+  missing_taxids <- setdiff(all_taxids, names(taxid_cache_env$map))
+  if (length(missing_taxids) > 0) {
+    fetched <- fetch_taxid_species_from_ncbi(missing_taxids)
+    if (length(fetched) > 0) {
+      taxid_cache_env$map[names(fetched)] <- fetched
+      save_taxid_species_cache(cache_path)
+      message("Resolved ", length(fetched), " BLAST taxids to species names via NCBI taxonomy.")
+    }
+  }
+  vapply(taxid_list, function(ids) {
+    vals <- unname(taxid_cache_env$map[ids])
+    vals <- unique(na.omit(vals[nchar(vals) > 0]))
+    if (length(vals) == 0) {
+      return(NA_character_)
+    }
+    paste(vals, collapse = ";")
+  }, character(1))
+}
+
+species_from_title_or_taxid <- function(stitle, staxids) {
+  title_species <- extract_blast_species(stitle)
+  taxid_species <- taxids_to_species(staxids)
+  coalesce(title_species, taxid_species)
+}
+
+species_from_blast_fields <- function(sscinames, stitle, staxids) {
+  blast_species <- clean_blast_label(sscinames)
+  blast_species <- ifelse(is.na(blast_species) | nchar(blast_species) == 0, NA_character_, blast_species)
+  coalesce(blast_species, species_from_title_or_taxid(stitle, staxids))
 }
 
 collapse_species_values <- function(x) {
@@ -575,7 +699,7 @@ ensure_columns <- function(tbl, cols) {
 
 normalize_reblast_table <- function(tbl, mode=c("blast", "blastp")) {
   mode <- match.arg(mode)
-  common_cols <- c("metadata_category", "query", "stitle", "staxids", "identity", "qcovs",
+  common_cols <- c("metadata_category", "query", "stitle", "staxids", "sscinames", "identity", "qcovs",
                    "subject", "sacc", "NCBI_protein_accession", "UniProt_accession")
   blast_cols <- c("features", "features_all", "features_10000_window")
   cols <- if (mode == "blast") c(common_cols, blast_cols) else common_cols
@@ -591,8 +715,8 @@ normalize_reblast_table <- function(tbl, mode=c("blast", "blastp")) {
 ensure_annotation_columns <- function(tbl) {
   fallback_cols <- c("metadata_category", "feature", "cluster", "query", "accuracy",
                      "classes", "coefficients", "identity", "qcovs", "confounders",
-                     "stitle", "staxids", "features", "features_10000_window", "features_all",
-                     "compactor_species", "compactor_staxids",
+                     "stitle", "staxids", "sscinames", "features", "features_10000_window", "features_all",
+                     "compactor_species", "compactor_staxids", "compactor_sscinames",
                      "subject", "sacc", "NCBI_protein_accession", "UniProt_accession",
                      "compactor_blast_subject_id", "compactor_blast_accession",
                      "compactor_ncbi_protein_accession", "compactor_uniprot_accession",
@@ -605,7 +729,8 @@ ensure_annotation_columns <- function(tbl) {
   }
   for (col in c("metadata_category", "feature", "cluster", "query", "classes",
                 "coefficients", "confounders", "stitle", "staxids", "features",
-                "features_10000_window", "features_all", "compactor_species", "compactor_staxids",
+                "sscinames", "features_10000_window", "features_all", "compactor_species", "compactor_staxids",
+                "compactor_sscinames",
                 "subject", "sacc", "NCBI_protein_accession", "UniProt_accession",
                 "compactor_blast_subject_id", "compactor_blast_accession",
                 "compactor_ncbi_protein_accession", "compactor_uniprot_accession")) {
@@ -662,6 +787,7 @@ make_compactor_summary_label_dt <- function(path) {
   compactor_dt <- fread(path)
   compactor_cols <- c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
                       "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids",
+                      "compactor_sscinames",
                       "compactor_blast_subject_id", "compactor_blast_accession",
                       "compactor_ncbi_protein_accession", "compactor_uniprot_accession")
   compactor_dt <- ensure_columns(compactor_dt, compactor_cols)
@@ -680,7 +806,7 @@ make_compactor_summary_label_dt <- function(path) {
     summarise(compactor_summary_label = collapse_blast_labels(paste(unique(na.omit(compactor_summary_label)), collapse=";")),
               compactor_summary_identity = first_numeric_or_na(identity),
               compactor_summary_qcovs = first_numeric_or_na(qcovs),
-              compactor_summary_species = collapse_species_values(compactor_species),
+              compactor_summary_species = collapse_species_values(coalesce(compactor_species, compactor_sscinames)),
               compactor_summary_staxids = first_text_or_na(compactor_staxids),
               compactor_summary_subject_id = first_text_or_na(compactor_blast_subject_id),
               compactor_summary_accession = first_text_or_na(compactor_blast_accession),
@@ -696,13 +822,13 @@ make_reblastp_label_dt <- function(reblastp_dt, category) {
                   outside_taxid_species=character(), outside_taxid_staxids=character(),
                   outside_taxid_subject_id=character(), outside_taxid_accession=character()))
   }
-  reblastp_dt <- ensure_columns(reblastp_dt, c("metadata_category", "query", "stitle", "staxids", "identity", "qcovs",
+  reblastp_dt <- ensure_columns(reblastp_dt, c("metadata_category", "query", "stitle", "staxids", "sscinames", "identity", "qcovs",
                                                "subject", "sacc", "NCBI_protein_accession", "UniProt_accession"))
   reblastp_dt %>%
     filter(metadata_category == category) %>%
     mutate(sequence = str_remove(query, "^cluster_\\d+_")) %>%
     mutate(outside_taxid_label = clean_blast_label(str_remove_all(stitle, "\\[.+\\]$|MULTISPECIES:\\s|, partial"))) %>%
-    mutate(outside_taxid_species = extract_blast_species(stitle)) %>%
+    mutate(outside_taxid_species = species_from_blast_fields(sscinames, stitle, staxids)) %>%
     mutate(outside_taxid_subject_id = coalesce(subject, NCBI_protein_accession, sacc)) %>%
     mutate(outside_taxid_accession = coalesce(NCBI_protein_accession, UniProt_accession, sacc, subject)) %>%
     group_by(sequence) %>%
@@ -723,7 +849,7 @@ make_reblast_label_dt <- function(reblast_dt, category) {
                   outside_taxid_species=character(), outside_taxid_staxids=character(),
                   outside_taxid_subject_id=character(), outside_taxid_accession=character()))
   }
-  reblast_dt <- ensure_columns(reblast_dt, c("metadata_category", "query", "stitle", "staxids", "identity", "qcovs",
+  reblast_dt <- ensure_columns(reblast_dt, c("metadata_category", "query", "stitle", "staxids", "sscinames", "identity", "qcovs",
                                              "subject", "sacc", "NCBI_protein_accession", "UniProt_accession",
                                              "features", "features_all", "features_10000_window"))
   reblast_dt %>%
@@ -735,7 +861,7 @@ make_reblast_label_dt <- function(reblast_dt, category) {
     mutate(outside_products = extract_feature_qualifier(feature_text, "product")) %>%
     mutate(outside_genes = extract_feature_qualifier(feature_text, "gene")) %>%
     mutate(outside_taxid_label = choose_feature_label(outside_products, outside_genes, opt$products)) %>%
-    mutate(outside_taxid_species = extract_blast_species(stitle)) %>%
+    mutate(outside_taxid_species = species_from_blast_fields(sscinames, stitle, staxids)) %>%
     mutate(outside_taxid_subject_id = coalesce(subject, sacc, NCBI_protein_accession)) %>%
     mutate(outside_taxid_accession = coalesce(sacc, NCBI_protein_accession, UniProt_accession, subject)) %>%
     group_by(sequence) %>%
@@ -930,7 +1056,7 @@ for (category in categories) {
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
       select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient,
-             cluster, feature, query, identity, qcovs, stitle, staxids,
+             cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
              subject, sacc, NCBI_protein_accession, UniProt_accession,
              annotation, confounders) %>%
       mutate(query = str_remove(query, "cluster_\\d+_")) %>%
@@ -939,7 +1065,7 @@ for (category in categories) {
 
     summ_dt <- summ_dt %>% group_by(cluster,query) %>%
       mutate(label=ifelse(!is_empty(unique(na.omit(annotation))), paste0(unique(na.omit(annotation)),collapse=";"), NA)) %>%
-      mutate(blastp_species=collapse_species_values(extract_blast_species(stitle))) %>%
+      mutate(blastp_species=collapse_species_values(species_from_blast_fields(sscinames, stitle, staxids))) %>%
       mutate(blastp_staxids=first_text_or_na(staxids)) %>%
       mutate(blastp_subject_id=first_text_or_na(coalesce(subject, NCBI_protein_accession, sacc))) %>%
       mutate(blastp_accession=first_text_or_na(coalesce(NCBI_protein_accession, UniProt_accession, sacc, subject))) %>%
@@ -970,7 +1096,7 @@ for (category in categories) {
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
         select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient,
-               cluster, feature, query, identity, qcovs, stitle, staxids,
+               cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
                subject, sacc, NCBI_protein_accession, UniProt_accession,
                products, genes, confounders, compactor_annotation, compactor_species, compactor_staxids,
                compactor_blast_subject_id, compactor_blast_accession,
@@ -982,7 +1108,7 @@ for (category in categories) {
 
       summ_dt2 <- summ_dt2 %>%
         mutate(label = choose_feature_label(products, genes, opt$products)) %>%
-        mutate(blast_species = coalesce(extract_blast_species(stitle), compactor_species)) %>%
+        mutate(blast_species = coalesce(species_from_blast_fields(sscinames, stitle, staxids), compactor_species, compactor_sscinames)) %>%
         mutate(blast_staxids = coalesce(staxids, compactor_staxids)) %>%
         mutate(blast_subject_id = coalesce(subject, sacc, NCBI_protein_accession,
                                            compactor_blast_subject_id,
@@ -1361,7 +1487,7 @@ for (category in categories) {
         mutate(direct_products = extract_feature_qualifier(feature_text, "product")) %>%
         mutate(direct_genes = extract_feature_qualifier(feature_text, "gene")) %>%
         mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, opt$products)) %>%
-        mutate(direct_blast_species = coalesce(extract_blast_species(stitle), compactor_species)) %>%
+        mutate(direct_blast_species = coalesce(species_from_blast_fields(sscinames, stitle, staxids), compactor_species, compactor_sscinames)) %>%
         mutate(direct_blast_staxids = coalesce(staxids, compactor_staxids)) %>%
         mutate(direct_blast_subject_id = coalesce(subject, sacc, NCBI_protein_accession,
                                                   compactor_blast_subject_id,

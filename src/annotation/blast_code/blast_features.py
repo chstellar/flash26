@@ -23,6 +23,46 @@ def species_from_stitle(value):
     matches = re.findall(r"\[([^\]]+)\]", str(value))
     return matches[-1].strip() if matches else None
 
+
+def clean_species_name(value):
+    if pd.isna(value):
+        return None
+    value = str(value).strip()
+    if not value or value.upper() in {"NA", "N/A", "NONE", "NAN"}:
+        return None
+    return value
+
+
+def species_from_blast_fields(row):
+    return clean_species_name(row.get("sscinames")) or species_from_stitle(row.get("stitle"))
+
+
+BLASTN_COLUMNS = [
+    "query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
+    "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
+    "sacc", "slen", "staxids", "sscinames", "stitle",
+]
+BLASTN_COLUMNS_LEGACY = [
+    "query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
+    "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
+    "sacc", "slen", "staxids", "stitle",
+]
+
+
+def read_blastn_output(path):
+    df = pd.read_csv(path, sep="\t", header=None)
+    if df.shape[1] == len(BLASTN_COLUMNS):
+        df.columns = BLASTN_COLUMNS
+    elif df.shape[1] == len(BLASTN_COLUMNS_LEGACY):
+        df.columns = BLASTN_COLUMNS_LEGACY
+        df["sscinames"] = None
+    else:
+        raise ValueError(
+            f"Unexpected BLASTN column count in {path}: {df.shape[1]} "
+            f"(expected {len(BLASTN_COLUMNS)} with sscinames or {len(BLASTN_COLUMNS_LEGACY)} legacy columns)"
+        )
+    return df
+
 def load_cache(cache_file):
     """Load cached records from a file."""
     if os.path.exists(cache_file):
@@ -42,10 +82,7 @@ def extract_unique_accessions(blast_folder):
     
     for blast_out in blast_outs:
         try:
-            df = pd.read_csv(blast_out, sep="\t", header=None)
-            df.columns = ["query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
-                      "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
-                      "sacc", "slen", "staxids", "stitle"]
+            df = read_blastn_output(blast_out)
             unique_accessions.update(df["sacc"].unique())
         except pd.errors.EmptyDataError:
             print(f"File {blast_out} is empty. Skipping...")
@@ -120,11 +157,8 @@ def find_overlapping_features(record, window_start, window_end, strand):
     return overlapping_features
 
 def featurize_blast_out(blast_out, window, sacc_records):
-    df = pd.read_csv(blast_out, sep="\t", header=None)
-    df.columns = ["query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
-                  "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
-                  "sacc", "slen", "staxids", "stitle"]
-    df["species_origin"] = df["stitle"].apply(species_from_stitle)
+    df = read_blastn_output(blast_out)
+    df["species_origin"] = df.apply(species_from_blast_fields, axis=1)
     df["features"] = None
     df[f"features_{window}_window"] = None
 
@@ -150,6 +184,7 @@ def featurize_blast_out(blast_out, window, sacc_records):
         "qcovs",
         "sacc",
         "staxids",
+        "sscinames",
         "stitle",
         "species_origin",
         "features",
@@ -166,6 +201,7 @@ def featurized_output_is_current(blast_feat_out, blast_window):
         "qcovs",
         "sacc",
         "staxids",
+        "sscinames",
         "stitle",
         "species_origin",
         "features",
