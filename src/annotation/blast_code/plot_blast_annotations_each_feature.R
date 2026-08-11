@@ -55,7 +55,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: summary-species-sequence-v8")
+message("plot_blast_annotations_each_feature.R build: clean-summary-cols-v9")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
@@ -1512,10 +1512,10 @@ for (category in categories) {
         summarise(direct_blast_label = collapse_blast_labels(paste(unique(na.omit(direct_blast_label)), collapse=";")),
                   direct_identity = first_numeric_or_na(identity),
                   direct_qcovs = first_numeric_or_na(qcovs),
-                  direct_blast_species = collapse_species_values(direct_blast_species),
-                  direct_blast_staxids = first_text_or_na(direct_blast_staxids),
-                  direct_blast_subject_id = first_text_or_na(direct_blast_subject_id),
-                  direct_blast_accession = first_text_or_na(direct_blast_accession),
+                  detail_direct_blast_species = collapse_species_values(direct_blast_species),
+                  detail_direct_blast_staxids = first_text_or_na(direct_blast_staxids),
+                  detail_direct_blast_subject_id = first_text_or_na(direct_blast_subject_id),
+                  detail_direct_blast_accession = first_text_or_na(direct_blast_accession),
                   .groups="drop")
       compactor_detail_label_dt <- category_compactor_summary_dt %>%
         filter(cluster == my_cluster, feature == my_feature) %>%
@@ -1576,10 +1576,10 @@ for (category in categories) {
                               direct_blast_label, label)) %>%
         mutate(identity = coalesce(identity, direct_identity),
                qcovs = coalesce(qcovs, direct_qcovs),
-               direct_blast_species = coalesce(direct_blast_species.x, direct_blast_species.y),
-               direct_blast_staxids = coalesce(direct_blast_staxids.x, direct_blast_staxids.y),
-               direct_blast_subject_id = coalesce(direct_blast_subject_id.x, direct_blast_subject_id.y),
-               direct_blast_accession = coalesce(direct_blast_accession.x, direct_blast_accession.y)) %>%
+               direct_blast_species = coalesce(direct_blast_species, detail_direct_blast_species),
+               direct_blast_staxids = coalesce(direct_blast_staxids, detail_direct_blast_staxids),
+               direct_blast_subject_id = coalesce(direct_blast_subject_id, detail_direct_blast_subject_id),
+               direct_blast_accession = coalesce(direct_blast_accession, detail_direct_blast_accession)) %>%
         mutate(label = ifelse(!has_restricted_label(label) &
                                 has_restricted_label(compactor_summary_label),
                               compactor_summary_label, label)) %>%
@@ -1745,7 +1745,7 @@ for (category in categories) {
                   subtitle=paste("Color: mean observed", metadata_source_col)) +
           theme(panel.grid.minor.y = element_blank())
         print(p2)
-        summ_out_dt <- p_sub %>% select(-label2) %>%
+        summ_out_dt <- p_sub %>% select(-any_of("label2")) %>%
           mutate(metadata = paste0("mean_", metadata_source_col, ":", round(mean_metadata, 6),
                                    "/median_", metadata_source_col, ":", round(median_metadata, 6),
                                    "/n:", total_samples),
@@ -1814,11 +1814,33 @@ for (category in categories) {
           print(p2)
         }
 
-        summ_out_dt <- p_sub %>% select(-label2) %>% ungroup() %>%
+        summ_out_dt <- p_sub %>% select(-any_of("label2")) %>% ungroup() %>%
           mutate(across(all_of(all_classes), \(x) paste(cur_column(), replace_na(x, 0),sep=":"))) %>%
           unite(col=metadata, all_of(all_classes), sep="/") %>%
           mutate(metadata_category = category, cluster=my_cluster, feature=my_feature)
       }
+
+      summary_internal_cols <- c(
+        "direct_blast_species.x", "direct_blast_staxids.x",
+        "direct_blast_subject_id.x", "direct_blast_accession.x",
+        "direct_blast_species.y", "direct_blast_staxids.y",
+        "direct_blast_subject_id.y", "direct_blast_accession.y",
+        "detail_direct_blast_species", "detail_direct_blast_staxids",
+        "detail_direct_blast_subject_id", "detail_direct_blast_accession",
+        "blastp_compactor_sequence", "blastn_compactor_sequence",
+        "compactor_summary_label", "compactor_summary_identity",
+        "compactor_summary_qcovs", "compactor_summary_species",
+        "compactor_summary_staxids", "compactor_summary_sequence",
+        "compactor_summary_subject_id", "compactor_summary_accession",
+        "compactor_summary_ncbi_protein_accession",
+        "compactor_summary_uniprot_accession",
+        "point_label", "point_label_expr", "point_label_color",
+        "color_value", "mean_metadata", "median_metadata", "sd_metadata",
+        "outside_taxid_only"
+      )
+      summ_out_dt <- summ_out_dt %>%
+        select(-any_of(summary_internal_cols)) %>%
+        select(-matches("\\.(x|y)$"))
 
       all_features_summary <- bind_rows(all_features_summary, summ_out_dt)
     }
