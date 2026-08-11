@@ -53,7 +53,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: robust-reblast-schema-v2")
+message("plot_blast_annotations_each_feature.R build: robust-summary-types-v3")
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
@@ -186,6 +186,7 @@ get_nth_class <- function(x,n=1) {
 }
 
 clean_blast_label <- function(x) {
+  x <- as.character(x)
   x <- replace_na(x, "")
   x <- str_replace_all(x, "\\s*\\[[^\\]]+\\]\\s*$", "")
   x <- str_replace(x, "^RecName:\\s*Full=([^;]+).*$", "\\1")
@@ -210,7 +211,7 @@ clean_blast_label <- function(x) {
 }
 
 collapse_blast_labels <- function(x) {
-  labels <- clean_blast_label(unlist(str_split(replace_na(x, ""), ";|,")))
+  labels <- clean_blast_label(unlist(str_split(replace_na(as.character(x), ""), ";|,")))
   labels <- labels[!is.na(labels) & nchar(labels) > 1]
   if (length(labels) == 0) {
     return(NA_character_)
@@ -249,7 +250,7 @@ first_text_or_na <- function(x) {
 
 extract_feature_qualifier <- function(features, qualifier) {
   pattern <- paste0("['\"]", qualifier, "['\"]:\\s*(?:\\[([^\\]]*)\\]|([^,}\\]]+))")
-  matches <- str_match_all(replace_na(features, ""), pattern)
+  matches <- str_match_all(replace_na(as.character(features), ""), pattern)
   map_chr(matches, function(match) {
     if (nrow(match) == 0) {
       return(NA_character_)
@@ -378,6 +379,7 @@ infer_residual_focus_class <- function(category, metadata_source_col, metadata_v
 }
 
 make_plotmath_other_taxa_label <- function(label) {
+  label <- as.character(label)
   label <- replace_na(label, "")
   label <- str_replace_all(label, "\\s*\\(OTHER TAXA\\)", "")
   label <- str_replace_all(label, "\n", " ")
@@ -565,7 +567,7 @@ ensure_columns <- function(tbl, cols) {
   tbl <- as_tibble(tbl)
   for (col in cols) {
     if (!col %in% colnames(tbl)) {
-      tbl[[col]] <- NA_character_
+      tbl[[col]] <- rep(NA_character_, nrow(tbl))
     }
   }
   tbl
@@ -658,13 +660,15 @@ make_compactor_summary_label_dt <- function(path) {
     return(empty_dt)
   }
   compactor_dt <- fread(path)
-  for (col in c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
-                "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids",
-                "compactor_blast_subject_id", "compactor_blast_accession",
-                "compactor_ncbi_protein_accession", "compactor_uniprot_accession")) {
-    if (!col %in% colnames(compactor_dt)) {
-      compactor_dt[[col]] <- NA_character_
-    }
+  compactor_cols <- c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
+                      "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids",
+                      "compactor_blast_subject_id", "compactor_blast_accession",
+                      "compactor_ncbi_protein_accession", "compactor_uniprot_accession")
+  compactor_dt <- ensure_columns(compactor_dt, compactor_cols)
+  for (col in compactor_cols) {
+    compactor_dt[[col]] <- vapply(seq_len(nrow(compactor_dt)),
+                                  function(i) coerce_scalar_text(compactor_dt[[col]][[i]]),
+                                  character(1))
   }
   compactor_dt %>%
     mutate(sequence = str_remove_all(str_remove(as.character(sequence), "^cluster_\\d+_"), "-")) %>%
@@ -853,6 +857,8 @@ if (nrow(compactor_summary_label_dt) > 0) {
 }
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
+dt_reblastp <- normalize_reblast_table(dt_reblastp, "blastp")
+dt_reblast <- normalize_reblast_table(dt_reblast, "blast")
 if (nrow(dt_reblastp) > 0 && !"qcovs" %in% colnames(dt_reblastp)) {
   dt_reblastp$qcovs <- NA
 }
