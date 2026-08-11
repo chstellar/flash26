@@ -55,7 +55,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: compactor-sequence-v7")
+message("plot_blast_annotations_each_feature.R build: summary-species-sequence-v8")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
@@ -1192,6 +1192,8 @@ for (category in categories) {
              outside_taxid_staxids = coalesce(outside_taxid_staxids_blastp, outside_taxid_staxids_blast),
              outside_taxid_subject_id = coalesce(outside_taxid_subject_id_blastp, outside_taxid_subject_id_blast),
              outside_taxid_accession = coalesce(outside_taxid_accession_blastp, outside_taxid_accession_blast)) %>%
+      mutate(outside_taxid_species = coalesce(outside_taxid_species,
+                                              taxids_to_species(outside_taxid_staxids))) %>%
       select(sequence, outside_taxid_label, outside_taxid_identity, outside_taxid_qcovs,
              outside_taxid_species, outside_taxid_staxids, outside_taxid_subject_id, outside_taxid_accession)
     category_compactor_summary_dt <- compactor_summary_label_dt %>%
@@ -1533,7 +1535,8 @@ for (category in categories) {
         mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blastp), label_blastp, combined_label)) %>%
         select(query, accuracy, any_identity, any_qcovs, combined_label, label2,
                direct_blast_species, direct_blast_staxids,
-               direct_blast_subject_id, direct_blast_accession) %>%
+               direct_blast_subject_id, direct_blast_accession,
+               any_of(c("blastp_compactor_sequence", "blastn_compactor_sequence"))) %>%
         dplyr::rename(label=combined_label) %>%
         dplyr::rename(identity=any_identity, qcovs=any_qcovs) %>%
         dplyr::rename(sequence=query)
@@ -1562,6 +1565,10 @@ for (category in categories) {
         left_join(direct_blast_label_dt, by="sequence") %>%
         left_join(compactor_detail_label_dt, by="sequence") %>%
         left_join(outside_taxid_label_dt, by="sequence")
+      summ_sub_dt <- ensure_columns(summ_sub_dt,
+                                    c("compactor_summary_sequence",
+                                      "blastp_compactor_sequence",
+                                      "blastn_compactor_sequence"))
 
       p_sub <- summ_sub_dt %>%
         mutate(label = ifelse((is.na(label) | label == "NO MATCH") &
@@ -1853,10 +1860,16 @@ unannotated_summary <- all_features_summary %>%
 
 default_summary_path <- str_replace(opt$output, ".pdf", "_summary.tsv")
 if (nchar(opt$compactor_summary) > 0) {
-  if (file.exists(default_summary_path)) {
+  all_features_summary %>%
+    relocate(metadata_category, feature, cluster) %>%
+    write_tsv(file = opt$compactor_summary)
+  if (normalizePath(opt$compactor_summary, mustWork = FALSE) !=
+      normalizePath(default_summary_path, mustWork = FALSE) &&
+      file.exists(default_summary_path)) {
     unlink(default_summary_path)
   }
-  message(paste0("Using compactor-filled summary as canonical summary: ", opt$compactor_summary))
+  message(paste0("Wrote enriched compactor summary with resolved species names to: ",
+                 opt$compactor_summary))
 } else {
   all_features_summary %>% relocate(metadata_category, feature, cluster) %>% write_tsv(file = default_summary_path)
 }
