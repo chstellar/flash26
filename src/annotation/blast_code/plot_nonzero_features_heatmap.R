@@ -32,7 +32,7 @@ option_list <- list(
 opt_parser <- OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-message("plot_nonzero_features_heatmap.R build: confusion-log-classwise-v1")
+message("plot_nonzero_features_heatmap.R build: all-samples-title-v4")
 
 # Check if all required arguments are provided
 if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
@@ -252,6 +252,11 @@ build_feature_labels <- function(dt, dt2) {
     summarise(label = paste(unique(label), collapse = "; "), .groups = "drop")
 }
 
+make_panel_title <- function(panel_type, category, focus_class) {
+  paste0(panel_type, "\n",
+         "feature: ", category, "; class: ", focus_class)
+}
+
 draw_feature_heatmap <- function(matrix_data, annotation_df, annotation_colors, column_labels, title) {
   if (nrow(matrix_data) == 0 || ncol(matrix_data) == 0) {
     message("Skipping empty heatmap: ", title)
@@ -348,21 +353,22 @@ if (!"sample_name" %in% colnames(feather_dt)) {
   stop("Feather matrix must contain a sample_name column.")
 }
 
-if (!is.null(confusion_log) && "row_type" %in% colnames(confusion_log) && "sample_name" %in% colnames(confusion_log)) {
+if (!is.null(confusion_log) &&
+    all(c("row_type", "sample_name", "matrix") %in% colnames(confusion_log))) {
   categorical_specs <- confusion_log %>%
     filter(row_type == "sample") %>%
     mutate(true_label = as.character(true_label),
            predicted_label = as.character(predicted_label)) %>%
-    group_by(metadata_category, matrix) %>%
+    group_by(metadata_category) %>%
     summarise(focus_class = list(sort(unique(c(true_label, predicted_label)))),
               .groups = "drop") %>%
     unnest(focus_class) %>%
-    mutate(kind = "classification")
+    mutate(matrix = "all_samples", kind = "classification")
 
   regression_specs <- confusion_log %>%
     filter(row_type == "prediction") %>%
-    distinct(metadata_category, matrix) %>%
-    mutate(focus_class = "residual", kind = "regression")
+    distinct(metadata_category) %>%
+    mutate(matrix = "all_samples", focus_class = "residual", kind = "regression")
 
   specs <- bind_rows(categorical_specs, regression_specs)
 } else {
@@ -406,25 +412,18 @@ for (i in seq_len(nrow(specs))) {
       if (kind == "classification") {
         sample_rows <- confusion_log %>%
           filter(row_type == "sample",
-                 metadata_category == category,
-                 matrix == matrix_name,
-                 true_label == focus_class | predicted_label == focus_class) %>%
+                 metadata_category == category) %>%
           transmute(sample_name,
+                    matrix = tolower(as.character(matrix)),
                     true_label = as.character(true_label),
-                    predicted_label = as.character(predicted_label),
-                    focus_role = case_when(
-                      true_label == focus_class & predicted_label == focus_class ~ "true+predicted",
-                      true_label == focus_class ~ "true",
-                      predicted_label == focus_class ~ "predicted",
-                      TRUE ~ "other"
-                    )) %>%
+                    predicted_label = as.character(predicted_label)) %>%
           distinct()
       } else {
         sample_rows <- confusion_log %>%
           filter(row_type == "prediction",
-                 metadata_category == category,
-                 matrix == matrix_name) %>%
+                 metadata_category == category) %>%
           transmute(sample_name,
+                    matrix = tolower(as.character(matrix)),
                     observed = suppressWarnings(as.numeric(true_label)),
                     predicted = suppressWarnings(as.numeric(predicted_label))) %>%
           distinct()
@@ -435,12 +434,12 @@ for (i in seq_len(nrow(specs))) {
         sample_rows <- all_metadata %>%
           select(sample_name, all_of(category)) %>%
           dplyr::rename(true_label = all_of(category)) %>%
-          mutate(predicted_label = NA_character_,
-                 focus_role = ifelse(as.character(true_label) == focus_class, "true", "other")) %>%
-          filter(focus_role == "true")
+          mutate(matrix = "all_samples",
+                 predicted_label = NA_character_)
       } else if (kind == "regression") {
         sample_rows <- sample_rows %>%
-          mutate(observed = NA_real_, predicted = NA_real_)
+          mutate(matrix = "all_samples",
+                 observed = NA_real_, predicted = NA_real_)
       }
     }
 
@@ -479,27 +478,42 @@ for (i in seq_len(nrow(specs))) {
       ann <- sample_rows %>%
         filter(sample_name %in% sample_order) %>%
         arrange(match(sample_name, sample_order)) %>%
-        select(sample_name, true_label, predicted_label, focus_role) %>%
+        select(sample_name, matrix, true_label, predicted_label) %>%
         column_to_rownames("sample_name")
-      all_labels <- sort(unique(c(ann$true_label, ann$predicted_label)))
+      all_labels <- sort(unique(na.omit(c(ann$true_label, ann$predicted_label))))
       label_cols <- setNames(colorRampPalette(brewer.pal(max(3, min(8, length(all_labels))), "Dark2"))(length(all_labels)), all_labels)
-      role_cols <- c("true+predicted" = "#1b1b1b", "true" = "#d73027", "predicted" = "#4575b4", "other" = "#bdbdbd")
-      annotation_colors <- list(true_label = label_cols, predicted_label = label_cols, focus_role = role_cols)
-      title_prefix <- paste(category, matrix_name, "class", focus_class, sep = " | ")
+      matrix_levels <- sort(unique(na.omit(ann$matrix)))
+      matrix_cols <- c("train" = "#4D4D4D", "test" = "#B2182B", "all_samples" = "#4D4D4D")
+      missing_matrix_levels <- setdiff(matrix_levels, names(matrix_cols))
+      if (length(missing_matrix_levels) > 0) {
+        matrix_cols <- c(matrix_cols,
+                         setNames(colorRampPalette(brewer.pal(8, "Set2"))(length(missing_matrix_levels)),
+                                  missing_matrix_levels))
+      }
+      matrix_cols <- matrix_cols[names(matrix_cols) %in% matrix_levels]
+      annotation_colors <- list(matrix = matrix_cols, true_label = label_cols, predicted_label = label_cols)
     } else {
       ann <- sample_rows %>%
         filter(sample_name %in% sample_order) %>%
         arrange(match(sample_name, sample_order)) %>%
-        select(sample_name, observed, predicted) %>%
+        select(sample_name, matrix, observed, predicted) %>%
         column_to_rownames("sample_name")
-      annotation_colors <- list()
-      title_prefix <- paste(category, matrix_name, "regression", sep = " | ")
+      matrix_levels <- sort(unique(na.omit(ann$matrix)))
+      matrix_cols <- c("train" = "#4D4D4D", "test" = "#B2182B", "all_samples" = "#4D4D4D")
+      missing_matrix_levels <- setdiff(matrix_levels, names(matrix_cols))
+      if (length(missing_matrix_levels) > 0) {
+        matrix_cols <- c(matrix_cols,
+                         setNames(colorRampPalette(brewer.pal(8, "Set2"))(length(missing_matrix_levels)),
+                                  missing_matrix_levels))
+      }
+      matrix_cols <- matrix_cols[names(matrix_cols) %in% matrix_levels]
+      annotation_colors <- list(matrix = matrix_cols)
     }
 
     draw_feature_heatmap(scaled_heatmap_data, ann, annotation_colors, label_map,
-                         paste(title_prefix, "sample by feature"))
+                         make_panel_title("sample by feature heatmap", category, focus_class))
     cor_mat <- draw_correlation_heatmap(scaled_heatmap_data, label_map,
-                                        paste(title_prefix, "feature correlation"))
+                                        make_panel_title("feature correlation", category, focus_class))
 
     clustered_order <- rownames(scaled_heatmap_data)
     if (nrow(scaled_heatmap_data) > 1) {

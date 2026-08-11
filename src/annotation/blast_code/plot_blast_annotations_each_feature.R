@@ -55,7 +55,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: blast-sscinames-v5")
+message("plot_blast_annotations_each_feature.R build: compactor-sequence-v7")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
@@ -778,6 +778,7 @@ make_compactor_summary_label_dt <- function(path) {
                      sequence=character(), compactor_summary_label=character(),
                      compactor_summary_identity=numeric(), compactor_summary_qcovs=numeric(),
                      compactor_summary_species=character(), compactor_summary_staxids=character(),
+                     compactor_summary_sequence=character(),
                      compactor_summary_subject_id=character(), compactor_summary_accession=character(),
                      compactor_summary_ncbi_protein_accession=character(),
                      compactor_summary_uniprot_accession=character())
@@ -787,7 +788,7 @@ make_compactor_summary_label_dt <- function(path) {
   compactor_dt <- fread(path)
   compactor_cols <- c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
                       "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids",
-                      "compactor_sscinames",
+                      "compactor_sscinames", "compactor_sequence",
                       "compactor_blast_subject_id", "compactor_blast_accession",
                       "compactor_ncbi_protein_accession", "compactor_uniprot_accession")
   compactor_dt <- ensure_columns(compactor_dt, compactor_cols)
@@ -808,6 +809,7 @@ make_compactor_summary_label_dt <- function(path) {
               compactor_summary_qcovs = first_numeric_or_na(qcovs),
               compactor_summary_species = collapse_species_values(coalesce(compactor_species, compactor_sscinames)),
               compactor_summary_staxids = first_text_or_na(compactor_staxids),
+              compactor_summary_sequence = first_text_or_na(compactor_sequence),
               compactor_summary_subject_id = first_text_or_na(compactor_blast_subject_id),
               compactor_summary_accession = first_text_or_na(compactor_blast_accession),
               compactor_summary_ncbi_protein_accession = first_text_or_na(compactor_ncbi_protein_accession),
@@ -957,7 +959,7 @@ dt <- fread(opt$nonzero_annotations)
 if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
 dt <- ensure_annotation_columns(dt)
 dt2 <- ensure_annotation_columns(dt2)
-for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_length",
+for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_sequence", "compactor_length",
                         "compactor_exact_support", "compactor_raw_annotation")) {
   if (!compactor_col %in% colnames(dt)) {
     dt[[compactor_col]] <- NA_character_
@@ -1058,7 +1060,7 @@ for (category in categories) {
       select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient,
              cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
              subject, sacc, NCBI_protein_accession, UniProt_accession,
-             annotation, confounders) %>%
+             annotation, confounders, compactor_sequence) %>%
       mutate(query = str_remove(query, "cluster_\\d+_")) %>%
       distinct(cluster,annotation,query,.keep_all = T) %>% group_by(cluster)
 
@@ -1069,6 +1071,7 @@ for (category in categories) {
       mutate(blastp_staxids=first_text_or_na(staxids)) %>%
       mutate(blastp_subject_id=first_text_or_na(coalesce(subject, NCBI_protein_accession, sacc))) %>%
       mutate(blastp_accession=first_text_or_na(coalesce(NCBI_protein_accession, UniProt_accession, sacc, subject))) %>%
+      mutate(blastp_compactor_sequence=first_text_or_na(compactor_sequence)) %>%
       distinct(cluster, query, label, .keep_all=T) %>% ungroup()
 
     summ_dt_blastp_only <- summ_dt
@@ -1099,6 +1102,7 @@ for (category in categories) {
                cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
                subject, sacc, NCBI_protein_accession, UniProt_accession,
                products, genes, confounders, compactor_annotation, compactor_species, compactor_staxids,
+               compactor_sscinames, compactor_sequence,
                compactor_blast_subject_id, compactor_blast_accession,
                compactor_ncbi_protein_accession, compactor_uniprot_accession) %>%
         mutate(query = str_remove(query, "^cluster_\\d+_")) %>%
@@ -1127,14 +1131,16 @@ for (category in categories) {
         mutate(blast_staxids=first_text_or_na(blast_staxids)) %>%
         mutate(blast_subject_id=first_text_or_na(blast_subject_id)) %>%
         mutate(blast_accession=first_text_or_na(blast_accession)) %>%
+        mutate(compactor_sequence = first_text_or_na(compactor_sequence)) %>%
         distinct(cluster, query, label, .keep_all=T) %>% ungroup()
       summ_dt2 <- summ_dt2 %>% select(cluster, query, identity, qcovs, label, blast_species, blast_staxids,
-                                      blast_subject_id, blast_accession) %>%
+                                      blast_subject_id, blast_accession, compactor_sequence) %>%
         dplyr::rename(label2=label, blast_species2=blast_species, blast_staxids2=blast_staxids,
-                      blast_subject_id2=blast_subject_id, blast_accession2=blast_accession)
+                      blast_subject_id2=blast_subject_id, blast_accession2=blast_accession,
+                      blastn_compactor_sequence=compactor_sequence)
       summ_dt <- summ_dt %>% left_join(summ_dt2 %>%
                                          select(cluster, query, identity, qcovs, label2, blast_species2, blast_staxids2,
-                                                blast_subject_id2, blast_accession2), by=c("cluster", "query")) %>%
+                                                blast_subject_id2, blast_accession2, blastn_compactor_sequence), by=c("cluster", "query")) %>%
         dplyr::rename(identity=`identity.x`, qcovs=`qcovs.x`) %>%
         mutate(identity = ifelse(is.na(label) & !is.na(label2), `identity.y`, identity)) %>%
         mutate(qcovs = ifelse(is.na(label) & !is.na(label2), `qcovs.y`, qcovs)) %>%
@@ -1514,6 +1520,7 @@ for (category in categories) {
         select(sequence, compactor_summary_label,
                compactor_summary_identity, compactor_summary_qcovs,
                compactor_summary_species, compactor_summary_staxids,
+               compactor_summary_sequence,
                compactor_summary_subject_id, compactor_summary_accession,
                compactor_summary_ncbi_protein_accession,
                compactor_summary_uniprot_accession)
@@ -1569,6 +1576,9 @@ for (category in categories) {
         mutate(label = ifelse(!has_restricted_label(label) &
                                 has_restricted_label(compactor_summary_label),
                               compactor_summary_label, label)) %>%
+        mutate(compactor_sequence = coalesce(compactor_summary_sequence,
+                                             blastp_compactor_sequence,
+                                             blastn_compactor_sequence)) %>%
         mutate(identity = ifelse(has_restricted_label(compactor_summary_label) & is.na(identity),
                                  compactor_summary_identity, identity),
                qcovs = ifelse(has_restricted_label(compactor_summary_label) & is.na(qcovs),

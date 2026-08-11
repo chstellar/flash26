@@ -324,6 +324,7 @@ def write_selected_compactors(records, output_path):
         "query",
         "anchor",
         "compactor",
+        "compactor_sequence",
         "length",
         "exact_support",
         "row_index",
@@ -340,7 +341,9 @@ def write_selected_compactors(records, output_path):
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
         writer.writeheader()
         for record in records:
-            writer.writerow({col: record.get(col, "NA") for col in columns})
+            row = dict(record)
+            row["compactor_sequence"] = row.get("compactor_sequence") or row.get("compactor", "NA")
+            writer.writerow({col: row.get(col, "NA") for col in columns})
 
 
 def read_selected_compactors(path):
@@ -723,6 +726,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "query",
         "anchor",
         "compactor",
+        "compactor_sequence",
         "length",
         "exact_support",
         "source_file",
@@ -778,6 +782,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
             entries = annotations.get(record["query"], []) or [no_hit_entry()]
             for entry in entries:
                 row = {**record, **entry}
+                row["compactor_sequence"] = record.get("compactor", "NA")
                 source_counts[row["annotation_source"]] += 1
                 writer.writerow({col: row.get(col, "NA") for col in columns})
     print(
@@ -891,6 +896,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "seed_extendor",
         "compactor_query",
         "compactor",
+        "compactor_sequence",
         "compactor_length",
         "compactor_exact_support",
         "compactor_anchor",
@@ -951,6 +957,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
                         {
                             "compactor_query": query,
                             "compactor": record["compactor"],
+                            "compactor_sequence": record["compactor"],
                             "compactor_length": record["length"],
                             "compactor_exact_support": record["exact_support"],
                             "compactor_anchor": record["anchor"],
@@ -1017,10 +1024,12 @@ def read_seed_compactor_annotation_map(path):
         for row in reader:
             extendor = (row.get("seed_extendor") or "").strip()
             label = clean_label(row.get("annotation_label")) or ""
-            if not extendor or not is_real_annotation(label):
+            compactor_sequence = row.get("compactor_sequence") or row.get("compactor", "NA")
+            if not extendor or (not is_real_annotation(label) and not has_text(compactor_sequence)):
                 continue
+            display_label = f"{label} (COMPACTOR)" if is_real_annotation(label) else (label or "NO MATCH")
             candidate = {
-                "label": f"{label} (COMPACTOR)",
+                "label": display_label,
                 "identity": row.get("identity", "NA"),
                 "qcovs": row.get("qcovs", "NA"),
                 "raw_annotation": row.get("raw_annotation", "NA"),
@@ -1033,6 +1042,7 @@ def read_seed_compactor_annotation_map(path):
                 "uniprot_accession": row.get("uniprot_accession", "NA"),
                 "compactor_query": row.get("compactor_query", "NA"),
                 "compactor": row.get("compactor", "NA"),
+                "compactor_sequence": compactor_sequence,
                 "compactor_length": row.get("compactor_length", "NA"),
                 "compactor_exact_support": row.get("compactor_exact_support", "NA"),
                 "annotation_source": row.get("annotation_source", "NA"),
@@ -1042,26 +1052,29 @@ def read_seed_compactor_annotation_map(path):
             if current is None:
                 annotation_map[extendor] = candidate
                 continue
-            current_priority = 0 if current.get("annotation_source") == "restricted_taxid" else 1
-            candidate_priority = 0 if candidate.get("annotation_source") == "restricted_taxid" else 1
+            current_priority = annotation_priority(current)
+            candidate_priority = annotation_priority(candidate)
             if candidate_priority < current_priority:
                 annotation_map[extendor] = candidate
     return annotation_map
 
 
 def annotation_priority(hit):
+    real_rank = 0 if is_real_annotation(hit.get("label")) else 1
     source_rank = 0 if hit.get("annotation_source") == "restricted_taxid" else 1
     mode_rank = 0 if hit.get("blast_mode") == "blastp" else 1
     label_rank = len(str(hit.get("label", "")))
-    return (source_rank, mode_rank, label_rank)
+    return (real_rank, source_rank, mode_rank, label_rank)
 
 
 def compactor_hit_from_row(row):
     label = clean_label(row.get("annotation_label")) or ""
-    if not is_real_annotation(label):
+    compactor_sequence = row.get("compactor_sequence") or row.get("compactor", "NA")
+    if not is_real_annotation(label) and not has_text(compactor_sequence):
         return None
+    display_label = f"{label} (COMPACTOR)" if is_real_annotation(label) else (label or "NO MATCH")
     return {
-        "label": f"{label} (COMPACTOR)",
+        "label": display_label,
         "identity": row.get("identity", "NA"),
         "qcovs": row.get("qcovs", "NA"),
         "raw_annotation": row.get("raw_annotation", "NA"),
@@ -1074,6 +1087,7 @@ def compactor_hit_from_row(row):
         "uniprot_accession": row.get("uniprot_accession", "NA"),
         "compactor_query": row.get("query") or row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
+        "compactor_sequence": compactor_sequence,
         "compactor_length": row.get("length") or row.get("compactor_length", "NA"),
         "compactor_exact_support": row.get("exact_support") or row.get("compactor_exact_support", "NA"),
         "annotation_source": row.get("annotation_source", "NA"),
@@ -1203,10 +1217,11 @@ def synthetic_query(cluster, sequence):
 
 def summary_compactor_hit(row):
     label = clean_label(row.get("compactor_annotation")) or ""
-    if not is_real_annotation(label):
+    compactor_sequence = row.get("compactor_sequence") or row.get("compactor", "NA")
+    if not is_real_annotation(label) and not has_text(compactor_sequence):
         return None
     return {
-        "label": label,
+        "label": label or "NO MATCH",
         "identity": row.get("identity", "NA"),
         "qcovs": row.get("qcovs", "NA"),
         "raw_annotation": row.get("compactor_raw_annotation", "NA"),
@@ -1214,6 +1229,7 @@ def summary_compactor_hit(row):
         "staxids": row.get("compactor_staxids", row.get("staxids", "NA")),
         "compactor_query": row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
+        "compactor_sequence": compactor_sequence,
         "compactor_length": row.get("compactor_length", "NA"),
         "compactor_exact_support": row.get("compactor_exact_support", "NA"),
         "annotation_source": row.get("annotation_source", "NA"),
@@ -1374,6 +1390,7 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
             )
     row["compactor_annotation"] = compactor_hit["label"]
     row["compactor_query"] = compactor_hit["compactor_query"]
+    row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
     row["compactor_length"] = compactor_hit["compactor_length"]
     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
@@ -1437,6 +1454,7 @@ def fill_plot_annotation_tsv(
         for extra_col in (
             "compactor_annotation",
             "compactor_query",
+            "compactor_sequence",
             "compactor_length",
             "compactor_exact_support",
             "compactor_raw_annotation",
@@ -1488,6 +1506,7 @@ def fill_plot_annotation_tsv(
                 else:
                     row.setdefault("compactor_annotation", "NA")
                     row.setdefault("compactor_query", "NA")
+                    row.setdefault("compactor_sequence", "NA")
                     row.setdefault("compactor_length", "NA")
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
@@ -1532,6 +1551,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
         for col in (
             "compactor_annotation",
             "compactor_query",
+            "compactor_sequence",
             "compactor_length",
             "compactor_exact_support",
             "compactor_raw_annotation",
@@ -1586,6 +1606,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                         row["annotation"] = compactor_hit["label"]
                     row["compactor_annotation"] = compactor_hit["label"]
                     row["compactor_query"] = compactor_hit["compactor_query"]
+                    row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
                     row["compactor_length"] = compactor_hit["compactor_length"]
                     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
                     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
@@ -1608,6 +1629,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                 else:
                     row.setdefault("compactor_annotation", "NA")
                     row.setdefault("compactor_query", "NA")
+                    row.setdefault("compactor_sequence", "NA")
                     row.setdefault("compactor_length", "NA")
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
