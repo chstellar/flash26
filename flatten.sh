@@ -3,11 +3,13 @@
 set -euo pipefail
 
 INPUT_DIR=/scratch/users/jiamuyu/proj_botryllus/flash/results
-INPUT_PAT="${1:-260720-00-3ants-challenge*}" # can contain trailing `*` to capture multiple dirs at once
+INPUT_PAT="${1:-260720-00-3ants-challenge*}"  # may contain trailing * to capture multiple dirs
 OUTPUT_DIR=/scratch/groups/horence/chester/flash2share
+OPTIONAL_SUFFIX="${2:-}"                        # default empty (safe under set -u)
 
-# derive subdirectory name from INPUT_PAT with the trailing * removed
 OUTPUT_PAT="${INPUT_PAT%\*}"
+OUTPUT_PAT="${OUTPUT_PAT//-/_}"
+OUTPUT_PAT="${OUTPUT_PAT}${OPTIONAL_SUFFIX:+_${OPTIONAL_SUFFIX}}"
 OUTPUT_SUBDIR="${OUTPUT_DIR}/${OUTPUT_PAT}"
 
 mkdir -p "$OUTPUT_SUBDIR"
@@ -27,3 +29,6 @@ for dir in $INPUT_PAT; do
 done
 
 echo "saved key flattened results from ${INPUT_DIR}/${INPUT_PAT} to ${OUTPUT_SUBDIR}"
+
+ml system rclone/1.73.1
+rclone copy "${OUTPUT_SUBDIR}" "gdrive:${OUTPUT_PAT}" -P
