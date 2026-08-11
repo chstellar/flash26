@@ -396,7 +396,7 @@ def write_empty_blastn(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "query\tsubject\tidentity\talignment_length\tmismatches\tgap_opens\tq_start\tq_end\t"
-        "s_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tstitle\tfeatures\tfeatures_10000_window\n"
+        "s_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tstitle\tspecies_origin\tfeatures\tfeatures_10000_window\n"
     )
 
 

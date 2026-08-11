@@ -35,13 +35,27 @@ if (is.null(opt$blast_annotations) || is.null(opt$coefficients) || is.null(opt$o
   stop("All arguments must be supplied", call. = FALSE)
 }
 
+extract_blast_species <- function(x) {
+  x <- as.character(x)
+  matches <- stringr::str_match_all(x, "\\[([^\\]]+)\\]")
+  vapply(matches, function(m) {
+    if (nrow(m) == 0) {
+      return(NA_character_)
+    }
+    stringr::str_squish(m[nrow(m), 2])
+  }, character(1))
+}
+
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
 if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   annotations <- annotations %>%
-    select(query, evalue, identity, qcovs, qframe, stitle, `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
+    select(query, evalue, identity, qcovs, qframe, stitle, any_of(c("staxids", "species_origin")), `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+  if (!"species_origin" %in% colnames(annotations)) {
+    annotations <- annotations %>% mutate(species_origin = extract_blast_species(stitle))
+  }
 
   # we also add on the translated sequence for as a column. The query column contains cluster_X_{Sequence} and the qframe column contains the frame
   # we extract {sequence} and translate it using the qframe
@@ -130,8 +144,11 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   annotations <- annotations %>% left_join(sequence_dt, by = c("query", "qframe"))
 } else {
   annotations <- annotations %>%
-    select(query, evalue, identity, qcovs, features, contains("window")) %>%
+    select(query, evalue, identity, qcovs, any_of(c("subject", "sacc", "staxids", "stitle", "species_origin")), features, contains("window")) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
+  if (!"species_origin" %in% colnames(annotations) && "stitle" %in% colnames(annotations)) {
+    annotations <- annotations %>% mutate(species_origin = extract_blast_species(stitle))
+  }
 }
 
 

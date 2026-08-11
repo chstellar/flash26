@@ -4,6 +4,7 @@ import time
 import argparse
 import sys
 import os
+import re
 from os.path import join, basename
 from concurrent.futures import ThreadPoolExecutor
 from math import floor
@@ -13,6 +14,14 @@ import pickle
 MAX_RETRIES = 100
 REQUEST_DELAY = 4  # Delay in seconds between requests
 INITIAL_DELAY_RANGE = (0.1, 8)  # Range for initial random delay
+
+
+def species_from_stitle(value):
+    """Extract the trailing bracketed organism name from an NCBI BLAST title."""
+    if pd.isna(value):
+        return None
+    matches = re.findall(r"\[([^\]]+)\]", str(value))
+    return matches[-1].strip() if matches else None
 
 def load_cache(cache_file):
     """Load cached records from a file."""
@@ -115,6 +124,7 @@ def featurize_blast_out(blast_out, window, sacc_records):
     df.columns = ["query", "subject", "identity", "alignment_length", "mismatches", "gap_opens",
                   "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
                   "sacc", "slen", "staxids", "stitle"]
+    df["species_origin"] = df["stitle"].apply(species_from_stitle)
     df["features"] = None
     df[f"features_{window}_window"] = None
 
@@ -132,12 +142,47 @@ def featurize_blast_out(blast_out, window, sacc_records):
         features = find_overlapping_features(record, window_start, window_end, strand)
         df.at[index, f"features_{window}_window"] = features
     
-    return df[["query", "identity", "evalue", "qcovs", "features", f"features_{window}_window"]]
+    return df[[
+        "query",
+        "subject",
+        "identity",
+        "evalue",
+        "qcovs",
+        "sacc",
+        "staxids",
+        "stitle",
+        "species_origin",
+        "features",
+        f"features_{window}_window",
+    ]]
+
+
+def featurized_output_is_current(blast_feat_out, blast_window):
+    required_columns = {
+        "query",
+        "subject",
+        "identity",
+        "evalue",
+        "qcovs",
+        "sacc",
+        "staxids",
+        "stitle",
+        "species_origin",
+        "features",
+        f"features_{blast_window}_window",
+    }
+    try:
+        header = pd.read_csv(blast_feat_out, sep="\t", nrows=0)
+    except Exception:
+        return False
+    return required_columns.issubset(set(header.columns))
 
 def process_blast_file(blast_out, blast_feat_out, blast_window, sacc_records):
     if os.path.exists(blast_feat_out) and os.path.getsize(blast_feat_out) > 0:
-        print(f"Output file {blast_feat_out} exists and has data. Skipping.")
-        return
+        if featurized_output_is_current(blast_feat_out, blast_window):
+            print(f"Output file {blast_feat_out} exists and has origin metadata. Skipping.")
+            return
+        print(f"Output file {blast_feat_out} is missing origin metadata. Regenerating.")
     if os.path.getsize(blast_out) > 0:
         df_features = featurize_blast_out(blast_out, blast_window, sacc_records)
         df_features.to_csv(blast_feat_out, index=None, sep="\t")
