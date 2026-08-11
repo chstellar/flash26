@@ -208,7 +208,8 @@ rule choose_anchors:
         tmp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type),
         splash_bin = config["splash_bin"],
         num_anchors = config["extended_options"]["num_anchors_to_select"],
-        effect_size = config["extended_options"]["effect_size_cutoff"] # only select anchors with an effect size greater than this value
+        effect_size = config["extended_options"]["effect_size_cutoff"], # only select anchors with an effect size greater than this value
+        target_rank = TARGET_RANK[0]
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     conda:
@@ -216,7 +217,7 @@ rule choose_anchors:
     shell:"""
         Rscript --vanilla {params.script} --input {input} --output {output} \
         --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors} \
-        --effect_size {params.effect_size} --splash_bin {params.splash_bin}
+        --effect_size {params.effect_size} --target_rank {params.target_rank} --splash_bin {params.splash_bin}
     """
 
 

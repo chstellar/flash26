@@ -299,11 +299,62 @@ for (category in categories) {
     )
     
     draw(cov_heatmap)
+
+    category_file_label <- str_replace_all(category, "/", "_")
+
+    is_categorical_target <- !any(my_classes == "residual")
+    if (is_categorical_target && nrow(heatmap_data) > 0 && ncol(heatmap_data) > 0) {
+      cor_mat <- suppressWarnings(cor(heatmap_data, use = "pairwise.complete.obs"))
+      cor_mat[!is.finite(cor_mat)] <- NA_real_
+      cor_heatmap <- Heatmap(cor_mat,
+                             name = "Correlation",
+                             cluster_rows = TRUE,
+                             cluster_columns = TRUE,
+                             show_row_names = TRUE,
+                             show_column_names = TRUE,
+                             column_labels = column_labels[colnames(cor_mat)],
+                             row_labels = column_labels[rownames(cor_mat)],
+                             cell_fun = function(j, i, x, y, width, height, fill) {
+                               if (is.finite(cor_mat[i, j])) {
+                                 grid.text(sprintf("%.2f", cor_mat[i, j]), x, y, gp = gpar(fontsize = 6))
+                               }
+                             },
+                             heatmap_legend_param = list(title = "Correlation", at = c(-1, 0, 1), labels = c("-1", "0", "1")),
+                             column_title = "Embedding Features",
+                             row_title = "Embedding Features")
+      draw(cor_heatmap, column_title=paste(category, "feature correlation"),
+           column_title_gp=grid::gpar(fontsize=16), padding=unit(c(100,2,2,2), "pt"))
+
+      out_csv_cor_name <- paste(out_csvs_prefix, category_file_label, "categorical_feature_correlation_matrix.csv", sep = "_")
+      write_csv(cor_mat %>% as.data.frame() %>% rownames_to_column("feature"), out_csv_cor_name, col_names = T, quote="needed")
+
+      clustered_order <- rownames(heatmap_data)
+      if (nrow(heatmap_data) > 1) {
+        clustering_matrix <- heatmap_data
+        clustering_matrix[!is.finite(clustering_matrix)] <- 0
+        clustered_order <- rownames(heatmap_data)[hclust(dist(clustering_matrix))$order]
+      }
+      clustered_scaled <- heatmap_data[clustered_order, , drop = FALSE] %>%
+        as.data.frame() %>%
+        rownames_to_column("sample_name") %>%
+        left_join(class_annotation %>% rownames_to_column("sample_name"), by = "sample_name") %>%
+        relocate(class, .after = sample_name)
+      clustered_unscaled <- unscaled_heatmap_data[clustered_order, , drop = FALSE] %>%
+        as.data.frame() %>%
+        rownames_to_column("sample_name") %>%
+        left_join(class_annotation %>% rownames_to_column("sample_name"), by = "sample_name") %>%
+        relocate(class, .after = sample_name)
+
+      out_csv_clustered_scaled_name <- paste(out_csvs_prefix, category_file_label, "categorical_sample_by_feature_clustered_scaled_by_beta.csv", sep = "_")
+      out_csv_clustered_unscaled_name <- paste(out_csvs_prefix, category_file_label, "categorical_sample_by_feature_clustered_unscaled.csv", sep = "_")
+      write_csv(clustered_scaled, out_csv_clustered_scaled_name, col_names = T, quote="needed")
+      write_csv(clustered_unscaled, out_csv_clustered_unscaled_name, col_names = T, quote="needed")
+    }
     
-    out_csv_beta_name <- paste(out_csvs_prefix, str_replace_all(category, "/", "_"), "nonzero_feature_matrix_scaled_by_beta.csv", sep = "_")
+    out_csv_beta_name <- paste(out_csvs_prefix, category_file_label, "nonzero_feature_matrix_scaled_by_beta.csv", sep = "_")
     write_csv(heatmap_data %>% as.data.frame() %>% rownames_to_column("sample_name"), out_csv_beta_name, col_names = T, quote="needed")
     
-    out_csv_no_beta_name <- paste(out_csvs_prefix, str_replace_all(category, "/", "_"), "nonzero_feature_matrix_unsacled.csv", sep="_")
+    out_csv_no_beta_name <- paste(out_csvs_prefix, category_file_label, "nonzero_feature_matrix_unsacled.csv", sep="_")
     write_csv(unscaled_heatmap_data %>% as.data.frame() %>% rownames_to_column("sample_name"), out_csv_no_beta_name, col_names = T, quote="needed")
     
   }, error = function(e) {

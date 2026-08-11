@@ -32,6 +32,9 @@ option_list <- list(
   make_option(c("-e", "--effect_size"), "Effect size threshold",
     type = "numeric", default = 0.6
   ),
+  make_option(c("--target_rank"), "Target rank to use when selecting rank-specific SPLASH score columns",
+    type = "integer", default = 1
+  ),
   make_option(c("-l", "--lookup_table"), "Lookup table file",
     type = "character"
   ),
@@ -81,6 +84,8 @@ cat(paste("Number of anchors to select:", opt$num_anchors))
 cat("\n")
 cat(paste("Effect size threshold:", opt$effect_size))
 cat("\n")
+cat(paste("Target rank:", opt$target_rank))
+cat("\n")
 cat(paste("Lookup table file:", opt$lookup_table))
 cat("\n")
 cat(paste("SPLASH binary folder:", opt$splash_bin))
@@ -100,24 +105,64 @@ if (nchar(headers$anchor[1]) < 12) {
   opt$effect_size <- 0.1 # change if using short anchors
 }
 
-effect_size_bin_col <- grep("effect_size_bin", names(headers))
-nonzero_samples_col <- grep("number_nonzero_samples", names(headers))
-max_col_to_read <- max(effect_size_bin_col, nonzero_samples_col) + 1
+choose_ranked_column <- function(headers, pattern, target_rank, label) {
+  candidates <- grep(pattern, names(headers), ignore.case = TRUE)
+  if (length(candidates) == 0) {
+    stop(paste0("Could not find ", label, " column matching pattern: ", pattern))
+  }
+  candidate_names <- names(headers)[candidates]
+  rank_patterns <- c(
+    paste0("target[^[:alnum:]]*", target_rank, "([^[:digit:]]|$)"),
+    paste0("rank[^[:alnum:]]*", target_rank, "([^[:digit:]]|$)"),
+    paste0("(^|[^[:digit:]])", target_rank, "$")
+  )
+  rank_match <- rep(FALSE, length(candidate_names))
+  for (rank_pattern in rank_patterns) {
+    rank_match <- rank_match | grepl(rank_pattern, candidate_names, ignore.case = TRUE)
+  }
+  if (sum(rank_match) == 1) {
+    return(candidates[which(rank_match)])
+  }
+  if (sum(rank_match) > 1) {
+    return(candidates[which(rank_match)[1]])
+  }
+  if (target_rank <= length(candidates)) {
+    return(candidates[target_rank])
+  }
+  warning(paste0(
+    "Requested target_rank=", target_rank,
+    " but only found ", length(candidates), " ", label,
+    " columns. Falling back to the last matching column: ",
+    candidate_names[length(candidate_names)]
+  ))
+  candidates[length(candidates)]
+}
+
+effect_size_bin_col <- choose_ranked_column(
+  headers, "effect_size_bin", opt$target_rank, "effect_size_bin"
+)
+nonzero_samples_col <- choose_ranked_column(
+  headers, "number_nonzero_samples", opt$target_rank, "number_nonzero_samples"
+)
+cols_to_read <- c(1, effect_size_bin_col, nonzero_samples_col)
+col_aliases <- setNames(names(headers)[cols_to_read], c("anchor", "effect_size_bin", "number_nonzero_samples"))
+cat(paste0(
+  "Using SPLASH columns: anchor=", names(headers)[1],
+  ", effect_size_bin=", names(headers)[effect_size_bin_col],
+  ", number_nonzero_samples=", names(headers)[nonzero_samples_col],
+  "\n"
+))
 
 # load the input file using awk to filter out rows with effect size < 0.7
 EFFECT_SIZE_CUTOFF <- opt$effect_size
 
+input_reader <- ifelse(grepl(".gz$", opt$input), "zcat", "cat")
 load_cmd <- paste0(
-  "cat ", opt$input, " | ",
-  "cut -f1-", max_col_to_read,
-  " | awk '{OFS=\"\t\"}{if ($",
+  input_reader, " ", shQuote(opt$input), " | ",
+  "awk -F'\\t' 'BEGIN{OFS=\"\\t\"}{if ($",
   effect_size_bin_col, " >= ", EFFECT_SIZE_CUTOFF,
-  ") print $0}'"
+  ") print $1,$", effect_size_bin_col, ",$", nonzero_samples_col, "}'"
 )
-if (grepl(".gz$", opt$input)) {
-  load_cmd <- paste0("z", load_cmd)
-}
-
 # only select the columns up to number_nonzero_samples
 cat(paste(
   "Reading in anchors from",
@@ -125,7 +170,8 @@ cat(paste(
   opt$effect_size
 ))
 cat("\n\n")
-dt <- fread(cmd = load_cmd, col.names = names(headers)[1:max_col_to_read]) %>%
+dt <- fread(cmd = load_cmd, col.names = names(headers)[cols_to_read]) %>%
+  dplyr::rename(any_of(col_aliases)) %>%
   mutate(
     effect_size_bin = as.numeric(effect_size_bin),
     number_nonzero_samples = as.numeric(number_nonzero_samples)
