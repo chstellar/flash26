@@ -590,6 +590,15 @@ def blastp_label(row):
     return None
 
 
+def species_from_stitle(value):
+    value = "" if value is None else str(value)
+    matches = re.findall(r"\[([^\]]+)\]", value)
+    if not matches:
+        return "NA"
+    species = clean_label(matches[-1])
+    return species if species else "NA"
+
+
 def raw_blastn_annotation(row):
     values = []
     for col in ("stitle", "features", "features_10000_window"):
@@ -634,6 +643,8 @@ def read_annotation_table(path, mode, source):
                 label = "UNANNOTATED" if raw_annotation != "NA" else "NO MATCH"
             identity = row.get("identity", "NA")
             qcovs = row.get("qcovs", "NA")
+            species_origin = species_from_stitle(row.get("stitle"))
+            staxids = row.get("staxids", "NA")
             annotations[query].append(
                 {
                     "annotation_label": label,
@@ -644,10 +655,14 @@ def read_annotation_table(path, mode, source):
                     "blast_scope": source,
                     "identity": identity,
                     "qcovs": qcovs,
+                    "species_origin": species_origin,
+                    "staxids": staxids,
                     "raw_annotation": raw_annotation,
                     f"{source}_{mode}_label": label,
                     f"{source}_{mode}_identity": identity,
                     f"{source}_{mode}_qcovs": qcovs,
+                    f"{source}_{mode}_species": species_origin,
+                    f"{source}_{mode}_staxids": staxids,
                 }
             )
     return annotations
@@ -669,6 +684,8 @@ def no_hit_entry():
         "blast_scope": "NA",
         "identity": "NA",
         "qcovs": "NA",
+        "species_origin": "NA",
+        "staxids": "NA",
         "raw_annotation": "NA",
     }
 
@@ -691,11 +708,21 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "blast_scope",
         "identity",
         "qcovs",
+        "species_origin",
+        "staxids",
         "raw_annotation",
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
         "unrestricted_blast_label",
+        "restricted_blastp_species",
+        "restricted_blast_species",
+        "unrestricted_blastp_species",
+        "unrestricted_blast_species",
+        "restricted_blastp_staxids",
+        "restricted_blast_staxids",
+        "unrestricted_blastp_staxids",
+        "unrestricted_blast_staxids",
     ]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     source_counts = defaultdict(int)
@@ -829,11 +856,21 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "blast_scope",
         "identity",
         "qcovs",
+        "species_origin",
+        "staxids",
         "raw_annotation",
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
         "unrestricted_blast_label",
+        "restricted_blastp_species",
+        "restricted_blast_species",
+        "unrestricted_blastp_species",
+        "unrestricted_blast_species",
+        "restricted_blastp_staxids",
+        "restricted_blast_staxids",
+        "unrestricted_blastp_staxids",
+        "unrestricted_blast_staxids",
         "seed_source",
         "raw_seed_row",
     ]
@@ -925,6 +962,8 @@ def read_seed_compactor_annotation_map(path):
                 "identity": row.get("identity", "NA"),
                 "qcovs": row.get("qcovs", "NA"),
                 "raw_annotation": row.get("raw_annotation", "NA"),
+                "species_origin": row.get("species_origin", "NA"),
+                "staxids": row.get("staxids", "NA"),
                 "compactor_query": row.get("compactor_query", "NA"),
                 "compactor": row.get("compactor", "NA"),
                 "compactor_length": row.get("compactor_length", "NA"),
@@ -959,6 +998,8 @@ def compactor_hit_from_row(row):
         "identity": row.get("identity", "NA"),
         "qcovs": row.get("qcovs", "NA"),
         "raw_annotation": row.get("raw_annotation", "NA"),
+        "species_origin": row.get("species_origin", "NA"),
+        "staxids": row.get("staxids", "NA"),
         "compactor_query": row.get("query") or row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
         "compactor_length": row.get("length") or row.get("compactor_length", "NA"),
@@ -1097,6 +1138,8 @@ def summary_compactor_hit(row):
         "identity": row.get("identity", "NA"),
         "qcovs": row.get("qcovs", "NA"),
         "raw_annotation": row.get("compactor_raw_annotation", "NA"),
+        "species_origin": row.get("compactor_species", row.get("species_origin", "NA")),
+        "staxids": row.get("compactor_staxids", row.get("staxids", "NA")),
         "compactor_query": row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
         "compactor_length": row.get("compactor_length", "NA"),
@@ -1262,6 +1305,8 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
     row["compactor_length"] = compactor_hit["compactor_length"]
     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
+    row["compactor_species"] = compactor_hit.get("species_origin", "NA")
+    row["compactor_staxids"] = compactor_hit.get("staxids", "NA")
     return True
 
 
@@ -1310,6 +1355,8 @@ def fill_plot_annotation_tsv(
             "compactor_length",
             "compactor_exact_support",
             "compactor_raw_annotation",
+            "compactor_species",
+            "compactor_staxids",
         ):
             if extra_col not in fieldnames:
                 fieldnames.append(extra_col)
@@ -1395,6 +1442,8 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
             "compactor_length",
             "compactor_exact_support",
             "compactor_raw_annotation",
+            "compactor_species",
+            "compactor_staxids",
         ):
             if col not in fieldnames:
                 fieldnames.append(col)
@@ -1421,6 +1470,8 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row["compactor_length"] = compactor_hit["compactor_length"]
                     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
                     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
+                    row["compactor_species"] = compactor_hit.get("species_origin", "NA")
+                    row["compactor_staxids"] = compactor_hit.get("staxids", "NA")
                     filled += 1
                 else:
                     row.setdefault("compactor_annotation", "NA")
@@ -1428,6 +1479,8 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row.setdefault("compactor_length", "NA")
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
+                    row.setdefault("compactor_species", "NA")
+                    row.setdefault("compactor_staxids", "NA")
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
     print(f"Filled {filled} unresolved plot summary rows with compactor annotations in {output_path}")
     return output_path, filled
