@@ -1,0 +1,5 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) devel   2) math
+/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/envs/biopython_env/etc/conda/activate.d/activate-binutils_linux-64.sh: line 65: ADDR2LINE: unbound variable
