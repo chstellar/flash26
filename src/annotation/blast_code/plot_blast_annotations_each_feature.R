@@ -28,6 +28,8 @@ option_list <- list(
               help = "Optional semicolon-delimited residual confounder settings used by run_adelie", metavar = "character"),
   make_option(c("--compactor_summary"), type = "character", default = "",
               help = "Optional compactor-filled plot summary TSV used only as an annotation-label lookup", metavar = "character"),
+  make_option(c("--compactor_selected"), type = "character", default = "",
+              help = "Optional selected compactor TSV used to backfill compactor_sequence by anchor suffix", metavar = "character"),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Path to set of output plots", metavar = "character"),
   make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
@@ -370,6 +372,20 @@ first_text_or_na <- function(x) {
     return(NA_character_)
   }
   vals[1]
+}
+
+text_or_na_vec <- function(x) {
+  vals <- as.character(x)
+  vals[is.na(vals) | nchar(vals) == 0 | toupper(vals) %in% c("NA", "NAN", "NONE")] <- NA_character_
+  vals
+}
+
+coalesce_text_cols <- function(...) {
+  cols <- list(...)
+  if (length(cols) == 0) {
+    return(character(0))
+  }
+  dplyr::coalesce(!!!lapply(cols, text_or_na_vec))
 }
 
 extract_feature_qualifier <- function(features, qualifier) {
@@ -818,6 +834,23 @@ make_compactor_summary_label_dt <- function(path) {
               .groups="drop")
 }
 
+make_compactor_selected_dt <- function(path) {
+  empty_dt <- tibble(anchor=character(), compactor_selected_sequence=character())
+  if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
+    return(empty_dt)
+  }
+  selected_dt <- fread(path)
+  selected_dt <- ensure_columns(selected_dt, c("anchor", "compactor_sequence", "compactor"))
+  selected_dt %>%
+    mutate(anchor = str_remove_all(as.character(anchor), "-")) %>%
+    mutate(compactor_selected_sequence = coalesce_text_cols(compactor_sequence, compactor)) %>%
+    filter(!is.na(anchor), nchar(anchor) > 0,
+           !is.na(compactor_selected_sequence), nchar(compactor_selected_sequence) > 0) %>%
+    group_by(anchor) %>%
+    summarise(compactor_selected_sequence = first_text_or_na(compactor_selected_sequence),
+              .groups="drop")
+}
+
 make_reblastp_label_dt <- function(reblastp_dt, category) {
   if (nrow(reblastp_dt) == 0 || !"query" %in% colnames(reblastp_dt)) {
     return(tibble(sequence=character(), outside_taxid_label=character(),
@@ -983,6 +1016,17 @@ compactor_summary_label_dt <- make_compactor_summary_label_dt(opt$compactor_summ
 if (nrow(compactor_summary_label_dt) > 0) {
   message(paste0("Compactor labels loaded from plot summary lookup: ",
                  nrow(compactor_summary_label_dt)))
+}
+compactor_selected_dt <- make_compactor_selected_dt(opt$compactor_selected)
+compactor_selected_anchor_len <- if (nrow(compactor_selected_dt) > 0) {
+  max(nchar(compactor_selected_dt$anchor), na.rm=TRUE)
+} else {
+  NA_integer_
+}
+if (nrow(compactor_selected_dt) > 0) {
+  message(paste0("Selected compactor sequences loaded for anchor lookup: ",
+                 nrow(compactor_selected_dt), " anchors of length ",
+                 compactor_selected_anchor_len))
 }
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
@@ -1566,10 +1610,17 @@ for (category in categories) {
         left_join(direct_blast_label_dt, by="sequence") %>%
         left_join(compactor_detail_label_dt, by="sequence") %>%
         left_join(outside_taxid_label_dt, by="sequence")
+      if (nrow(compactor_selected_dt) > 0 && !is.na(compactor_selected_anchor_len)) {
+        summ_sub_dt <- summ_sub_dt %>%
+          mutate(compactor_selected_anchor = str_sub(as.character(sequence), -compactor_selected_anchor_len)) %>%
+          left_join(compactor_selected_dt, by=c("compactor_selected_anchor"="anchor")) %>%
+          select(-compactor_selected_anchor)
+      }
       summ_sub_dt <- ensure_columns(summ_sub_dt,
                                     c("compactor_summary_sequence",
                                       "blastp_compactor_sequence",
-                                      "blastn_compactor_sequence"))
+                                      "blastn_compactor_sequence",
+                                      "compactor_selected_sequence"))
 
       p_sub <- summ_sub_dt %>%
         mutate(label = ifelse((is.na(label) | label == "NO MATCH") &
@@ -1584,9 +1635,10 @@ for (category in categories) {
         mutate(label = ifelse(!has_restricted_label(label) &
                                 has_restricted_label(compactor_summary_label),
                               compactor_summary_label, label)) %>%
-        mutate(compactor_sequence = coalesce(compactor_summary_sequence,
-                                             blastp_compactor_sequence,
-                                             blastn_compactor_sequence)) %>%
+        mutate(compactor_sequence = coalesce_text_cols(compactor_summary_sequence,
+                                                       blastp_compactor_sequence,
+                                                       blastn_compactor_sequence,
+                                                       compactor_selected_sequence)) %>%
         mutate(identity = ifelse(has_restricted_label(compactor_summary_label) & is.na(identity),
                                  compactor_summary_identity, identity),
                qcovs = ifelse(has_restricted_label(compactor_summary_label) & is.na(qcovs),
@@ -1829,6 +1881,7 @@ for (category in categories) {
         "detail_direct_blast_species", "detail_direct_blast_staxids",
         "detail_direct_blast_subject_id", "detail_direct_blast_accession",
         "blastp_compactor_sequence", "blastn_compactor_sequence",
+        "compactor_selected_sequence",
         "compactor_summary_label", "compactor_summary_identity",
         "compactor_summary_qcovs", "compactor_summary_species",
         "compactor_summary_staxids", "compactor_summary_sequence",
@@ -1871,6 +1924,10 @@ all_blast_summary <- all_blast_summary %>%
   mutate(across(where(is.character), single_line_text))
 message(paste0("Compactor labels in generated plot summary: ",
                sum(str_detect(all_features_summary$`Blast Label`, "\\(COMPACTOR\\)"), na.rm=TRUE)))
+if ("compactor_sequence" %in% colnames(all_features_summary)) {
+  message(paste0("Rows with compactor_sequence in generated plot summary: ",
+                 sum(!is.na(text_or_na_vec(all_features_summary$compactor_sequence)), na.rm=TRUE)))
+}
 
 unannotated_summary <- all_features_summary %>%
   filter(is.na(`Blast Label`) |
