@@ -352,6 +352,7 @@ def read_selected_compactors(path):
         return records
     for row in read_tsv(path):
         record = dict(row)
+        record["compactor_sequence"] = record.get("compactor_sequence") or record.get("compactor", "NA")
         record["length"] = int(numeric(record.get("length"), 0) or 0)
         record["exact_support"] = numeric(record.get("exact_support"), "NA")
         record["row_index"] = int(numeric(record.get("row_index"), 0) or 0)
@@ -942,6 +943,8 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "seed_source",
         "raw_seed_row",
     ]
+    rows_written = 0
+    rows_with_compactor_sequence = 0
     with open(output_path, "w", newline="") as handle:
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
         writer.writeheader()
@@ -957,7 +960,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
                         {
                             "compactor_query": query,
                             "compactor": record["compactor"],
-                            "compactor_sequence": record["compactor"],
+                            "compactor_sequence": record.get("compactor_sequence") or record["compactor"],
                             "compactor_length": record["length"],
                             "compactor_exact_support": record["exact_support"],
                             "compactor_anchor": record["anchor"],
@@ -974,7 +977,14 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
                     ]
                 for entry in entries:
                     out_row = {**row, **entry}
+                    rows_written += 1
+                    if has_text(out_row.get("compactor_sequence")):
+                        rows_with_compactor_sequence += 1
                     writer.writerow({col: out_row.get(col, "NA") for col in columns})
+    print(
+        f"Wrote seed compactor annotations to {output_path} "
+        f"({rows_with_compactor_sequence}/{rows_written} rows include compactor_sequence)."
+    )
 
 
 UNRESOLVED_LABELS = {
@@ -1112,7 +1122,16 @@ def read_compactor_anchor_annotation_map(path):
 
 
 def select_compactor_hit(candidates):
-    candidates = [hit for hit in candidates if hit and is_real_annotation(hit.get("label", "").replace("(COMPACTOR)", ""))]
+    candidates = [
+        hit
+        for hit in candidates
+        if hit
+        and (
+            is_real_annotation(hit.get("label", "").replace("(COMPACTOR)", ""))
+            or has_text(hit.get("compactor_sequence"))
+            or has_text(hit.get("compactor"))
+        )
+    ]
     if not candidates:
         return None
     return sorted(candidates, key=annotation_priority)[0]
@@ -1441,6 +1460,7 @@ def fill_plot_annotation_tsv(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filled = 0
+    rows_with_compactor_sequence = 0
     summary_matches = 0
     appended = 0
     skipped_no_template = 0
@@ -1510,6 +1530,8 @@ def fill_plot_annotation_tsv(
                     row.setdefault("compactor_length", "NA")
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
+                if has_text(row.get("compactor_sequence")):
+                    rows_with_compactor_sequence += 1
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
 
             for summary_row in summary_rows or []:
@@ -1525,12 +1547,15 @@ def fill_plot_annotation_tsv(
                     skipped_no_template += 1
                     continue
                 synthetic_row = make_synthetic_annotation_row(summary_row, template, fieldnames, mode)
+                if has_text(synthetic_row.get("compactor_sequence")):
+                    rows_with_compactor_sequence += 1
                 writer.writerow({col: synthetic_row.get(col, "NA") for col in fieldnames})
                 existing_summary_keys.add(key)
                 appended += 1
     print(
         f"Filled {filled} {mode} rows with compactor annotations in {output_path} "
-        f"({summary_matches} exact-summary matches found, {appended} summary rows appended, "
+        f"({rows_with_compactor_sequence} rows include compactor_sequence; "
+        f"{summary_matches} exact-summary matches found, {appended} summary rows appended, "
         f"{skipped_no_template} summary rows skipped without a template)."
     )
     return output_path, filled
@@ -1545,6 +1570,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
         return output_path, 0
 
     filled = 0
+    rows_with_compactor_sequence = 0
     with open(input_path, newline="") as in_handle:
         reader = csv.DictReader(in_handle, delimiter="\t")
         fieldnames = list(reader.fieldnames or [])
@@ -1651,8 +1677,13 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                         or row.get("blast_staxids_origin")
                         or "NA",
                     )
+                if has_text(row.get("compactor_sequence")):
+                    rows_with_compactor_sequence += 1
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
-    print(f"Filled {filled} unresolved plot summary rows with compactor annotations in {output_path}")
+    print(
+        f"Filled {filled} unresolved plot summary rows with compactor annotations in {output_path} "
+        f"({rows_with_compactor_sequence} rows include compactor_sequence)."
+    )
     return output_path, filled
 
 
