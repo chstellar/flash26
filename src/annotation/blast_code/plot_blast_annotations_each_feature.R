@@ -30,6 +30,8 @@ option_list <- list(
               help = "Optional compactor-filled plot summary TSV used only as an annotation-label lookup", metavar = "character"),
   make_option(c("--compactor_selected"), type = "character", default = "",
               help = "Optional selected compactor TSV used to backfill compactor_sequence by anchor suffix", metavar = "character"),
+  make_option(c("--compactor_seed_annotations"), type = "character", default = "",
+              help = "Optional seed annotation TSV used to backfill compactor_sequence by exact plotted extendor", metavar = "character"),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Path to set of output plots", metavar = "character"),
   make_option(c("--products"), type= "logical", default=FALSE, action="store_true",
@@ -851,6 +853,23 @@ make_compactor_selected_dt <- function(path) {
               .groups="drop")
 }
 
+make_compactor_seed_dt <- function(path) {
+  empty_dt <- tibble(sequence=character(), compactor_seed_sequence=character())
+  if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
+    return(empty_dt)
+  }
+  seed_dt <- fread(path)
+  seed_dt <- ensure_columns(seed_dt, c("seed_extendor", "compactor_sequence", "compactor"))
+  seed_dt %>%
+    mutate(sequence = str_remove_all(as.character(seed_extendor), "-")) %>%
+    mutate(compactor_seed_sequence = coalesce_text_cols(compactor_sequence, compactor)) %>%
+    filter(!is.na(sequence), nchar(sequence) > 0,
+           !is.na(compactor_seed_sequence), nchar(compactor_seed_sequence) > 0) %>%
+    group_by(sequence) %>%
+    summarise(compactor_seed_sequence = first_text_or_na(compactor_seed_sequence),
+              .groups="drop")
+}
+
 make_reblastp_label_dt <- function(reblastp_dt, category) {
   if (nrow(reblastp_dt) == 0 || !"query" %in% colnames(reblastp_dt)) {
     return(tibble(sequence=character(), outside_taxid_label=character(),
@@ -1027,6 +1046,11 @@ if (nrow(compactor_selected_dt) > 0) {
   message(paste0("Selected compactor sequences loaded for anchor lookup: ",
                  nrow(compactor_selected_dt), " anchors of length ",
                  compactor_selected_anchor_len))
+}
+compactor_seed_dt <- make_compactor_seed_dt(opt$compactor_seed_annotations)
+if (nrow(compactor_seed_dt) > 0) {
+  message(paste0("Seed compactor sequences loaded for exact extendor lookup: ",
+                 nrow(compactor_seed_dt), " plotted extendors"))
 }
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
@@ -1609,7 +1633,8 @@ for (category in categories) {
         left_join(label_dt, by="sequence") %>%
         left_join(direct_blast_label_dt, by="sequence") %>%
         left_join(compactor_detail_label_dt, by="sequence") %>%
-        left_join(outside_taxid_label_dt, by="sequence")
+        left_join(outside_taxid_label_dt, by="sequence") %>%
+        left_join(compactor_seed_dt, by="sequence")
       if (nrow(compactor_selected_dt) > 0 && !is.na(compactor_selected_anchor_len)) {
         summ_sub_dt <- summ_sub_dt %>%
           mutate(compactor_selected_anchor = str_sub(as.character(sequence), -compactor_selected_anchor_len)) %>%
@@ -1618,6 +1643,7 @@ for (category in categories) {
       }
       summ_sub_dt <- ensure_columns(summ_sub_dt,
                                     c("compactor_summary_sequence",
+                                      "compactor_seed_sequence",
                                       "blastp_compactor_sequence",
                                       "blastn_compactor_sequence",
                                       "compactor_selected_sequence"))
@@ -1636,6 +1662,7 @@ for (category in categories) {
                                 has_restricted_label(compactor_summary_label),
                               compactor_summary_label, label)) %>%
         mutate(compactor_sequence = coalesce_text_cols(compactor_summary_sequence,
+                                                       compactor_seed_sequence,
                                                        blastp_compactor_sequence,
                                                        blastn_compactor_sequence,
                                                        compactor_selected_sequence)) %>%
@@ -1880,6 +1907,7 @@ for (category in categories) {
         "direct_blast_subject_id.y", "direct_blast_accession.y",
         "detail_direct_blast_species", "detail_direct_blast_staxids",
         "detail_direct_blast_subject_id", "detail_direct_blast_accession",
+        "compactor_seed_sequence",
         "blastp_compactor_sequence", "blastn_compactor_sequence",
         "compactor_selected_sequence",
         "compactor_summary_label", "compactor_summary_identity",

@@ -1320,6 +1320,7 @@ rule plot_compactor_reannotation:
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_compactor.tsv"),
         compactor_summary = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv"),
         compactor_selected = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_selected.tsv"),
+        compactor_seed_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_seed_annotations.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
@@ -1347,6 +1348,7 @@ rule plot_compactor_reannotation:
         --metadata {input.metadata} \
         --compactor_summary {input.compactor_summary} \
         --compactor_selected {input.compactor_selected} \
+        --compactor_seed_annotations {input.compactor_seed_annotations} \
         --num_hits {params.num_hits} \
         {params.residual_fitting_args} \
         --output {output.pdf}
