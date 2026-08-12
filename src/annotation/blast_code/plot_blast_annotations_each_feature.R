@@ -59,11 +59,50 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: compactor-unannotated-seq-v10")
+message("plot_blast_annotations_each_feature.R build: compactor-seed-seq-v11")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
 }
+
+is_missing_path <- function(path) {
+  is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0
+}
+
+infer_compactor_aux_path <- function(summary_path, suffix_glob) {
+  if (is.null(summary_path) || is.na(summary_path) || nchar(summary_path) == 0) {
+    return("")
+  }
+  summary_dir <- dirname(summary_path)
+  summary_base <- basename(summary_path)
+  run_prefix <- str_replace(summary_base, "_nonzero_coefficients_blast_annotated_plots_summary_compactor\\.tsv$", "")
+  if (identical(run_prefix, summary_base)) {
+    return("")
+  }
+  matches <- sort(Sys.glob(file.path(summary_dir, paste0(run_prefix, suffix_glob))))
+  matches <- matches[file.exists(matches) & file.info(matches)$size > 0]
+  if (length(matches) == 0) {
+    return("")
+  }
+  matches[[1]]
+}
+
+if (is_missing_path(opt$compactor_selected)) {
+  inferred_selected <- infer_compactor_aux_path(opt$compactor_summary, "_compactor_*_selected.tsv")
+  if (nchar(inferred_selected) > 0) {
+    opt$compactor_selected <- inferred_selected
+  }
+}
+if (is_missing_path(opt$compactor_seed_annotations)) {
+  inferred_seed_annotations <- infer_compactor_aux_path(opt$compactor_summary, "_compactor_*_seed_annotations.tsv")
+  if (nchar(inferred_seed_annotations) > 0) {
+    opt$compactor_seed_annotations <- inferred_seed_annotations
+  }
+}
+message(paste0("Compactor selected sequence lookup path: ",
+               ifelse(is_missing_path(opt$compactor_selected), "<missing>", opt$compactor_selected)))
+message(paste0("Compactor seed sequence lookup path: ",
+               ifelse(is_missing_path(opt$compactor_seed_annotations), "<missing>", opt$compactor_seed_annotations)))
 
 # set known_causes to be empty (can be changed for interactive experimentation on specific datasets)
 known_causes = "NNNNNNNNNNNNNNN"
@@ -838,7 +877,7 @@ make_compactor_summary_label_dt <- function(path) {
 
 make_compactor_selected_dt <- function(path) {
   empty_dt <- tibble(anchor=character(), compactor_selected_sequence=character())
-  if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
+  if (is_missing_path(path)) {
     return(empty_dt)
   }
   selected_dt <- fread(path)
@@ -855,7 +894,7 @@ make_compactor_selected_dt <- function(path) {
 
 make_compactor_seed_dt <- function(path) {
   empty_dt <- tibble(sequence=character(), compactor_seed_sequence=character())
-  if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
+  if (is_missing_path(path)) {
     return(empty_dt)
   }
   seed_dt <- fread(path)
@@ -1046,11 +1085,15 @@ if (nrow(compactor_selected_dt) > 0) {
   message(paste0("Selected compactor sequences loaded for anchor lookup: ",
                  nrow(compactor_selected_dt), " anchors of length ",
                  compactor_selected_anchor_len))
+} else {
+  message("Selected compactor sequence lookup loaded 0 usable rows.")
 }
 compactor_seed_dt <- make_compactor_seed_dt(opt$compactor_seed_annotations)
 if (nrow(compactor_seed_dt) > 0) {
   message(paste0("Seed compactor sequences loaded for exact extendor lookup: ",
                  nrow(compactor_seed_dt), " plotted extendors"))
+} else {
+  message("Seed compactor sequence lookup loaded 0 usable rows.")
 }
 dt_reblastp <- read_optional_tsv(opt$reblastp_annotations)
 dt_reblast <- read_optional_tsv(opt$reblast_annotations)
