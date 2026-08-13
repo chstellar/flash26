@@ -208,7 +208,13 @@ def choose_compactor_from_rows(rows, thresholds):
                 current["support_threshold"] = threshold
                 current["selection_reason"] = "support_increase_vs_previous_representative"
                 return current
-    return None
+    chosen = max(
+        representatives,
+        key=lambda item: (item["exact_support"], item["length"], -item["row_index"]),
+    )
+    chosen["support_threshold"] = min(thresholds) if thresholds else "NA"
+    chosen["selection_reason"] = "best_available_by_support_then_length_below_threshold"
+    return chosen
 
 
 def choose_compactor(path, thresholds):
