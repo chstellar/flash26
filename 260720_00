@@ -1191,16 +1191,18 @@ rule run_compactors_for_reannotation:
         if [ ! -s {input.seeds} ]; then
             printf "anchor\tcompactor\tid\tparent_id\tsupport\texact_support\textender_specificity\textender_shift\ttotal_length\tnum_extended\texpected_read_count\n" > {output.compactors}
         elif [ "{params.mode}" = "regular" ]; then
+            awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt
             {params.compactor_bin} --keep_temp --max_length 500 --num_threads {threads} \
             --epsilon 0.001 --beta 0.5 --num_kmers 2 --min_extender_specificity 0.8 \
             --num_extenders 3 --extenders_shift 5 --input_format fastq \
-            {input.fastq} {input.seeds} {output.compactors}
+            {output.compactors}.fastq_files.txt {input.seeds} {output.compactors}
         else
+            awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt
             {params.compactor_bin} --keep_temp --max_length 500 --num_threads {threads} \
             --lower_bound 2 --epsilon 0.001 --beta 0.5 --num_kmers 2 \
             --min_extender_specificity 0.8 --num_extenders 3 --extenders_shift 5 \
             --independent_outputs --input_format fastq \
-            {input.fastq} {input.seeds} {output.compactors}
+            {output.compactors}.fastq_files.txt {input.seeds} {output.compactors}
         fi
     """
 

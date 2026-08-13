@@ -241,11 +241,26 @@ def choose_compactor(path, thresholds):
 def read_compactor_table(path, thresholds):
     rows_by_anchor = defaultdict(list)
     records = []
+    raw_rows = 0
+    skipped_missing_compactor = 0
+    skipped_missing_anchor = 0
+    skipped_missing_support = 0
     for idx, row in enumerate(read_tsv(path), start=1):
+        raw_rows += 1
         compactor = (row.get("compactor") or "").strip()
         anchor = (row.get("anchor") or "").strip()
         exact_support = numeric(row.get("exact_support"))
-        if not compactor or not anchor or exact_support is None:
+        support_score = exact_support
+        if support_score is None:
+            support_score = numeric(row.get("support"))
+        if not compactor:
+            skipped_missing_compactor += 1
+            continue
+        if not anchor:
+            skipped_missing_anchor += 1
+            continue
+        if support_score is None:
+            skipped_missing_support += 1
             continue
         length_value = int(numeric(row.get("total_length"), len(compactor)) or len(compactor))
         rows_by_anchor[anchor].append(
@@ -253,7 +268,7 @@ def read_compactor_table(path, thresholds):
                 "anchor": anchor,
                 "compactor": compactor,
                 "length": length_value,
-                "exact_support": exact_support,
+                "exact_support": support_score,
                 "row_index": idx,
                 "row_id": row.get("id", idx),
                 "source_file": str(path),
@@ -282,7 +297,11 @@ def read_compactor_table(path, thresholds):
 
     print(
         f"Selected {len(records)}/{len(rows_by_anchor)} anchor-level compactors from {path}; "
-        f"skipped {skipped} anchors with no representative passing thresholds {thresholds}."
+        f"skipped {skipped} anchors with no representative passing thresholds {thresholds}. "
+        f"Parsed raw_rows={raw_rows}, usable_rows={sum(len(rows) for rows in rows_by_anchor.values())}, "
+        f"skipped_missing_compactor={skipped_missing_compactor}, "
+        f"skipped_missing_anchor={skipped_missing_anchor}, "
+        f"skipped_missing_support={skipped_missing_support}."
     )
     return records
 
