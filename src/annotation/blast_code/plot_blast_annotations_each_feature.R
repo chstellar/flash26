@@ -59,7 +59,7 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: compactor-seed-seq-v11")
+message("plot_blast_annotations_each_feature.R build: compactor-seq-lookup-diagnostics-v12")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
@@ -407,7 +407,7 @@ collapse_species_values <- function(x) {
 }
 
 first_text_or_na <- function(x) {
-  vals <- as.character(x)
+  vals <- str_trim(as.character(x))
   vals <- vals[!is.na(vals) & nchar(vals) > 0 & !toupper(vals) %in% c("NA", "NAN", "NONE")]
   if (length(vals) == 0) {
     return(NA_character_)
@@ -416,7 +416,7 @@ first_text_or_na <- function(x) {
 }
 
 text_or_na_vec <- function(x) {
-  vals <- as.character(x)
+  vals <- str_trim(as.character(x))
   vals[is.na(vals) | nchar(vals) == 0 | toupper(vals) %in% c("NA", "NAN", "NONE")] <- NA_character_
   vals
 }
@@ -881,32 +881,112 @@ make_compactor_selected_dt <- function(path) {
     return(empty_dt)
   }
   selected_dt <- fread(path)
-  selected_dt <- ensure_columns(selected_dt, c("anchor", "compactor_sequence", "compactor"))
-  selected_dt %>%
+  selected_dt <- ensure_columns(selected_dt, c("anchor", "compactor_anchor", "seed_anchor",
+                                               "compactor_sequence", "compactor", "sequence"))
+  selected_out <- selected_dt %>%
+    mutate(anchor = coalesce_text_cols(anchor, compactor_anchor, seed_anchor)) %>%
     mutate(anchor = str_remove_all(as.character(anchor), "-")) %>%
-    mutate(compactor_selected_sequence = coalesce_text_cols(compactor_sequence, compactor)) %>%
+    mutate(compactor_selected_sequence = coalesce_text_cols(compactor_sequence, compactor, sequence)) %>%
     filter(!is.na(anchor), nchar(anchor) > 0,
            !is.na(compactor_selected_sequence), nchar(compactor_selected_sequence) > 0) %>%
     group_by(anchor) %>%
     summarise(compactor_selected_sequence = first_text_or_na(compactor_selected_sequence),
               .groups="drop")
+  message(paste0("Selected compactor raw rows=", nrow(selected_dt),
+                 ", usable rows=", nrow(selected_out),
+                 ", columns=", paste(colnames(selected_dt), collapse=",")))
+  selected_out
 }
 
 make_compactor_seed_dt <- function(path) {
-  empty_dt <- tibble(sequence=character(), compactor_seed_sequence=character())
+  seed_annotation_cols <- c(
+    "annotation_source", "blast_mode", "blast_scope",
+    "restricted_blastp_label", "restricted_blast_label",
+    "unrestricted_blastp_label", "unrestricted_blast_label",
+    "restricted_blastp_species", "restricted_blast_species",
+    "unrestricted_blastp_species", "unrestricted_blast_species",
+    "restricted_blastp_staxids", "restricted_blast_staxids",
+    "unrestricted_blastp_staxids", "unrestricted_blast_staxids",
+    "restricted_blastp_subject_id", "restricted_blast_subject_id",
+    "unrestricted_blastp_subject_id", "unrestricted_blast_subject_id",
+    "restricted_blastp_accession", "restricted_blast_accession",
+    "unrestricted_blastp_accession", "unrestricted_blast_accession"
+  )
+  empty_dt <- tibble(sequence=character(), compactor_seed_sequence=character(),
+                     compactor_annotation_source=character(),
+                     compactor_blast_mode=character(),
+                     compactor_blast_scope=character())
   if (is_missing_path(path)) {
     return(empty_dt)
   }
   seed_dt <- fread(path)
-  seed_dt <- ensure_columns(seed_dt, c("seed_extendor", "compactor_sequence", "compactor"))
-  seed_dt %>%
-    mutate(sequence = str_remove_all(as.character(seed_extendor), "-")) %>%
+  seed_dt <- ensure_columns(seed_dt, c("seed_extendor", "extendor", "query", "anchor_target",
+                                       "anchor_target_sequence", "sequence",
+                                       "compactor_sequence", "compactor",
+                                       seed_annotation_cols))
+  seed_out <- seed_dt %>%
+    mutate(sequence = coalesce_text_cols(seed_extendor, extendor, anchor_target,
+                                         anchor_target_sequence, query, sequence)) %>%
+    mutate(sequence = str_remove_all(as.character(sequence), "-")) %>%
     mutate(compactor_seed_sequence = coalesce_text_cols(compactor_sequence, compactor)) %>%
     filter(!is.na(sequence), nchar(sequence) > 0,
            !is.na(compactor_seed_sequence), nchar(compactor_seed_sequence) > 0) %>%
+    mutate(compactor_annotation_source = coalesce_text_cols(annotation_source),
+           compactor_blast_mode = coalesce_text_cols(blast_mode),
+           compactor_blast_scope = coalesce_text_cols(blast_scope),
+           compactor_restricted_blastp_label = coalesce_text_cols(restricted_blastp_label),
+           compactor_restricted_blast_label = coalesce_text_cols(restricted_blast_label),
+           compactor_unrestricted_blastp_label = coalesce_text_cols(unrestricted_blastp_label),
+           compactor_unrestricted_blast_label = coalesce_text_cols(unrestricted_blast_label),
+           compactor_restricted_blastp_species = coalesce_text_cols(restricted_blastp_species),
+           compactor_restricted_blast_species = coalesce_text_cols(restricted_blast_species),
+           compactor_unrestricted_blastp_species = coalesce_text_cols(unrestricted_blastp_species),
+           compactor_unrestricted_blast_species = coalesce_text_cols(unrestricted_blast_species),
+           compactor_restricted_blastp_staxids = coalesce_text_cols(restricted_blastp_staxids),
+           compactor_restricted_blast_staxids = coalesce_text_cols(restricted_blast_staxids),
+           compactor_unrestricted_blastp_staxids = coalesce_text_cols(unrestricted_blastp_staxids),
+           compactor_unrestricted_blast_staxids = coalesce_text_cols(unrestricted_blast_staxids),
+           compactor_restricted_blastp_subject_id = coalesce_text_cols(restricted_blastp_subject_id),
+           compactor_restricted_blast_subject_id = coalesce_text_cols(restricted_blast_subject_id),
+           compactor_unrestricted_blastp_subject_id = coalesce_text_cols(unrestricted_blastp_subject_id),
+           compactor_unrestricted_blast_subject_id = coalesce_text_cols(unrestricted_blast_subject_id),
+           compactor_restricted_blastp_accession = coalesce_text_cols(restricted_blastp_accession),
+           compactor_restricted_blast_accession = coalesce_text_cols(restricted_blast_accession),
+           compactor_unrestricted_blastp_accession = coalesce_text_cols(unrestricted_blastp_accession),
+           compactor_unrestricted_blast_accession = coalesce_text_cols(unrestricted_blast_accession)) %>%
+    arrange(match(compactor_annotation_source, c("restricted_taxid", "outside_taxid", "no_hit",
+                                                 "no_anchor_matched_compactor")),
+            match(compactor_blast_mode, c("blastp", "blast", "NA"))) %>%
     group_by(sequence) %>%
     summarise(compactor_seed_sequence = first_text_or_na(compactor_seed_sequence),
+              compactor_annotation_source = first_text_or_na(compactor_annotation_source),
+              compactor_blast_mode = first_text_or_na(compactor_blast_mode),
+              compactor_blast_scope = first_text_or_na(compactor_blast_scope),
+              compactor_restricted_blastp_label = first_text_or_na(compactor_restricted_blastp_label),
+              compactor_restricted_blast_label = first_text_or_na(compactor_restricted_blast_label),
+              compactor_unrestricted_blastp_label = first_text_or_na(compactor_unrestricted_blastp_label),
+              compactor_unrestricted_blast_label = first_text_or_na(compactor_unrestricted_blast_label),
+              compactor_restricted_blastp_species = first_text_or_na(compactor_restricted_blastp_species),
+              compactor_restricted_blast_species = first_text_or_na(compactor_restricted_blast_species),
+              compactor_unrestricted_blastp_species = first_text_or_na(compactor_unrestricted_blastp_species),
+              compactor_unrestricted_blast_species = first_text_or_na(compactor_unrestricted_blast_species),
+              compactor_restricted_blastp_staxids = first_text_or_na(compactor_restricted_blastp_staxids),
+              compactor_restricted_blast_staxids = first_text_or_na(compactor_restricted_blast_staxids),
+              compactor_unrestricted_blastp_staxids = first_text_or_na(compactor_unrestricted_blastp_staxids),
+              compactor_unrestricted_blast_staxids = first_text_or_na(compactor_unrestricted_blast_staxids),
+              compactor_restricted_blastp_subject_id = first_text_or_na(compactor_restricted_blastp_subject_id),
+              compactor_restricted_blast_subject_id = first_text_or_na(compactor_restricted_blast_subject_id),
+              compactor_unrestricted_blastp_subject_id = first_text_or_na(compactor_unrestricted_blastp_subject_id),
+              compactor_unrestricted_blast_subject_id = first_text_or_na(compactor_unrestricted_blast_subject_id),
+              compactor_restricted_blastp_accession = first_text_or_na(compactor_restricted_blastp_accession),
+              compactor_restricted_blast_accession = first_text_or_na(compactor_restricted_blast_accession),
+              compactor_unrestricted_blastp_accession = first_text_or_na(compactor_unrestricted_blastp_accession),
+              compactor_unrestricted_blast_accession = first_text_or_na(compactor_unrestricted_blast_accession),
               .groups="drop")
+  message(paste0("Seed compactor raw rows=", nrow(seed_dt),
+                 ", usable rows=", nrow(seed_out),
+                 ", columns=", paste(colnames(seed_dt), collapse=",")))
+  seed_out
 }
 
 make_reblastp_label_dt <- function(reblastp_dt, category) {
