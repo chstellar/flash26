@@ -166,7 +166,8 @@ rule choose_anchors:
         splash_bin = config["splash_bin"],
         num_anchors = config["extended_options"]["num_anchors_to_select"],
         effect_size = config["extended_options"]["effect_size_cutoff"], # only select anchors with an effect size greater than this value
-        target_rank = TARGET_RANK[0]
+        target_rank = TARGET_RANK[0],
+        pre_lookup_multiplier = config["extended_options"].get("pre_lookup_anchor_multiplier", 3)
     output:
         Path(TEMP_DIR, "{dataset}", "{dataset}_selected_anchors_{select_type}.txt")
     conda:
@@ -174,7 +175,9 @@ rule choose_anchors:
     shell:"""
         Rscript --vanilla {params.script} --input {input} --output {output} \
         --lookup_table {params.lookup_table} --temp_dir {params.tmp_dir} --num_anchors {params.num_anchors} \
-        --effect_size {params.effect_size} --target_rank {params.target_rank} --splash_bin {params.splash_bin}
+        --effect_size {params.effect_size} --target_rank {params.target_rank} \
+        --pre_lookup_multiplier {params.pre_lookup_multiplier} --sort_threads {threads} \
+        --splash_bin {params.splash_bin}
     """
 
 

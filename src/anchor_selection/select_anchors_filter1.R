@@ -35,6 +35,12 @@ option_list <- list(
   make_option(c("--target_rank"), "Target rank to use when selecting rank-specific SPLASH score columns",
     type = "integer", default = 1
   ),
+  make_option(c("--pre_lookup_multiplier"), "Multiplier for the candidate buffer to send through artifact lookup",
+    type = "numeric", default = 3
+  ),
+  make_option(c("--sort_threads"), "Threads to use for GNU sort",
+    type = "integer", default = 1
+  ),
   make_option(c("-l", "--lookup_table"), "Lookup table file",
     type = "character"
   ),
@@ -87,6 +93,10 @@ cat("\n")
 cat(paste("Effect size threshold:", opt$effect_size))
 cat("\n")
 cat(paste("Target rank:", opt$target_rank))
+cat("\n")
+cat(paste("Pre-lookup candidate multiplier:", opt$pre_lookup_multiplier))
+cat("\n")
+cat(paste("Sort threads:", opt$sort_threads))
 cat("\n")
 cat(paste("Lookup table file:", opt$lookup_table))
 cat("\n")
@@ -171,6 +181,8 @@ cat(paste0(
 ## stream-filter anchors without materializing the full SPLASH score table -----
 EFFECT_SIZE_CUTOFF <- opt$effect_size
 input_reader <- ifelse(grepl("\\.gz$", opt$input), "gzip -dc", "cat")
+pre_lookup_n <- max(opt$num_anchors, ceiling(opt$num_anchors * opt$pre_lookup_multiplier))
+sort_threads <- max(1, opt$sort_threads)
 
 run_cmd <- function(cmd, label) {
   status <- system(cmd)
@@ -181,6 +193,7 @@ run_cmd <- function(cmd, label) {
 
 stream_prefix <- paste(input_reader, shQuote(opt$input))
 nonzero_values_file <- file.path(temp_dir, "number_nonzero_samples_after_effect.txt") %>% gsub("//", "/", .)
+nonzero_frequency_file <- file.path(temp_dir, "number_nonzero_samples_frequency.tsv") %>% gsub("//", "/", .)
 candidate_ranked_file <- file.path(temp_dir, "anchor_candidates_ranked.tsv") %>% gsub("//", "/", .)
 anchor_file <- file.path(temp_dir, "all_anchors.txt") %>% gsub("//", "/", .)
 anchors_fasta_file <- file.path(temp_dir, "all_anchors.fasta") %>% gsub("//", "/", .)
@@ -223,20 +236,56 @@ cat(paste0(
   sample_cutoff, ".\n"
 ))
 
+frequency_cmd <- paste0(
+  "awk -v s=", sample_cutoff,
+  " '($1+0) >= s {count[$1+0]++} END{for (v in count) print v \"\\t\" count[v]}' ",
+  shQuote(nonzero_values_file),
+  " | LC_ALL=C sort -k1,1nr > ",
+  shQuote(nonzero_frequency_file)
+)
+run_cmd(frequency_cmd, "Writing nonzero-sample frequencies")
+
+nonzero_frequency <- fread(
+  nonzero_frequency_file,
+  header = FALSE,
+  col.names = c("number_nonzero_samples", "n")
+)
+nonzero_frequency[, cumulative_n := cumsum(n)]
+candidate_sample_cutoff <- nonzero_frequency[
+  cumulative_n >= pre_lookup_n,
+  number_nonzero_samples[1]
+]
+if (is.na(candidate_sample_cutoff)) {
+  candidate_sample_cutoff <- sample_cutoff
+}
+candidate_sample_cutoff <- max(sample_cutoff, candidate_sample_cutoff)
+cat(paste0(
+  "Top-buffer number_nonzero_samples cutoff is ",
+  candidate_sample_cutoff,
+  " for pre-lookup cap ", pre_lookup_n,
+  ".\n"
+))
+
 candidate_cmd <- paste0(
   stream_prefix,
   " | awk -F'\\t' -v OFS='\\t' -v e=", EFFECT_SIZE_CUTOFF,
-  " -v s=", sample_cutoff,
+  " -v s=", candidate_sample_cutoff,
   " -v ec=", effect_size_bin_col,
   " -v nc=", nonzero_samples_col,
   " 'NR>1 && ($ec+0) >= e && ($nc+0) >= s {print $1, $nc+0}' ",
-  " | sort -k2,2nr -T ", shQuote(temp_dir),
+  " | LC_ALL=C sort --parallel=", sort_threads,
+  " -S 80% -k2,2nr -T ", shQuote(temp_dir),
+  " | head -n ", pre_lookup_n,
   " > ", shQuote(candidate_ranked_file)
 )
 run_cmd(candidate_cmd, "Writing ranked anchor candidates")
 
 n_candidates <- as.numeric(system(paste("wc -l <", shQuote(candidate_ranked_file)), intern = TRUE))
-cat(paste0("Ranked ", n_candidates, " candidate anchors after nonzero-sample filtering.\n"))
+cat(paste0(
+  "Ranked and retained the top ", n_candidates,
+  " candidate anchors after nonzero-sample filtering for artifact lookup",
+  " (pre-lookup cap: ", pre_lookup_n, ").\n"
+))
 
 write_anchor_cmd <- paste0(
   "awk -F'\\t' '{print $1}' ", shQuote(candidate_ranked_file),
@@ -303,6 +352,14 @@ cat(paste0(
   " anchors after artifact filtering. Keeping the top ",
   opt$num_anchors, " by number_nonzero_samples.\n\n"
 ))
+if (!is.na(n_after_lookup) && n_after_lookup < opt$num_anchors) {
+  warning(paste0(
+    "Only ", n_after_lookup,
+    " anchors remained after artifact filtering, fewer than requested num_anchors=",
+    opt$num_anchors,
+    ". Increase --pre_lookup_multiplier if you need a fuller output."
+  ))
+}
 
 write_output_cmd <- paste0(
   "head -n ", opt$num_anchors, " ", shQuote(artifact_filtered_file),

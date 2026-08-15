@@ -51,6 +51,7 @@ options:
 # you should not need to change anything below this line but you can alter them if needed
 extended_options:
   num_anchors_to_select: 3000000 # number of anchors to select from each dataset for clustering
+  pre_lookup_anchor_multiplier: 3 # artifact-filter this many times num_anchors_to_select after ranking
   effect_size_cutoff: 0.6 # this is the cutoff for selecting an anchor from the SPLASH results
   distance_threshold: 5 # distance threshold for filtering anchors after clustering
   num_embedding_features_to_keep:
