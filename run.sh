@@ -16,9 +16,7 @@ mamba activate flash
 SNAKEMAKE_FILE="${1:-}"
 FORCE_RULE="${*:2}"
 
-if [ -d ".snakemake/locks" ]; then
-    snakemake --unlock -s $SNAKEMAKE_FILE
-fi
+snakemake --unlock -s "$SNAKEMAKE_FILE" || true
 
 SNAKEMAKE_CMD="snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/"
 SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_CMD"

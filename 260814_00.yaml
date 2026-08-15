@@ -1,4 +1,5 @@
 # main files
+data_table: 260628_00_bschlosseri_fusion.csv
 temp_dir: results/
 splash_bin: /oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/
 satc_util_bin: /oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/
@@ -26,7 +27,7 @@ containers:
 
 # boolean and paramater options
 options:
-  seqs_from_raw_data: false # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results # must set to false if using anchor length shorter than 10 (i.e. 8-mers or 9-mers).
+  seqs_from_raw_data: true # set to true if starting from raw FASTQ files, false if starting from pre-processed SPLASH results # must set to false if using anchor length shorter than 10 (i.e. 8-mers or 9-mers).
   feature_processing:
    method: "top_variance" # set to either 'top_variance' or 'pca' for how to process embeddings prior to glmnet. default: 'top_variance'
    recode_missing: false # set to true to recode missing values to 0 after processing the embeddings by either method (i.e. top variance or pca) prior to glmnet modeling. # This circumvents the problem where the NNNN embedding can be a large outlier.
@@ -50,7 +51,7 @@ options:
 
 # you should not need to change anything below this line but you can alter them if needed
 extended_options:
-  num_anchors_to_select: 300000 # number of anchors to select from each dataset for clustering
+  num_anchors_to_select: 3000000 # number of anchors to select from each dataset for clustering
   effect_size_cutoff: 0.6 # this is the cutoff for selecting an anchor from the SPLASH results
   distance_threshold: 5 # distance threshold for filtering anchors after clustering
   num_embedding_features_to_keep:
@@ -58,7 +59,7 @@ extended_options:
     by_pca: 5 # number of principal components to keep for GLMnet
     umap: 1 # number of top variance embedding features to keep for UMAP
   num_PCs_umap: 10 # number of principal components to use for UMAP plotting
-  min_samples_adelie: 0 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
+  min_samples_adelie: 28 # minimum number of samples in the smallest class for running adelie (requires at least N samples per class)
   adelie_alpha: 1 # alpha parameter for elastic net regularization in adelie (0 = ridge, 1 = lasso)
 
 
