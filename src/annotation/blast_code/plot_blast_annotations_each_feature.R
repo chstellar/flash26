@@ -449,13 +449,15 @@ extract_feature_qualifier <- function(features, qualifier) {
   })
 }
 
-choose_feature_label <- function(products, genes, prefer_products = FALSE) {
+choose_feature_label <- function(products, genes, notes = NULL, prefer_products = FALSE) {
   products <- clean_blast_label(products)
   genes <- clean_blast_label(genes)
+  notes <- clean_blast_label(notes)
   genes_are_loc <- !is.na(genes) & str_detect(genes, "^LOC\\d+$")
   use_products <- prefer_products | genes_are_loc | is.na(genes) | nchar(genes) < 2
   label <- ifelse(use_products & !is.na(products) & nchar(products) > 1, products, genes)
   label <- ifelse((is.na(label) | nchar(label) < 2) & !is.na(products), products, label)
+  label <- ifelse((is.na(label) | nchar(label) < 2) & !is.na(notes), notes, label)
   clean_blast_label(label)
 }
 
@@ -1034,7 +1036,8 @@ make_reblast_label_dt <- function(reblast_dt, category) {
                                 sep=";")) %>%
     mutate(outside_products = extract_feature_qualifier(feature_text, "product")) %>%
     mutate(outside_genes = extract_feature_qualifier(feature_text, "gene")) %>%
-    mutate(outside_taxid_label = choose_feature_label(outside_products, outside_genes, opt$products)) %>%
+    mutate(outside_notes = extract_feature_qualifier(feature_text, "note")) %>%
+    mutate(outside_taxid_label = choose_feature_label(outside_products, outside_genes, outside_notes, opt$products)) %>%
     mutate(outside_taxid_species = species_from_blast_fields(sscinames, stitle, staxids)) %>%
     mutate(outside_taxid_subject_id = coalesce(subject, sacc, NCBI_protein_accession)) %>%
     mutate(outside_taxid_accession = coalesce(sacc, NCBI_protein_accession, UniProt_accession, subject)) %>%
@@ -1285,6 +1288,7 @@ for (category in categories) {
         separate_longer_delim(feature_text, delim = "},") %>%
         mutate(products=extract_feature_qualifier(feature_text, "product")) %>%
         mutate(genes=extract_feature_qualifier(feature_text, "gene")) %>%
+        mutate(notes=extract_feature_qualifier(feature_text, "note")) %>%
         select(-feature_text) %>% with_plot_coefficients() %>%
         arrange(-max_coefficient) %>%
         rowwise() %>%
@@ -1293,17 +1297,17 @@ for (category in categories) {
         select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient,
                cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
                subject, sacc, NCBI_protein_accession, UniProt_accession,
-               products, genes, confounders, compactor_annotation, compactor_species, compactor_staxids,
+               products, genes, notes, confounders, compactor_annotation, compactor_species, compactor_staxids,
                compactor_sscinames, compactor_sequence,
                compactor_blast_subject_id, compactor_blast_accession,
                compactor_ncbi_protein_accession, compactor_uniprot_accession) %>%
         mutate(query = str_remove(query, "^cluster_\\d+_")) %>%
         group_by(cluster) %>%
         ungroup() %>%
-        distinct(cluster,products,query,genes,.keep_all = T) %>% group_by(cluster)
+        distinct(cluster,products,query,genes,notes,.keep_all = T) %>% group_by(cluster)
 
       summ_dt2 <- summ_dt2 %>%
-        mutate(label = choose_feature_label(products, genes, opt$products)) %>%
+        mutate(label = choose_feature_label(products, genes, notes, opt$products)) %>%
         mutate(blast_species = coalesce(species_from_blast_fields(sscinames, stitle, staxids), compactor_species, compactor_sscinames)) %>%
         mutate(blast_staxids = coalesce(staxids, compactor_staxids)) %>%
         mutate(blast_subject_id = coalesce(subject, sacc, NCBI_protein_accession,
@@ -1433,7 +1437,8 @@ for (category in categories) {
                                   sep=";")) %>%
       mutate(hist_products = extract_feature_qualifier(feature_text, "product")) %>%
       mutate(hist_genes = extract_feature_qualifier(feature_text, "gene")) %>%
-      mutate(hist_label = choose_feature_label(hist_products, hist_genes, opt$products)) %>%
+      mutate(hist_notes = extract_feature_qualifier(feature_text, "note")) %>%
+      mutate(hist_label = choose_feature_label(hist_products, hist_genes, hist_notes, opt$products)) %>%
       mutate(hist_label = ifelse(has_restricted_label(compactor_annotation),
                                  compactor_plot_label(compactor_annotation), hist_label)) %>%
       mutate(hist_label = case_when(
@@ -1686,7 +1691,8 @@ for (category in categories) {
                                     sep=";")) %>%
         mutate(direct_products = extract_feature_qualifier(feature_text, "product")) %>%
         mutate(direct_genes = extract_feature_qualifier(feature_text, "gene")) %>%
-        mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, opt$products)) %>%
+        mutate(direct_notes = extract_feature_qualifier(feature_text, "note")) %>%
+        mutate(direct_blast_label = choose_feature_label(direct_products, direct_genes, direct_notes, opt$products)) %>%
         mutate(direct_blast_species = coalesce(species_from_blast_fields(sscinames, stitle, staxids), compactor_species, compactor_sscinames)) %>%
         mutate(direct_blast_staxids = coalesce(staxids, compactor_staxids)) %>%
         mutate(direct_blast_subject_id = coalesce(subject, sacc, NCBI_protein_accession,

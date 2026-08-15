@@ -600,7 +600,8 @@ def blastn_label(row):
     )
     products = extract_qualifier(feature_text, "product")
     genes = extract_qualifier(feature_text, "gene")
-    labels = products or genes
+    notes = extract_qualifier(feature_text, "note")
+    labels = products or genes or notes
     if labels:
         return ";".join(labels)
     if has_text(row.get("identity")) or has_text(row.get("qcovs")):
