@@ -26,14 +26,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- Edit these defaults once, then run: sbatch distribute.sh ----
 # The SATC table is hardcoded to the 260714 run requested here.
-PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
+PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 SATC="${SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc_merged.txt}"
 
 # Put your extendor list/table and sample partition sheet here, or override them
 # at submit time, for example:
 #   sbatch --export=ALL,INPUT_TSV=my_extendors.tsv,PARTITION_SHEET=my_partitions.csv distribute.sh
 INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/extendors.txt}"
-PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/partition.txt}"
+PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/partition.csv}"
 OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution.tsv}"
 
 # Column settings. These can be header names or 1-based column indices.
