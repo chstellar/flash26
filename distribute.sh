@@ -1,6 +1,5 @@
 #!/bin/bash
 #
-#SBATCH --job-name=extendor_distribution
 #SBATCH --partition=horence
 #SBATCH --time=0-01:00:00
 #SBATCH --cpus-per-task=1
@@ -9,13 +8,7 @@
 #SBATCH --mail-user=chesteryu@stanford.edu
 
 set -euo pipefail
-
-if command -v ml >/dev/null 2>&1; then
-  ml purge
-elif command -v module >/dev/null 2>&1; then
-  module purge
-fi
-unset PYTHONPATH PYTHONHOME
+ml purge
 
 FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
 if [[ -x "$FLASH_CONDA/bin/conda" ]]; then
@@ -35,14 +28,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The SATC table is hardcoded to the 260714 run requested here.
 PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR/flash26}"
 SATC="${SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc_merged.txt}"
-ANCHOR_SATC="${ANCHOR_SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/anchor_satc_merged.txt}"
 
 # Put your extendor list/table and sample partition sheet here, or override them
 # at submit time, for example:
 #   sbatch --export=ALL,INPUT_TSV=my_extendors.tsv,PARTITION_SHEET=my_partitions.csv distribute.sh
-INPUT_TSV="${INPUT_TSV:-extendors.tsv}"
-PARTITION_SHEET="${PARTITION_SHEET:-sample_partitions.tsv}"
-OUTPUT_TSV="${OUTPUT_TSV:-extendor_partition_distribution.tsv}"
+INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/extendors.txt}"
+PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/partition.txt}"
+OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution.tsv}"
 
 # Column settings. These can be header names or 1-based column indices.
 EXTENDOR_COL="${EXTENDOR_COL:-1}"
