@@ -193,6 +193,16 @@ get_max_abs_value <- function(x) {
   }, numeric(1))
 }
 
+get_max_abs_signed_value <- function(x) {
+  vapply(seq_along(x), function(i) {
+    nums <- parse_coef_values(x[[i]])
+    if (length(nums) == 0) {
+      return(NA_real_)
+    }
+    nums[which.max(abs(nums))]
+  }, numeric(1))
+}
+
 
 get_first_coef <- function(x) {
   vapply(seq_along(x), function(i) {
@@ -234,6 +244,18 @@ get_nth_class <- function(x,n=1) {
   }, character(1))
 }
 
+get_max_abs_class <- function(classes_values, coef_values) {
+  vapply(seq_along(coef_values), function(i) {
+    coefs <- parse_coef_values(coef_values[[i]])
+    classes <- parse_class_values(classes_values[[i]])
+    if (length(coefs) == 0 || length(classes) == 0) {
+      return(NA_character_)
+    }
+    n <- min(length(coefs), length(classes))
+    classes[which.max(abs(coefs[seq_len(n)]))]
+  }, character(1))
+}
+
 clean_blast_label <- function(x) {
   x <- as.character(x)
   x <- replace_na(x, "")
@@ -253,9 +275,10 @@ clean_blast_label <- function(x) {
   x <- str_replace_all(x, "\\s+", " ")
   x <- str_replace_all(x, "\\s*[,;]\\s*$", "")
   x <- str_trim(x)
-  x <- ifelse(str_detect(x, regex("uncharacteri[sz]ed protein|hypothetical protein|predicted protein|unnamed protein",
+  x <- str_replace_all(x, fixed("UNCHARACTERISED"), "UNCHARACTERIZED")
+  x <- ifelse(str_detect(x, regex("uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
                                   ignore_case=TRUE)),
-              "UNCHARACTERISED", x)
+              "UNANNOTATED", x)
   ifelse(nchar(x) == 0, NA_character_, x)
 }
 
@@ -465,7 +488,8 @@ combine_blast_labels <- function(blastp_label, blast_label) {
   pmap_chr(list(blastp_label, blast_label), function(x, y) {
     labels <- c(x, y)
     labels <- labels[!is.na(labels)]
-    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED", "UNCHARACTERISED")]
+    labels <- labels[!labels %in% c("NO MATCH", "NO PROTEIN/GENE HIT", "UNANNOTATED",
+                                    "UNCHARACTERIZED", "UNCHARACTERISED")]
     collapsed <- collapse_blast_labels(paste(labels, collapse=";"))
     if (is.na(collapsed)) {
       return(NA_character_)
@@ -479,8 +503,10 @@ make_histogram_label <- function(labels) {
   labels <- labels[!is.na(labels) & nchar(labels) > 1]
   labels <- str_replace(labels, "^NO PROTEIN/GENE HIT$", "UNANNOTATED")
   labels <- str_replace(labels, "^NO BLAST$", "NO MATCH")
-  special_labels <- intersect(c("NO TARGET", "NO MATCH", "UNANNOTATED", "UNCHARACTERISED"), unique(labels))
-  real_labels <- labels[!labels %in% c("NO TARGET", "NO MATCH", "UNANNOTATED", "UNCHARACTERISED")]
+  labels <- str_replace_all(labels, fixed("UNCHARACTERISED"), "UNCHARACTERIZED")
+  labels <- str_replace(labels, "^UNCHARACTERIZED$", "UNANNOTATED")
+  special_labels <- intersect(c("NO TARGET", "NO MATCH", "UNANNOTATED"), unique(labels))
+  real_labels <- labels[!labels %in% c("NO TARGET", "NO MATCH", "UNANNOTATED")]
   if (length(real_labels) > 0) {
     label_keys <- str_to_lower(str_replace_all(real_labels, "[^[:alnum:]]+", " "))
     real_labels <- real_labels[!duplicated(str_squish(label_keys))]
@@ -780,7 +806,7 @@ ensure_annotation_columns <- function(tbl) {
                      "compactor_blast_subject_id", "compactor_blast_accession",
                      "compactor_ncbi_protein_accession", "compactor_uniprot_accession",
                      "first_class", "first_coef", "second_coef", "second_class",
-                     "max_coefficient")
+                     "max_coefficient", "max_coefficient_class", "max_coefficient_signed")
   for (col in fallback_cols) {
     if (!col %in% colnames(tbl)) {
       tbl[[col]] <- NA_character_
@@ -801,6 +827,7 @@ ensure_annotation_columns <- function(tbl) {
   tbl$first_coef <- suppressWarnings(as.numeric(tbl$first_coef))
   tbl$second_coef <- suppressWarnings(as.numeric(tbl$second_coef))
   tbl$max_coefficient <- suppressWarnings(as.numeric(tbl$max_coefficient))
+  tbl$max_coefficient_signed <- suppressWarnings(as.numeric(tbl$max_coefficient_signed))
   tbl
 }
 
@@ -809,20 +836,28 @@ with_plot_coefficients <- function(tbl) {
     mutate(parsed_first_coef = get_first_coef(coefficients),
            parsed_second_coef = get_nth_coef(coefficients, 2),
            parsed_first_class = get_first_class(classes),
-           parsed_second_class = get_nth_class(classes, 2)) %>%
+           parsed_second_class = get_nth_class(classes, 2),
+           parsed_max_signed_coef = get_max_abs_signed_value(coefficients),
+           parsed_max_coefficient_class = get_max_abs_class(classes, coefficients)) %>%
     mutate(first_coef = coalesce(suppressWarnings(as.numeric(first_coef)), parsed_first_coef),
            second_coef = coalesce(suppressWarnings(as.numeric(second_coef)), parsed_second_coef),
            first_class = coalesce(first_class, parsed_first_class),
            second_class = coalesce(second_class, parsed_second_class),
-           max_coefficient = coalesce(suppressWarnings(as.numeric(max_coefficient)), abs(first_coef))) %>%
-    select(-parsed_first_coef, -parsed_second_coef, -parsed_first_class, -parsed_second_class)
+           max_coefficient_class = coalesce(max_coefficient_class, parsed_max_coefficient_class),
+           max_coefficient_signed = coalesce(suppressWarnings(as.numeric(max_coefficient_signed)),
+                                             parsed_max_signed_coef),
+           max_coefficient = coalesce(suppressWarnings(as.numeric(max_coefficient)),
+                                      abs(max_coefficient_signed))) %>%
+    select(-parsed_first_coef, -parsed_second_coef, -parsed_first_class, -parsed_second_class,
+           -parsed_max_signed_coef, -parsed_max_coefficient_class)
 }
 
 has_restricted_label <- function(label) {
   label <- str_squish(as.character(label))
   !is.na(label) & nchar(label) > 1 &
     !str_to_upper(label) %in% c("", "NA", "NAN", "NONE", "NO MATCH", "NO TARGET",
-                                "UNANNOTATED", "UNCHARACTERISED", "NO PROTEIN/GENE HIT", "BLAST", "BLASTP")
+                                "UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED",
+                                "NO PROTEIN/GENE HIT", "BLAST", "BLASTP")
 }
 
 compactor_plot_label <- function(label) {
@@ -1252,7 +1287,8 @@ for (category in categories) {
       rowwise() %>%
       mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
       ungroup() %>%
-      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class, max_coefficient,
+      select(metadata_category, accuracy, classes, first_class, first_coef, second_coef, second_class,
+             max_coefficient, max_coefficient_class, max_coefficient_signed,
              cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
              subject, sacc, NCBI_protein_accession, UniProt_accession,
              annotation, confounders, compactor_sequence) %>%
@@ -1294,7 +1330,8 @@ for (category in categories) {
         rowwise() %>%
         mutate(classes=list(str_split_1(gsub("\\[|\\]", "", classes),pattern=","))) %>%
         ungroup() %>%
-        select(metadata_category, accuracy, classes, first_class, first_coef, max_coefficient,
+        select(metadata_category, accuracy, classes, first_class, first_coef,
+               max_coefficient, max_coefficient_class, max_coefficient_signed,
                cluster, feature, query, identity, qcovs, stitle, staxids, sscinames,
                subject, sacc, NCBI_protein_accession, UniProt_accession,
                products, genes, notes, confounders, compactor_annotation, compactor_species, compactor_staxids,
@@ -1404,7 +1441,8 @@ for (category in categories) {
       mutate(blast_source = "blastp") %>%
       mutate(classes = map_chr(classes, \(x) paste(x, collapse=","))) %>%
       select(any_of(c("metadata_category", "accuracy", "classes", "first_class", "first_coef", "second_coef", "second_class",
-                      "max_coefficient", "cluster", "feature", "query", "identity", "qcovs",
+                      "max_coefficient", "max_coefficient_class", "max_coefficient_signed",
+                      "cluster", "feature", "query", "identity", "qcovs",
                       "blastp_species", "blastp_staxids", "blastp_subject_id", "blastp_accession",
                       "label", "blast_source")))
 
@@ -1418,7 +1456,8 @@ for (category in categories) {
       mutate(label = ifelse(is.na(label), "NO MATCH", label)) %>%
       mutate(classes = map_chr(classes, \(x) paste(x, collapse=","))) %>%
       select(any_of(c("metadata_category", "accuracy", "classes", "first_class", "first_coef", "second_coef", "second_class",
-                      "max_coefficient", "cluster", "feature", "query", "identity.y", "qcovs.y",
+                      "max_coefficient", "max_coefficient_class", "max_coefficient_signed",
+                      "cluster", "feature", "query", "identity.y", "qcovs.y",
                       "direct_blast_species", "direct_blast_staxids", "direct_blast_subject_id",
                       "direct_blast_accession", "label", "blast_source"))) %>%
       dplyr::rename(identity = `identity.y`, qcovs = `qcovs.y`,
@@ -1485,11 +1524,11 @@ for (category in categories) {
       arrange(-coef_mag) %>%
       mutate(rank=row_number()) %>%
       mutate(color="no_taxon") %>%
-      mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED))*$")) %>%
+      mutate(has_real_label = !str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERIZED|UNCHARACTERISED)(,\\s*(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERIZED|UNCHARACTERISED))*$")) %>%
       mutate(color=ifelse(has_real_label, "within_taxid", color)) %>%
       mutate(color=ifelse(str_detect(label, "\\(OTHER TAXA\\)"), "outside_taxid", color)) %>%
       mutate(label_size = case_when(
-        str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERISED)$") ~ 3.35,
+        str_detect(label, "^(NO TARGET|NO MATCH|UNANNOTATED|UNCHARACTERIZED|UNCHARACTERISED)$") ~ 3.35,
         nchar(label) <= 55 ~ 2.85,
         nchar(label) <= 95 ~ 2.55,
         TRUE ~ 2.25
@@ -1731,7 +1770,9 @@ for (category in categories) {
         mutate(combined_label = combine_blast_labels(label_blastp, label_blast)) %>%
         mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blast), label_blast, combined_label)) %>%
         mutate(combined_label = ifelse(is.na(combined_label) & !is.na(label_blastp), label_blastp, combined_label)) %>%
-        select(query, accuracy, any_identity, any_qcovs, combined_label, label2,
+        select(query, accuracy, classes, first_class, first_coef, second_class, second_coef,
+               max_coefficient, max_coefficient_class, max_coefficient_signed,
+               any_identity, any_qcovs, combined_label, label2,
                direct_blast_species, direct_blast_staxids,
                direct_blast_subject_id, direct_blast_accession,
                any_of(c("blastp_compactor_sequence", "blastn_compactor_sequence"))) %>%
@@ -1882,6 +1923,9 @@ for (category in categories) {
           `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ "no_taxon",
           TRUE ~ "within_taxid"
         )) %>%
+        mutate(classes = map_chr(classes, \(x) paste(unlist(x), collapse=","))) %>%
+        mutate(significant_class = coalesce(max_coefficient_class, first_class),
+               significant_coefficient = max_coefficient_signed) %>%
         ungroup()
       if (!"total_samples" %in% colnames(p_sub)) {
         missing_class_cols <- setdiff(all_classes, colnames(p_sub))
@@ -2088,7 +2132,8 @@ if ("compactor_sequence" %in% colnames(all_features_summary)) {
 
 unannotated_summary <- all_features_summary %>%
   filter(is.na(`Blast Label`) |
-           `Blast Label` %in% c("NO MATCH", "UNANNOTATED", "UNCHARACTERISED", "NO PROTEIN/GENE HIT")) %>%
+           `Blast Label` %in% c("NO MATCH", "UNANNOTATED", "UNCHARACTERIZED",
+                                "UNCHARACTERISED", "NO PROTEIN/GENE HIT")) %>%
   mutate(total_samples = suppressWarnings(as.numeric(total_samples))) %>%
   mutate(entropy_stats = map2(metadata, total_samples, metadata_entropy_stats)) %>%
   unnest(entropy_stats) %>%

@@ -573,6 +573,14 @@ def clean_label(value):
     value = re.sub(r"\s+transcript\s+variant\s+X?\d+\b", "", value)
     value = re.sub(r"\s+variant\s+X?\d+\b", "", value)
     value = re.sub(r"\s+", " ", value).strip(" ,;")
+    if re.search(
+        r"uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
+        value,
+        flags=re.IGNORECASE,
+    ):
+        return "UNANNOTATED"
+    if value == "UNCHARACTERISED" or value == "UNCHARACTERIZED":
+        return "UNANNOTATED"
     return value or None
 
 
@@ -1021,6 +1029,8 @@ UNRESOLVED_LABELS = {
     "NO MATCH",
     "NO BLAST",
     "UNANNOTATED",
+    "UNCHARACTERIZED",
+    "UNCHARACTERISED",
     "NO PROTEIN/GENE HIT",
     "BLAST",
     "BLASTP",

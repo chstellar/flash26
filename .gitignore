@@ -20,3 +20,5 @@ example_data/
 containers/hyena_embedder.sif
 __pycache__/
 __pycache__/*
+pdf/
+pdf/*
