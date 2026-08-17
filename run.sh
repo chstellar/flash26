@@ -16,7 +16,7 @@ mamba activate flash
 SNAKEMAKE_FILE="${1:-}"
 FORCE_RULE="${*:2}"
 COMPACTOR_DOWNSTREAM_RULES="merge_compactors_for_reannotation select_compactors_for_reannotation run_blast_compactors_for_reannotation run_blastp_compactors_for_reannotation compactor_reannotation plot_compactor_reannotation"
-COMPACTOR_PRE_RULES="select_unannotated_extendors_for_compactor"
+COMPACTOR_PRE_RULES="merge_annotations run_blast_nonzero_features run_blastp_nonzero_features merge_blast_results merge_blastp_results merge_reblast_results merge_reblastp_results plot_blast_features select_unannotated_extendors_for_compactor"
 
 snakemake --unlock -s "$SNAKEMAKE_FILE" || true
 
@@ -26,6 +26,7 @@ SNAKEMAKE_TARGET="all_embeddings"
 if [ "${COMPACTOR_PRE_ONLY:-0}" = "1" ]; then
     SNAKEMAKE_TARGET="all_compactor_before_compactors"
     FORCE_RULE="${FORCE_RULE:-$COMPACTOR_PRE_RULES}"
+    SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_before_compactors $COMPACTOR_PRE_RULES"
 fi
 if [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" = "1" ]; then
     SNAKEMAKE_TARGET="all_compactor_after_compactors"
