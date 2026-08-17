@@ -16,16 +16,21 @@ mamba activate flash
 SNAKEMAKE_FILE="${1:-}"
 FORCE_RULE="${*:2}"
 COMPACTOR_DOWNSTREAM_RULES="merge_compactors_for_reannotation select_compactors_for_reannotation run_blast_compactors_for_reannotation run_blastp_compactors_for_reannotation compactor_reannotation plot_compactor_reannotation"
+COMPACTOR_PRE_RULES="select_unannotated_extendors_for_compactor"
 
 snakemake --unlock -s "$SNAKEMAKE_FILE" || true
 
 SNAKEMAKE_CMD="snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/"
 SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_CMD"
 SNAKEMAKE_TARGET="all_embeddings"
+if [ "${COMPACTOR_PRE_ONLY:-0}" = "1" ]; then
+    SNAKEMAKE_TARGET="all_compactor_before_compactors"
+    FORCE_RULE="${FORCE_RULE:-$COMPACTOR_PRE_RULES}"
+fi
 if [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" = "1" ]; then
-    SNAKEMAKE_TARGET="all_compactor_reannotations"
+    SNAKEMAKE_TARGET="all_compactor_after_compactors"
     FORCE_RULE="${FORCE_RULE:-$COMPACTOR_DOWNSTREAM_RULES}"
-    SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_reannotations $COMPACTOR_DOWNSTREAM_RULES"
+    SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_after_compactors $COMPACTOR_DOWNSTREAM_RULES"
 fi
 if [ -n "$FORCE_RULE" ]; then
     SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD -R $FORCE_RULE"

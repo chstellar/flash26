@@ -89,6 +89,18 @@ def row_key(row):
     )
 
 
+def loose_keys(row):
+    metadata_category = row.get("metadata_category", "")
+    feature = row.get("feature", "")
+    cluster = row.get("cluster", "")
+    return [
+        ("strict", metadata_category, feature, cluster),
+        ("feature_cluster", feature, cluster),
+        ("feature", feature),
+        ("cluster", cluster),
+    ]
+
+
 def read_tsv(path):
     with path.open(newline="") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
@@ -124,8 +136,16 @@ def build_class_lookup(summary_path):
         for row in read_tsv(path):
             info = class_info(row)
             if info:
-                lookup.setdefault(row_key(row), info)
+                for key in loose_keys(row):
+                    lookup.setdefault(key, info)
     return lookup
+
+
+def lookup_class_info(row, lookup):
+    for key in loose_keys(row):
+        if key in lookup:
+            return lookup[key]
+    return {}
 
 
 def main():
@@ -139,6 +159,11 @@ def main():
 
     rows = read_tsv(summary_path)
     class_lookup = build_class_lookup(summary_path)
+    for row in rows:
+        info = class_info(row)
+        if info:
+            for key in loose_keys(row):
+                class_lookup.setdefault(key, info)
 
     extra_cols = [
         "max_coefficient_class",
@@ -161,7 +186,7 @@ def main():
                 row[col] = new
                 changed_labels += 1
 
-        info = class_info(row) or class_lookup.get(row_key(row), {})
+        info = class_info(row) or lookup_class_info(row, class_lookup)
         if info:
             for col in extra_cols:
                 if not row.get(col):

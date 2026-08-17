@@ -126,6 +126,45 @@ rule all_compactor_reannotations:
                train_proportion=TRAIN_PROPORTION)
 
 
+rule all_compactor_before_compactors:
+    """
+    Prepare compactor seed chunks for all configured embedding runs.
+    """
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seed_chunk{chunk}.txt"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
+               train_proportion=TRAIN_PROPORTION,
+               chunk=COMPACTOR_CHUNKS)
+
+
+rule all_compactor_after_compactors:
+    """
+    Finish compactor reannotation from existing compactor chunk outputs.
+    """
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_compactor.pdf"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
+               train_proportion=TRAIN_PROPORTION)
+
+
 rule all_genomes:
     """
     Generate prediction for genome sequences provided for a given dataset.
