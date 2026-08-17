@@ -47,7 +47,7 @@ COMPACTOR_REANNOTATE = True # rescue unannotated plotted extendors by compacting
 COMPACTOR_MODE = "regular" # regular or sensitive
 COMPACTOR_SUFFIX = "fungus" # suffix for seeds/compactor outputs generated for the rescue branch
 COMPACTOR_ANCHOR_LEN = TARGET_LENGTH
-COMPACTOR_NUM_CHUNKS = 8
+COMPACTOR_NUM_CHUNKS = 32
 COMPACTOR_CHUNKS = list(range(COMPACTOR_NUM_CHUNKS))
 COMPACTOR_THRESHOLDS = "1000,100,5"
 COMPACTOR_BINARY = "/oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/compactors"
@@ -1193,7 +1193,7 @@ rule run_compactors_for_reannotation:
             printf "anchor\tcompactor\tid\tparent_id\tsupport\texact_support\textender_specificity\textender_shift\ttotal_length\tnum_extended\texpected_read_count\n" > {output.compactors}
         elif [ "{params.mode}" = "regular" ]; then
             awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt
-            {params.compactor_bin} --keep_temp --max_length 500 --num_threads {threads} \
+            {params.compactor_bin} --keep_temp --max_length 200 --num_threads {threads} \
             --epsilon 0.001 --beta 0.5 --num_kmers 2 --min_extender_specificity 0.8 \
             --num_extenders 3 --extenders_shift 5 --input_format fastq \
             {output.compactors}.fastq_files.txt {input.seeds} {output.compactors}
