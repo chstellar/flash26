@@ -358,7 +358,24 @@ def distribution_string(labels, counts, sep, pair_sep):
     return sep.join(f"{label}{pair_sep}{format_count(counts.get(label, 0.0))}" for label in labels)
 
 
-def write_summary(path, header, rows, major_labels, combo_labels, totals, major_counts, combo_counts, args):
+def set_count_distribution(labels, sample_sets):
+    return {label: len(sample_sets.get(label, set())) for label in labels}
+
+
+def write_summary(
+    path,
+    header,
+    rows,
+    major_labels,
+    combo_labels,
+    totals,
+    major_counts,
+    combo_counts,
+    sample_sets,
+    major_sample_sets,
+    combo_sample_sets,
+    args,
+):
     out_header = header + [
         "anchor",
         "target",
@@ -366,6 +383,9 @@ def write_summary(path, header, rows, major_labels, combo_labels, totals, major_
         "total_count",
         "major_distribution",
         "major_minor_distribution",
+        "total_sample_count",
+        "major_sample_distribution",
+        "major_minor_sample_distribution",
     ]
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
@@ -391,14 +411,50 @@ def write_summary(path, header, rows, major_labels, combo_labels, totals, major_
                         args.distribution_sep,
                         args.pair_sep,
                     ),
+                    len(sample_sets.get(extendor, set())),
+                    distribution_string(
+                        major_labels,
+                        set_count_distribution(major_labels, major_sample_sets.get(extendor, {})),
+                        args.distribution_sep,
+                        args.pair_sep,
+                    ),
+                    distribution_string(
+                        combo_labels,
+                        set_count_distribution(combo_labels, combo_sample_sets.get(extendor, {})),
+                        args.distribution_sep,
+                        args.pair_sep,
+                    ),
                 ]
             )
 
 
-def write_long(path, rows, major_labels, combo_labels, totals, major_counts, combo_counts):
+def write_long(
+    path,
+    rows,
+    major_labels,
+    combo_labels,
+    totals,
+    major_counts,
+    combo_counts,
+    sample_sets,
+    major_sample_sets,
+    combo_sample_sets,
+):
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
-        writer.writerow(["extendor", "anchor", "target", "partition_type", "partition", "count", "total_count"])
+        writer.writerow(
+            [
+                "extendor",
+                "anchor",
+                "target",
+                "partition_type",
+                "partition",
+                "count",
+                "sample_count",
+                "total_count",
+                "total_sample_count",
+            ]
+        )
         for row in rows:
             extendor = row["_extendor_value"]
             for major in major_labels:
@@ -410,7 +466,9 @@ def write_long(path, rows, major_labels, combo_labels, totals, major_counts, com
                         "major",
                         major,
                         format_count(major_counts.get(extendor, {}).get(major, 0.0)),
+                        len(major_sample_sets.get(extendor, {}).get(major, set())),
                         format_count(totals.get(extendor, 0.0)),
+                        len(sample_sets.get(extendor, set())),
                     ]
                 )
             for combo in combo_labels:
@@ -422,7 +480,9 @@ def write_long(path, rows, major_labels, combo_labels, totals, major_counts, com
                         "major_minor",
                         combo,
                         format_count(combo_counts.get(extendor, {}).get(combo, 0.0)),
+                        len(combo_sample_sets.get(extendor, {}).get(combo, set())),
                         format_count(totals.get(extendor, 0.0)),
+                        len(sample_sets.get(extendor, set())),
                     ]
                 )
 
@@ -487,6 +547,9 @@ def main():
     totals = defaultdict(float)
     major_counts = defaultdict(lambda: defaultdict(float))
     combo_counts = defaultdict(lambda: defaultdict(float))
+    sample_sets = defaultdict(set)
+    major_sample_sets = defaultdict(lambda: defaultdict(set))
+    combo_sample_sets = defaultdict(lambda: defaultdict(set))
     missing_samples = set()
     matched_satc_rows = 0
     matched_pairs = set()
@@ -520,6 +583,10 @@ def main():
             totals[extendor] += count
             major_counts[extendor][major] += count
             combo_counts[extendor][combo] += count
+            if count > 0:
+                sample_sets[extendor].add(sample)
+                major_sample_sets[extendor][major].add(sample)
+                combo_sample_sets[extendor][combo].add(sample)
             for row in extendor_to_rows[extendor]:
                 if not row["_matched_order"]:
                     row["_anchor"] = anchor
@@ -535,10 +602,24 @@ def main():
         totals,
         major_counts,
         combo_counts,
+        sample_sets,
+        major_sample_sets,
+        combo_sample_sets,
         args,
     )
     if args.long_output:
-        write_long(args.long_output, input_rows, major_labels, combo_labels, totals, major_counts, combo_counts)
+        write_long(
+            args.long_output,
+            input_rows,
+            major_labels,
+            combo_labels,
+            totals,
+            major_counts,
+            combo_counts,
+            sample_sets,
+            major_sample_sets,
+            combo_sample_sets,
+        )
 
     print(f"Wrote {args.output}")
     if args.long_output:
