@@ -26,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- Edit these defaults once, then run: sbatch distribute.sh ----
 # The SATC table is hardcoded to the 260714 run requested here.
-PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR/flash26}"
+PROJECT_DIR="${PROJECT_DIR:-$SCRIPT_DIR}"
 SATC="${SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc_merged.txt}"
 
 # Put your extendor list/table and sample partition sheet here, or override them
@@ -48,8 +48,8 @@ PARTITION_HAS_HEADER="${PARTITION_HAS_HEADER:-auto}"
 PARTITION_DELIMITER="${PARTITION_DELIMITER:-auto}"
 SATC_HAS_HEADER="${SATC_HAS_HEADER:-auto}"
 
-# Existing code in this repo treats an extendor as target+anchor.
-EXTENDOR_ORDER="${EXTENDOR_ORDER:-target-anchor}"
+# Extendors for this run are anchor+target, matching all_satc_merged.txt.
+EXTENDOR_ORDER="${EXTENDOR_ORDER:-anchor-target}"
 
 # Optional:
 #   LONG_OUTPUT=extendor_partition_distribution.long.tsv
@@ -85,7 +85,6 @@ args=(
   --partition_tsv "$PARTITION_SHEET"
   --output "$OUTPUT_TSV"
   --satc "$SATC"
-  --anchor_satc "$ANCHOR_SATC"
   --extendor_col "$EXTENDOR_COL"
   --sample_col "$SAMPLE_COL"
   --major_col "$MAJOR_COL"

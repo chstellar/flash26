@@ -75,7 +75,7 @@ def parse_args():
         "--anchor_len",
         type=int,
         default=None,
-        help="Anchor length. If omitted, inferred from --anchor_satc, then --satc.",
+        help="Anchor length. If omitted, inferred from --satc.",
     )
     parser.add_argument(
         "--target_len",
@@ -84,17 +84,12 @@ def parse_args():
         help="Target length. If omitted, inferred from --satc or from extendor length minus anchor length.",
     )
     parser.add_argument(
-        "--anchor_satc",
-        default="anchor_satc_merged.txt",
-        help="Optional sample-anchor-count TSV used to infer anchor length.",
-    )
-    parser.add_argument(
         "--extendor_order",
-        choices=("target-anchor", "anchor-target"),
-        default="target-anchor",
+        choices=("auto", "target-anchor", "anchor-target"),
+        default="anchor-target",
         help=(
-            "How the extendor sequence is arranged. Existing helper scripts in this "
-            "repo use target-anchor, where the anchor is the suffix. Default: target-anchor."
+            "How the extendor sequence is arranged. Default: anchor-target, "
+            "matching all_satc_merged.txt anchor then target."
         ),
     )
     parser.add_argument(
@@ -202,7 +197,7 @@ def infer_delimiter(path, mode):
     path = Path(path)
     if path.suffix.lower() == ".csv":
         return ","
-    if path.suffix.lower() in {".tsv", ".txt"}:
+    if path.suffix.lower() == ".tsv":
         return "\t"
     with open(path, newline="") as handle:
         for line in handle:
@@ -260,18 +255,7 @@ def read_input(path, extendor_col, header_mode, case_sensitive):
     return header, rows, list(extendors.keys())
 
 
-def infer_anchor_len(anchor_satc, satc, satc_header_mode, case_sensitive):
-    anchor_path = Path(anchor_satc)
-    if anchor_path.exists() and anchor_path.stat().st_size > 0:
-        for fields in read_tsv_rows(anchor_path):
-            if len(fields) < 2:
-                continue
-            if fields[0].strip().lower() in {"sample", "sample_id"}:
-                continue
-            anchor = normalize_seq(fields[1], case_sensitive)
-            if anchor:
-                return len(anchor), f"{anchor_satc} column 2"
-
+def infer_anchor_len(satc, satc_header_mode, case_sensitive):
     for fields in iter_satc_rows(satc, satc_header_mode):
         _, anchor, _, _ = fields
         if anchor:
@@ -311,9 +295,14 @@ def split_extendor(extendor, anchor_len, target_len, order):
         )
     if len(extendor) > expected_len:
         extendor = extendor[:expected_len]
+    if order == "auto":
+        return [
+            (extendor[:anchor_len], extendor[anchor_len : anchor_len + target_len], "anchor-target"),
+            (extendor[-anchor_len:], extendor[:target_len], "target-anchor"),
+        ]
     if order == "target-anchor":
-        return extendor[-anchor_len:], extendor[:target_len]
-    return extendor[:anchor_len], extendor[anchor_len : anchor_len + target_len]
+        return [(extendor[-anchor_len:], extendor[:target_len], "target-anchor")]
+    return [(extendor[:anchor_len], extendor[anchor_len : anchor_len + target_len], "anchor-target")]
 
 
 def add_ordered(value, values, seen):
@@ -373,6 +362,7 @@ def write_summary(path, header, rows, major_labels, combo_labels, totals, major_
     out_header = header + [
         "anchor",
         "target",
+        "matched_extendor_order",
         "total_count",
         "major_distribution",
         "major_minor_distribution",
@@ -387,6 +377,7 @@ def write_summary(path, header, rows, major_labels, combo_labels, totals, major_
                 + [
                     row["_anchor"],
                     row["_target"],
+                    row["_matched_order"],
                     format_count(totals.get(extendor, 0.0)),
                     distribution_string(
                         major_labels,
@@ -447,9 +438,7 @@ def main():
     anchor_len = args.anchor_len
     target_len = args.target_len
     if anchor_len is None:
-        anchor_len, source = infer_anchor_len(
-            args.anchor_satc, args.satc, args.satc_has_header, args.case_sensitive
-        )
+        anchor_len, source = infer_anchor_len(args.satc, args.satc_has_header, args.case_sensitive)
         print(f"Inferred anchor_len={anchor_len} from {source}", file=sys.stderr)
     if target_len is None:
         try:
@@ -463,12 +452,20 @@ def main():
             else:
                 raise
 
-    requested_pairs = {}
+    extendor_to_rows = defaultdict(list)
     for row in input_rows:
-        anchor, target = split_extendor(row["_extendor_value"], anchor_len, target_len, args.extendor_order)
-        row["_anchor"] = anchor
-        row["_target"] = target
-        requested_pairs[(anchor, target)] = row["_extendor_value"]
+        extendor_to_rows[row["_extendor_value"]].append(row)
+
+    requested_pairs = defaultdict(list)
+    extendor_pair_choices = {}
+    for row in input_rows:
+        pairs = split_extendor(row["_extendor_value"], anchor_len, target_len, args.extendor_order)
+        extendor_pair_choices[row["_extendor_value"]] = pairs
+        row["_anchor"] = pairs[0][0]
+        row["_target"] = pairs[0][1]
+        row["_matched_order"] = ""
+        for anchor, target, order in pairs:
+            requested_pairs[(anchor, target)].append((row["_extendor_value"], order))
 
     sample_to_partition, major_labels, minor_labels = read_partitions(
         args.partition_tsv,
@@ -491,17 +488,21 @@ def main():
     major_counts = defaultdict(lambda: defaultdict(float))
     combo_counts = defaultdict(lambda: defaultdict(float))
     missing_samples = set()
+    matched_satc_rows = 0
+    matched_pairs = set()
 
     for sample, anchor, target, count_text in iter_satc_rows(args.satc, args.satc_has_header):
         anchor = normalize_seq(anchor, args.case_sensitive)
         target = normalize_seq(target, args.case_sensitive)
-        extendor = requested_pairs.get((anchor, target))
-        if extendor is None:
+        matched_extendors = requested_pairs.get((anchor, target))
+        if not matched_extendors:
             continue
         try:
             count = float(count_text)
         except ValueError:
             continue
+        matched_satc_rows += 1
+        matched_pairs.add((anchor, target))
         major, minor = sample_to_partition.get(sample, (MISSING_PARTITION, MISSING_PARTITION))
         if sample not in sample_to_partition:
             missing_samples.add(sample)
@@ -515,9 +516,15 @@ def main():
         if labels_changed:
             combo_labels = make_combo_labels()
         combo = f"{major}{args.intersection_sep}{minor}"
-        totals[extendor] += count
-        major_counts[extendor][major] += count
-        combo_counts[extendor][combo] += count
+        for extendor, matched_order in matched_extendors:
+            totals[extendor] += count
+            major_counts[extendor][major] += count
+            combo_counts[extendor][combo] += count
+            for row in extendor_to_rows[extendor]:
+                if not row["_matched_order"]:
+                    row["_anchor"] = anchor
+                    row["_target"] = target
+                    row["_matched_order"] = matched_order
 
     write_summary(
         args.output,
@@ -536,7 +543,29 @@ def main():
     print(f"Wrote {args.output}")
     if args.long_output:
         print(f"Wrote {args.long_output}")
-    print(f"Processed {len(input_rows)} input row(s), {len(requested_pairs)} unique anchor-target pair(s).")
+    nonzero_extendors = sum(1 for row in input_rows if totals.get(row["_extendor_value"], 0.0) > 0)
+    print(
+        f"Processed {len(input_rows)} input row(s), {len(requested_pairs)} candidate anchor-target pair(s)."
+    )
+    print(
+        f"Matched {matched_satc_rows} SATC row(s), {len(matched_pairs)} candidate pair(s), "
+        f"and {nonzero_extendors} input row(s) with nonzero counts."
+    )
+    if matched_satc_rows == 0:
+        examples = []
+        for extendor in list(extendor_pair_choices)[:3]:
+            choices = ", ".join(
+                f"{order}:anchor={anchor},target={target}"
+                for anchor, target, order in extendor_pair_choices[extendor]
+            )
+            examples.append(f"{extendor} -> {choices}")
+        print(
+            "Warning: no input extendor-derived anchor-target pairs matched the SATC table. "
+            "Check --extendor_order, --anchor_len, --target_len, and --extendor_col.",
+            file=sys.stderr,
+        )
+        for example in examples:
+            print(f"Example split: {example}", file=sys.stderr)
     if missing_samples:
         print(
             f"Warning: {len(missing_samples)} SATC sample(s) were missing from {args.partition_tsv}; "
