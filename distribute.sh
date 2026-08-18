@@ -35,6 +35,7 @@ SATC="${SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/t
 INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/extendors.txt}"
 PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/partition.csv}"
 OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution.tsv}"
+HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution_heatmaps.pdf}"
 
 # Column settings. These can be header names or 1-based column indices.
 EXTENDOR_COL="${EXTENDOR_COL:-1}"
@@ -63,6 +64,7 @@ usage() {
   echo "  INPUT_TSV=$INPUT_TSV"
   echo "  PARTITION_SHEET=$PARTITION_SHEET"
   echo "  OUTPUT_TSV=$OUTPUT_TSV"
+  echo "  HEATMAP_PDF=$HEATMAP_PDF"
   echo "  SATC=$SATC"
   echo
   echo "Common optional environment variables:"
@@ -98,6 +100,9 @@ args=(
 
 if [[ -n "$LONG_OUTPUT" ]]; then
   args+=(--long_output "$LONG_OUTPUT")
+fi
+if [[ -n "$HEATMAP_PDF" ]]; then
+  args+=(--heatmap_pdf "$HEATMAP_PDF")
 fi
 
 "$PYTHON" "$SCRIPT_DIR/distribute.py" "${args[@]}" "$@"

@@ -13,6 +13,7 @@ partitions and across every major.minor intersection.
 
 import argparse
 import csv
+import math
 import re
 import sys
 from collections import OrderedDict, defaultdict
@@ -134,6 +135,20 @@ def parse_args():
         "--long_output",
         default="",
         help="Optional long-format TSV with one row per extendor x partition.",
+    )
+    parser.add_argument(
+        "--heatmap_pdf",
+        default="",
+        help=(
+            "Optional multi-page PDF. Each page shows sample-count and "
+            "anchor-target occurrence heatmaps for one extendor."
+        ),
+    )
+    parser.add_argument(
+        "--heatmap_dpi",
+        type=int,
+        default=300,
+        help="DPI for the heatmap PDF. Default: 300.",
     )
     return parser.parse_args()
 
@@ -487,6 +502,239 @@ def write_long(
                 )
 
 
+def matrix_from_mapping(major_labels, minor_labels, intersection_sep, values):
+    matrix = []
+    for major in major_labels:
+        row = []
+        for minor in minor_labels:
+            row.append(values.get(f"{major}{intersection_sep}{minor}", 0.0))
+        matrix.append(row)
+    return matrix
+
+
+def row_sums(matrix):
+    return [sum(row) for row in matrix]
+
+
+def col_sums(matrix):
+    if not matrix:
+        return []
+    return [sum(row[col] for row in matrix) for col in range(len(matrix[0]))]
+
+
+def matrix_max(*matrices):
+    value = 0.0
+    for matrix in matrices:
+        for row in matrix:
+            if isinstance(row, list):
+                value = max(value, max(row) if row else 0.0)
+            else:
+                value = max(value, row)
+    return value
+
+
+def short_seq(value, left=12, right=8):
+    if len(value) <= left + right + 3:
+        return value
+    return f"{value[:left]}...{value[-right:]}"
+
+
+def maybe_annotate(ax, matrix, fontsize=6):
+    n_rows = len(matrix)
+    n_cols = len(matrix[0]) if n_rows else 0
+    if n_rows * n_cols > 80:
+        return
+    for i, row in enumerate(matrix):
+        for j, value in enumerate(row):
+            if value:
+                ax.text(j, i, format_count(value), ha="center", va="center", fontsize=fontsize)
+
+
+def draw_heatmap_panel(
+    fig,
+    outer_spec,
+    title,
+    matrix,
+    major_labels,
+    minor_labels,
+    cmap,
+    colorbar_label,
+):
+    import matplotlib.pyplot as plt
+    from matplotlib import gridspec
+    from matplotlib.colors import Normalize
+
+    row_total_values = row_sums(matrix)
+    col_total_values = col_sums(matrix)
+    row_total_matrix = [[value] for value in row_total_values]
+    col_total_matrix = [col_total_values]
+    vmax = matrix_max(matrix, row_total_matrix, col_total_matrix)
+    vmax = max(vmax, 1.0)
+    norm = Normalize(vmin=0, vmax=vmax)
+
+    nested = gridspec.GridSpecFromSubplotSpec(
+        3,
+        3,
+        subplot_spec=outer_spec,
+        width_ratios=[1.0, 0.13, 0.06],
+        height_ratios=[0.18, 1.0, 0.08],
+        wspace=0.08,
+        hspace=0.08,
+    )
+    ax_top = fig.add_subplot(nested[0, 0])
+    ax_main = fig.add_subplot(nested[1, 0])
+    ax_right = fig.add_subplot(nested[1, 1])
+    cax = fig.add_subplot(nested[1, 2])
+    ax_title = fig.add_subplot(nested[2, 0])
+
+    image = ax_main.imshow(matrix, aspect="auto", cmap=cmap, norm=norm)
+    ax_top.imshow(col_total_matrix, aspect="auto", cmap=cmap, norm=norm)
+    ax_right.imshow(row_total_matrix, aspect="auto", cmap=cmap, norm=norm)
+    fig.colorbar(image, cax=cax, label=colorbar_label)
+
+    ax_main.set_xticks(range(len(minor_labels)))
+    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=7)
+    ax_main.set_yticks(range(len(major_labels)))
+    ax_main.set_yticklabels(major_labels, fontsize=7)
+    ax_main.set_xlabel("Minor partition", fontsize=8)
+    ax_main.set_ylabel("Major partition", fontsize=8)
+    ax_main.set_title(title, fontsize=10, pad=6)
+
+    ax_top.set_xticks(range(len(minor_labels)))
+    ax_top.set_xticklabels([])
+    ax_top.set_yticks([0])
+    ax_top.set_yticklabels(["minor total"], fontsize=6)
+    ax_right.set_xticks([0])
+    ax_right.set_xticklabels(["major\ntotal"], fontsize=6)
+    ax_right.set_yticks(range(len(major_labels)))
+    ax_right.set_yticklabels([])
+
+    for axis in (ax_top, ax_right, ax_main):
+        axis.tick_params(length=0)
+        for spine in axis.spines.values():
+            spine.set_visible(False)
+
+    maybe_annotate(ax_main, matrix)
+    maybe_annotate(ax_top, col_total_matrix, fontsize=5)
+    maybe_annotate(ax_right, row_total_matrix, fontsize=5)
+    ax_title.axis("off")
+
+
+def write_heatmap_pdf(
+    path,
+    rows,
+    major_labels,
+    minor_labels,
+    totals,
+    combo_counts,
+    sample_sets,
+    combo_sample_sets,
+    args,
+):
+    try:
+        import matplotlib
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            "Heatmap PDF output requires matplotlib. Install matplotlib or run in the "
+            "same plotting environment used by expression.sh."
+        ) from exc
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib import gridspec
+
+    plt.rcParams.update(
+        {
+            "font.size": 8,
+            "axes.linewidth": 0.6,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+        }
+    )
+
+    seen = set()
+    unique_rows = []
+    for row in rows:
+        extendor = row["_extendor_value"]
+        if extendor in seen:
+            continue
+        unique_rows.append(row)
+        seen.add(extendor)
+
+    with PdfPages(path) as pdf:
+        for row in unique_rows:
+            extendor = row["_extendor_value"]
+            count_matrix = matrix_from_mapping(
+                major_labels,
+                minor_labels,
+                args.intersection_sep,
+                combo_counts.get(extendor, {}),
+            )
+            sample_counts = set_count_distribution(
+                [
+                    f"{major}{args.intersection_sep}{minor}"
+                    for major in major_labels
+                    for minor in minor_labels
+                ],
+                combo_sample_sets.get(extendor, {}),
+            )
+            sample_matrix = matrix_from_mapping(
+                major_labels,
+                minor_labels,
+                args.intersection_sep,
+                sample_counts,
+            )
+
+            width = max(10.5, min(16.0, 7.5 + 0.38 * len(minor_labels)))
+            height = max(6.5, min(11.5, 4.7 + 0.28 * len(major_labels)))
+            fig = plt.figure(figsize=(width, height), constrained_layout=False)
+            outer = gridspec.GridSpec(
+                2,
+                2,
+                figure=fig,
+                height_ratios=[0.16, 1.0],
+                width_ratios=[1.0, 1.0],
+                wspace=0.22,
+                hspace=0.10,
+            )
+            title_ax = fig.add_subplot(outer[0, :])
+            title_ax.axis("off")
+            title = (
+                f"Extendor {short_seq(extendor)}   "
+                f"anchor {short_seq(row['_anchor'])}   target {short_seq(row['_target'])}"
+            )
+            subtitle = (
+                f"total count {format_count(totals.get(extendor, 0.0))}; "
+                f"samples {len(sample_sets.get(extendor, set()))}"
+            )
+            title_ax.text(0.0, 0.72, title, fontsize=11, weight="bold", ha="left", va="center")
+            title_ax.text(0.0, 0.28, subtitle, fontsize=8, color="#4a4a4a", ha="left", va="center")
+
+            draw_heatmap_panel(
+                fig,
+                outer[1, 0],
+                "Sample count",
+                sample_matrix,
+                major_labels,
+                minor_labels,
+                "YlGnBu",
+                "samples",
+            )
+            draw_heatmap_panel(
+                fig,
+                outer[1, 1],
+                "Anchor-target occurrence",
+                count_matrix,
+                major_labels,
+                minor_labels,
+                "YlOrRd",
+                "count",
+            )
+            pdf.savefig(fig, dpi=args.heatmap_dpi, bbox_inches="tight")
+            plt.close(fig)
+
+
 def main():
     args = parse_args()
     header, input_rows, extendors = read_input(
@@ -620,10 +868,24 @@ def main():
             major_sample_sets,
             combo_sample_sets,
         )
+    if args.heatmap_pdf:
+        write_heatmap_pdf(
+            args.heatmap_pdf,
+            input_rows,
+            major_labels,
+            minor_labels,
+            totals,
+            combo_counts,
+            sample_sets,
+            combo_sample_sets,
+            args,
+        )
 
     print(f"Wrote {args.output}")
     if args.long_output:
         print(f"Wrote {args.long_output}")
+    if args.heatmap_pdf:
+        print(f"Wrote {args.heatmap_pdf}")
     nonzero_extendors = sum(1 for row in input_rows if totals.get(row["_extendor_value"], 0.0) > 0)
     print(
         f"Processed {len(input_rows)} input row(s), {len(requested_pairs)} candidate anchor-target pair(s)."
