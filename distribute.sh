@@ -3,7 +3,7 @@
 #SBATCH --partition=horence
 #SBATCH --time=0-01:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=8G
+#SBATCH --mem=16G
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu
 
@@ -22,7 +22,6 @@ elif command -v conda >/dev/null 2>&1; then
 fi
 
 PYTHON="${PYTHON:-python}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- Edit these defaults once, then run: sbatch distribute.sh ----
 # The SATC table is hardcoded to the 260714 run requested here.
@@ -105,4 +104,4 @@ if [[ -n "$HEATMAP_PDF" ]]; then
   args+=(--heatmap_pdf "$HEATMAP_PDF")
 fi
 
-"$PYTHON" "$SCRIPT_DIR/distribute.py" "${args[@]}" "$@"
+"$PYTHON" "$PROJECT_DIR/distribute.py" "${args[@]}" "$@"
