@@ -38,10 +38,15 @@ HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/
 
 # Column settings. These can be header names or 1-based column indices.
 EXTENDOR_COL="${EXTENDOR_COL:-4}"
-ANNOTATION_COL="${ANNOTATION_COL:-12}"
+ANNOTATION_COL="${ANNOTATION_COL:-20}"
 SAMPLE_COL="${SAMPLE_COL:-1}"
 MAJOR_COL="${MAJOR_COL:-2}"
 MINOR_COL="${MINOR_COL:-3}"
+MAJOR_ORDER="${MAJOR_ORDER:-no_fungus,not_given,bbassiana,ocamponoti-floridani}"
+MINOR_ORDER="${MINOR_ORDER:-manipulation,timecourse,tnylanderi,tcurvispinsosus}"
+MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-fungus_species}"
+MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-dataset}"
+MAJOR_COLORS="${MAJOR_COLORS:-no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
 
 # Header and delimiter handling.
 INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-yes}"
@@ -69,10 +74,13 @@ usage() {
   echo
   echo "Common optional environment variables:"
   echo "  EXTENDOR_COL    extendor column name or 1-based index; default 4"
-  echo "  ANNOTATION_COL  annotation column name or 1-based index; default 12"
+  echo "  ANNOTATION_COL  annotation column name or 1-based index; default 20"
   echo "  SAMPLE_COL      sample column in partition sheet; default 1"
   echo "  MAJOR_COL       major partition column; default 2"
   echo "  MINOR_COL       minor partition column; default 3"
+  echo "  MAJOR_ORDER     comma-separated row order"
+  echo "  MINOR_ORDER     comma-separated column order"
+  echo "  MAJOR_COLORS    comma-separated row-label color map, label:#RRGGBB"
   echo "  PARTITION_HAS_HEADER auto|yes|no; default auto"
   echo "  PARTITION_DELIMITER  auto|tab|comma; default auto"
   echo "  LONG_OUTPUT     optional long-format output TSV"
@@ -93,6 +101,11 @@ args=(
   --sample_col "$SAMPLE_COL"
   --major_col "$MAJOR_COL"
   --minor_col "$MINOR_COL"
+  --major_order "$MAJOR_ORDER"
+  --minor_order "$MINOR_ORDER"
+  --major_display_name "$MAJOR_DISPLAY_NAME"
+  --minor_display_name "$MINOR_DISPLAY_NAME"
+  --major_colors "$MAJOR_COLORS"
   --input_has_header "$INPUT_HAS_HEADER"
   --partition_has_header "$PARTITION_HAS_HEADER"
   --partition_delimiter "$PARTITION_DELIMITER"

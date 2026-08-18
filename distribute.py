@@ -158,6 +158,34 @@ def parse_args():
         default=300,
         help="DPI for the heatmap PDF. Default: 300.",
     )
+    parser.add_argument(
+        "--major_order",
+        default="",
+        help="Optional comma-separated major partition row order. Unlisted labels are appended.",
+    )
+    parser.add_argument(
+        "--minor_order",
+        default="",
+        help="Optional comma-separated minor partition column order. Unlisted labels are appended.",
+    )
+    parser.add_argument(
+        "--major_display_name",
+        default="Major partition",
+        help="Display name for the major partition axis. Default: Major partition.",
+    )
+    parser.add_argument(
+        "--minor_display_name",
+        default="Minor partition",
+        help="Display name for the minor partition axis. Default: Minor partition.",
+    )
+    parser.add_argument(
+        "--major_colors",
+        default="",
+        help=(
+            "Optional comma-separated label:hex mapping for major row label colors, "
+            "for example no_fungus:#7F7F7F,bbassiana:#0072B2."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -339,6 +367,40 @@ def add_ordered(value, values, seen):
     if value not in seen:
         values.append(value)
         seen.add(value)
+
+
+def split_config_list(value):
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def apply_label_order(labels, requested_order):
+    order = split_config_list(requested_order)
+    if not order:
+        return labels
+    seen = set()
+    ordered = []
+    for label in order:
+        if label in labels and label not in seen:
+            ordered.append(label)
+            seen.add(label)
+    for label in labels:
+        if label not in seen:
+            ordered.append(label)
+            seen.add(label)
+    return ordered
+
+
+def parse_color_mapping(value):
+    mapping = {}
+    for item in split_config_list(value):
+        if ":" not in item:
+            continue
+        label, color = item.split(":", 1)
+        label = label.strip()
+        color = color.strip()
+        if label and color:
+            mapping[label] = color
+    return mapping
 
 
 def read_partitions(path, sample_col, major_col, minor_col, header_mode, delimiter_mode):
@@ -614,6 +676,9 @@ def draw_heatmap_panel(
     matrix,
     major_labels,
     minor_labels,
+    major_colors,
+    major_display_name,
+    minor_display_name,
     cmap,
     colorbar_label,
 ):
@@ -651,13 +716,17 @@ def draw_heatmap_panel(
     fig.colorbar(image, cax=cax, label=colorbar_label)
 
     ax_main.set_xticks(range(len(minor_labels)))
-    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=8)
+    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=9)
     ax_main.set_yticks(range(len(major_labels)))
-    ax_main.set_yticklabels(major_labels, fontsize=8)
-    ax_main.set_xlabel("Minor partition", fontsize=9)
-    ax_main.set_ylabel("Major partition", fontsize=9)
+    ax_main.set_yticklabels(major_labels, fontsize=9, fontweight="bold")
+    for tick in ax_main.get_yticklabels():
+        label = tick.get_text()
+        if label in major_colors:
+            tick.set_color(major_colors[label])
+    ax_main.set_xlabel(minor_display_name, fontsize=10)
+    ax_main.set_ylabel(major_display_name, fontsize=10)
     ax_panel_title.axis("off")
-    ax_panel_title.text(0.0, 0.5, title, fontsize=13, weight="bold", ha="left", va="center")
+    ax_panel_title.text(0.0, 0.5, title, fontsize=14, weight="bold", ha="left", va="center")
 
     ax_top.set_xticks(range(len(minor_labels)))
     ax_top.set_xticklabels([])
@@ -722,6 +791,7 @@ def write_heatmap_pdf(
         seen.add(extendor)
 
     with PdfPages(path) as pdf:
+        major_colors = parse_color_mapping(args.major_colors)
         for row in unique_rows:
             extendor = row["_extendor_value"]
             count_matrix = matrix_from_mapping(
@@ -745,7 +815,7 @@ def write_heatmap_pdf(
                 sample_counts,
             )
 
-            width = max(12.0, min(18.0, 8.2 + 0.42 * len(minor_labels)))
+            width = max(14.0, min(20.0, 9.8 + 0.48 * len(minor_labels)))
             height = max(7.2, min(12.5, 5.2 + 0.30 * len(major_labels)))
             fig = plt.figure(figsize=(width, height), constrained_layout=False)
             outer = gridspec.GridSpec(
@@ -754,7 +824,7 @@ def write_heatmap_pdf(
                 figure=fig,
                 height_ratios=[0.24, 1.0],
                 width_ratios=[1.0, 1.0],
-                wspace=0.34,
+                wspace=0.62,
                 hspace=0.12,
             )
             title_ax = fig.add_subplot(outer[0, :])
@@ -798,6 +868,9 @@ def write_heatmap_pdf(
                 sample_matrix,
                 major_labels,
                 minor_labels,
+                major_colors,
+                args.major_display_name,
+                args.minor_display_name,
                 "YlGnBu",
                 "samples",
             )
@@ -808,6 +881,9 @@ def write_heatmap_pdf(
                 count_matrix,
                 major_labels,
                 minor_labels,
+                major_colors,
+                args.major_display_name,
+                args.minor_display_name,
                 "YlOrRd",
                 "count",
             )
@@ -867,6 +943,9 @@ def main():
         args.partition_has_header,
         args.partition_delimiter,
     )
+    major_labels = apply_label_order(major_labels, args.major_order)
+    minor_labels = apply_label_order(minor_labels, args.minor_order)
+
     def make_combo_labels():
         return [
             f"{major}{args.intersection_sep}{minor}"
@@ -909,6 +988,8 @@ def main():
             minor_labels.append(minor)
             labels_changed = True
         if labels_changed:
+            major_labels = apply_label_order(major_labels, args.major_order)
+            minor_labels = apply_label_order(minor_labels, args.minor_order)
             combo_labels = make_combo_labels()
         combo = f"{major}{args.intersection_sep}{minor}"
         for extendor, matched_order in matched_extendors:
