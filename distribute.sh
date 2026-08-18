@@ -31,19 +31,20 @@ SATC="${SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/t
 # Put your extendor list/table and sample partition sheet here, or override them
 # at submit time, for example:
 #   sbatch --export=ALL,INPUT_TSV=my_extendors.tsv,PARTITION_SHEET=my_partitions.csv distribute.sh
-INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized//scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/260714-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
+INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/260714-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
 PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/partition.csv}"
 OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution.tsv}"
 HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution_heatmaps.pdf}"
 
 # Column settings. These can be header names or 1-based column indices.
 EXTENDOR_COL="${EXTENDOR_COL:-4}"
+ANNOTATION_COL="${ANNOTATION_COL:-12}"
 SAMPLE_COL="${SAMPLE_COL:-1}"
 MAJOR_COL="${MAJOR_COL:-2}"
 MINOR_COL="${MINOR_COL:-3}"
 
 # Header and delimiter handling.
-INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-auto}"
+INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-yes}"
 PARTITION_HAS_HEADER="${PARTITION_HAS_HEADER:-auto}"
 PARTITION_DELIMITER="${PARTITION_DELIMITER:-auto}"
 SATC_HAS_HEADER="${SATC_HAS_HEADER:-auto}"
@@ -67,7 +68,8 @@ usage() {
   echo "  SATC=$SATC"
   echo
   echo "Common optional environment variables:"
-  echo "  EXTENDOR_COL    extendor column name or 1-based index; default 1"
+  echo "  EXTENDOR_COL    extendor column name or 1-based index; default 4"
+  echo "  ANNOTATION_COL  annotation column name or 1-based index; default 12"
   echo "  SAMPLE_COL      sample column in partition sheet; default 1"
   echo "  MAJOR_COL       major partition column; default 2"
   echo "  MINOR_COL       minor partition column; default 3"
@@ -87,6 +89,7 @@ args=(
   --output "$OUTPUT_TSV"
   --satc "$SATC"
   --extendor_col "$EXTENDOR_COL"
+  --annotation_col "$ANNOTATION_COL"
   --sample_col "$SAMPLE_COL"
   --major_col "$MAJOR_COL"
   --minor_col "$MINOR_COL"

@@ -58,6 +58,14 @@ def parse_args():
         help="Extendor column in --input. Use a header name or 1-based index. Default: 1.",
     )
     parser.add_argument(
+        "--annotation_col",
+        default="",
+        help=(
+            "Optional annotation column in --input. Use a header name or 1-based "
+            "index. The annotation is used as the heatmap PDF subtitle."
+        ),
+    )
+    parser.add_argument(
         "--sample_col",
         default="1",
         help="Sample column in --partition_tsv. Use a header name or 1-based index. Default: 1.",
@@ -242,9 +250,15 @@ def detect_first_data_row(path, requested_cols, header_mode, delimiter="\t"):
     raise ValueError(f"{path} is empty")
 
 
-def read_input(path, extendor_col, header_mode, case_sensitive):
-    first, has_header = detect_first_data_row(path, [extendor_col], header_mode)
+def read_input(path, extendor_col, annotation_col, header_mode, case_sensitive):
+    requested_cols = [extendor_col]
+    if annotation_col:
+        requested_cols.append(annotation_col)
+    first, has_header = detect_first_data_row(path, requested_cols, header_mode)
     extendor_idx = resolve_col(first, extendor_col, path) if has_header else resolve_col(first, extendor_col, path)
+    annotation_idx = None
+    if annotation_col:
+        annotation_idx = resolve_col(first, annotation_col, path)
     header = list(first) if has_header else [f"col{i}" for i in range(1, len(first) + 1)]
     rows = []
     extendors = OrderedDict()
@@ -255,6 +269,7 @@ def read_input(path, extendor_col, header_mode, case_sensitive):
         extendor = normalize_seq(fields[extendor_idx], case_sensitive)
         row = dict(zip(header, fields + [""] * (len(header) - len(fields))))
         row["_extendor_value"] = extendor
+        row["_annotation"] = fields[annotation_idx].strip() if annotation_idx is not None and len(fields) > annotation_idx else ""
         rows.append(row)
         extendors.setdefault(extendor, None)
 
@@ -533,13 +548,47 @@ def matrix_max(*matrices):
     return value
 
 
-def short_seq(value, left=12, right=8):
-    if len(value) <= left + right + 3:
-        return value
-    return f"{value[:left]}...{value[-right:]}"
+def adaptive_annotation_font(annotation):
+    length = len(annotation or "")
+    if length <= 80:
+        return 10
+    if length <= 140:
+        return 9
+    if length <= 220:
+        return 8
+    return 7
 
 
-def maybe_annotate(ax, matrix, fontsize=6):
+def annotation_lines(annotation, width=150):
+    if not annotation:
+        return ""
+    words = str(annotation).split()
+    if not words:
+        return str(annotation)
+    lines = []
+    current = []
+    current_len = 0
+    for word in words:
+        extra = 1 if current else 0
+        if current and current_len + extra + len(word) > width:
+            lines.append(" ".join(current))
+            current = [word]
+            current_len = len(word)
+        else:
+            current.append(word)
+            current_len += extra + len(word)
+    if current:
+        lines.append(" ".join(current))
+    return "\n".join(lines[:3])
+
+
+def contrast_text_color(value, vmax):
+    if vmax <= 0:
+        return "black"
+    return "white" if value / vmax >= 0.58 else "black"
+
+
+def maybe_annotate(ax, matrix, vmax, fontsize=7):
     n_rows = len(matrix)
     n_cols = len(matrix[0]) if n_rows else 0
     if n_rows * n_cols > 80:
@@ -547,7 +596,15 @@ def maybe_annotate(ax, matrix, fontsize=6):
     for i, row in enumerate(matrix):
         for j, value in enumerate(row):
             if value:
-                ax.text(j, i, format_count(value), ha="center", va="center", fontsize=fontsize)
+                ax.text(
+                    j,
+                    i,
+                    format_count(value),
+                    ha="center",
+                    va="center",
+                    fontsize=fontsize,
+                    color=contrast_text_color(value, vmax),
+                )
 
 
 def draw_heatmap_panel(
@@ -573,19 +630,20 @@ def draw_heatmap_panel(
     norm = Normalize(vmin=0, vmax=vmax)
 
     nested = gridspec.GridSpecFromSubplotSpec(
-        3,
+        4,
         3,
         subplot_spec=outer_spec,
         width_ratios=[1.0, 0.13, 0.06],
-        height_ratios=[0.18, 1.0, 0.08],
+        height_ratios=[0.13, 0.18, 1.0, 0.08],
         wspace=0.08,
-        hspace=0.08,
+        hspace=0.10,
     )
-    ax_top = fig.add_subplot(nested[0, 0])
-    ax_main = fig.add_subplot(nested[1, 0])
-    ax_right = fig.add_subplot(nested[1, 1])
-    cax = fig.add_subplot(nested[1, 2])
-    ax_title = fig.add_subplot(nested[2, 0])
+    ax_panel_title = fig.add_subplot(nested[0, 0])
+    ax_top = fig.add_subplot(nested[1, 0])
+    ax_main = fig.add_subplot(nested[2, 0])
+    ax_right = fig.add_subplot(nested[2, 1])
+    cax = fig.add_subplot(nested[2, 2])
+    ax_footer = fig.add_subplot(nested[3, 0])
 
     image = ax_main.imshow(matrix, aspect="auto", cmap=cmap, norm=norm)
     ax_top.imshow(col_total_matrix, aspect="auto", cmap=cmap, norm=norm)
@@ -593,19 +651,20 @@ def draw_heatmap_panel(
     fig.colorbar(image, cax=cax, label=colorbar_label)
 
     ax_main.set_xticks(range(len(minor_labels)))
-    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=7)
+    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=8)
     ax_main.set_yticks(range(len(major_labels)))
-    ax_main.set_yticklabels(major_labels, fontsize=7)
-    ax_main.set_xlabel("Minor partition", fontsize=8)
-    ax_main.set_ylabel("Major partition", fontsize=8)
-    ax_main.set_title(title, fontsize=10, pad=6)
+    ax_main.set_yticklabels(major_labels, fontsize=8)
+    ax_main.set_xlabel("Minor partition", fontsize=9)
+    ax_main.set_ylabel("Major partition", fontsize=9)
+    ax_panel_title.axis("off")
+    ax_panel_title.text(0.0, 0.5, title, fontsize=13, weight="bold", ha="left", va="center")
 
     ax_top.set_xticks(range(len(minor_labels)))
     ax_top.set_xticklabels([])
     ax_top.set_yticks([0])
-    ax_top.set_yticklabels(["minor total"], fontsize=6)
+    ax_top.set_yticklabels(["minor total"], fontsize=7)
     ax_right.set_xticks([0])
-    ax_right.set_xticklabels(["major\ntotal"], fontsize=6)
+    ax_right.set_xticklabels(["major\ntotal"], fontsize=7)
     ax_right.set_yticks(range(len(major_labels)))
     ax_right.set_yticklabels([])
 
@@ -614,10 +673,10 @@ def draw_heatmap_panel(
         for spine in axis.spines.values():
             spine.set_visible(False)
 
-    maybe_annotate(ax_main, matrix)
-    maybe_annotate(ax_top, col_total_matrix, fontsize=5)
-    maybe_annotate(ax_right, row_total_matrix, fontsize=5)
-    ax_title.axis("off")
+    maybe_annotate(ax_main, matrix, vmax, fontsize=7)
+    maybe_annotate(ax_top, col_total_matrix, vmax, fontsize=6)
+    maybe_annotate(ax_right, row_total_matrix, vmax, fontsize=6)
+    ax_footer.axis("off")
 
 
 def write_heatmap_pdf(
@@ -686,30 +745,51 @@ def write_heatmap_pdf(
                 sample_counts,
             )
 
-            width = max(10.5, min(16.0, 7.5 + 0.38 * len(minor_labels)))
-            height = max(6.5, min(11.5, 4.7 + 0.28 * len(major_labels)))
+            width = max(12.0, min(18.0, 8.2 + 0.42 * len(minor_labels)))
+            height = max(7.2, min(12.5, 5.2 + 0.30 * len(major_labels)))
             fig = plt.figure(figsize=(width, height), constrained_layout=False)
             outer = gridspec.GridSpec(
                 2,
                 2,
                 figure=fig,
-                height_ratios=[0.16, 1.0],
+                height_ratios=[0.24, 1.0],
                 width_ratios=[1.0, 1.0],
-                wspace=0.22,
-                hspace=0.10,
+                wspace=0.34,
+                hspace=0.12,
             )
             title_ax = fig.add_subplot(outer[0, :])
             title_ax.axis("off")
-            title = (
-                f"Extendor {short_seq(extendor)}   "
-                f"anchor {short_seq(row['_anchor'])}   target {short_seq(row['_target'])}"
+            title_ax.text(
+                0.0,
+                0.78,
+                f"Anchor: {row['_anchor']}",
+                fontsize=11,
+                weight="bold",
+                ha="left",
+                va="center",
+                family="monospace",
             )
-            subtitle = (
-                f"total count {format_count(totals.get(extendor, 0.0))}; "
-                f"samples {len(sample_sets.get(extendor, set()))}"
+            title_ax.text(
+                0.0,
+                0.52,
+                f"Target: {row['_target']}",
+                fontsize=11,
+                weight="bold",
+                ha="left",
+                va="center",
+                family="monospace",
             )
-            title_ax.text(0.0, 0.72, title, fontsize=11, weight="bold", ha="left", va="center")
-            title_ax.text(0.0, 0.28, subtitle, fontsize=8, color="#4a4a4a", ha="left", va="center")
+            annotation = annotation_lines(row.get("_annotation", ""))
+            if annotation:
+                title_ax.text(
+                    0.0,
+                    0.18,
+                    annotation,
+                    fontsize=adaptive_annotation_font(annotation),
+                    color="#333333",
+                    ha="left",
+                    va="center",
+                )
 
             draw_heatmap_panel(
                 fig,
@@ -738,7 +818,11 @@ def write_heatmap_pdf(
 def main():
     args = parse_args()
     header, input_rows, extendors = read_input(
-        args.input, args.extendor_col, args.input_has_header, args.case_sensitive
+        args.input,
+        args.extendor_col,
+        args.annotation_col,
+        args.input_has_header,
+        args.case_sensitive,
     )
     if not input_rows:
         raise SystemExit("No extendors were read from --input")
