@@ -37,17 +37,17 @@ KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps 
 MODELS = config["options"]["models"]
 NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
-TARGET_VARS = "ampicillin_RIS;ampicillin_RIS;ampicillin_RIS;ciprofloxacin_RIS;ciprofloxacin_RIS;ciprofloxacin_RIS;clindamycin_RIS;clindamycin_RIS;clindamycin_RIS;daptomycin_RIS;daptomycin_RIS;daptomycin_RIS;doxycycline_RIS;doxycycline_RIS;doxycycline_RIS;erythromycin_RIS;erythromycin_RIS;erythromycin_RIS;gentamicin_RIS;gentamicin_RIS;gentamicin_RIS;kanamycin_RIS;kanamycin_RIS;kanamycin_RIS;linezolid_RIS;linezolid_RIS;linezolid_RIS;quinupristin_dalfopristin_RIS;quinupristin_dalfopristin_RIS;quinupristin_dalfopristin_RIS;streptomycin_RIS;streptomycin_RIS;streptomycin_RIS;teicoplanin_RIS;teicoplanin_RIS;teicoplanin_RIS;tetracycline_RIS;tetracycline_RIS;tetracycline_RIS;tigecycline_RIS;tigecycline_RIS;tigecycline_RIS;vancomycin_RIS;vancomycin_RIS;vancomycin_RIS"
-CONFOUND_VARS = ";cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all;;cluster;all"
+TARGET_VARS = "fungus_species;fungus_species;tissue;tissue;timepoint_code;timepoint_code;zt_time;zt_time;dataset;"
+CONFOUND_VARS = "tissue,dataset;;dataset,fungus_species;;tissue,fungus_species;;fungus_species;;;"
 BLAST_SELECTION_MODE = "plot_selected" # all, top_n_per_cluster, plot_selected, or plot_selected_and_top
 BLAST_TOP_N_SEQUENCES_PER_CLUSTER = 10 # used by top_n_per_cluster and as fallback for plot_selected_and_top
 BLAST_NUM_PLOT_HITS = 10 # should match plot_blast_annotations_each_feature.R --num_hits default
-BLASTP_PROTEIN_DB = "swissprot" # swissprot for a faster preview or refseq_protein for the full run
-COMPACTOR_REANNOTATE = False # rescue unannotated plotted extendors by compacting their 31-nt target anchors and re-BLASTing
+BLASTP_PROTEIN_DB = "refseq_protein" # set to "swissprot" to use SwissProt for the main BLASTP/BLASTX searches
+COMPACTOR_REANNOTATE = True # rescue unannotated plotted extendors by compacting their 31-nt target anchors and re-BLASTing
 COMPACTOR_MODE = "regular" # regular or sensitive
-COMPACTOR_SUFFIX = "fungus" # suffix for seeds/compactor outputs generated for the rescue branch
+COMPACTOR_SUFFIX = "" # suffix for seeds/compactor outputs generated for the rescue branch
 COMPACTOR_ANCHOR_LEN = TARGET_LENGTH
-COMPACTOR_NUM_CHUNKS = 8
+COMPACTOR_NUM_CHUNKS = 1
 COMPACTOR_CHUNKS = list(range(COMPACTOR_NUM_CHUNKS))
 COMPACTOR_THRESHOLDS = "1000,100,5"
 COMPACTOR_BINARY = "/oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/compactors"
@@ -110,6 +110,45 @@ rule all_embeddings:
 rule all_compactor_reannotations:
     """
     Generate compactor-rescued BLAST plot PDFs for all configured embedding runs.
+    """
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_compactor.pdf"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
+               train_proportion=TRAIN_PROPORTION)
+
+
+rule all_compactor_before_compactors:
+    """
+    Prepare compactor seed chunks for all configured embedding runs.
+    """
+    input:
+        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
+                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seed_chunk{chunk}.txt"),
+               dataset=DATASETS,
+               select_type=SELECT_TYPES,
+               cluster_type=CLUSTER_TYPES,
+               model=MODELS,
+               num_clusters=NUM_CLUSTERS,
+               target_rank=TARGET_RANK,
+               kmer_width=KMER_WIDTH,
+               kmer_step=KMER_STEP,
+               normalize=NORMALIZE,
+               train_proportion=TRAIN_PROPORTION,
+               chunk=COMPACTOR_CHUNKS)
+
+
+rule all_compactor_after_compactors:
+    """
+    Finish compactor reannotation from existing compactor chunk outputs.
     """
     input:
         expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
