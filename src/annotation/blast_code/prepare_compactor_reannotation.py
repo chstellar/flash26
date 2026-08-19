@@ -57,8 +57,8 @@ def read_summary_seed_rows(summary_path, anchor_len):
             sequence = rescue.clean_sequence_candidate(row.get("sequence"))
             if len(sequence) < anchor_len:
                 continue
-            anchor = sequence[-anchor_len:]
-            if "N" in anchor:
+            seed = sequence[-anchor_len:]
+            if "N" in seed:
                 continue
             key = (
                 row.get("metadata_category", ""),
@@ -72,7 +72,7 @@ def read_summary_seed_rows(summary_path, anchor_len):
             rows.append(
                 {
                     "seed_row": len(rows) + 1,
-                    "seed_anchor": anchor,
+                    "seed": seed,
                     "seed_extendor": sequence,
                     "metadata_category": row.get("metadata_category", ""),
                     "feature": row.get("feature", ""),
@@ -97,21 +97,21 @@ def write_seed_outputs(rows, seeds_path, sidecar_path):
     seeds_path.parent.mkdir(parents=True, exist_ok=True)
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
 
-    anchors = []
-    seen_anchors = set()
+    seeds = []
+    seen_seeds = set()
     for row in rows:
-        anchor = row["seed_anchor"]
-        if anchor not in seen_anchors:
-            seen_anchors.add(anchor)
-            anchors.append(anchor)
+        seed = row.get("seed") or row.get("seed_anchor")
+        if seed not in seen_seeds:
+            seen_seeds.add(seed)
+            seeds.append(seed)
 
     with open(seeds_path, "w", newline="") as handle:
-        for anchor in anchors:
-            handle.write(f"{anchor}\n")
+        for seed in seeds:
+            handle.write(f"{seed}\n")
 
     columns = [
         "seed_row",
-        "seed_anchor",
+        "seed",
         "seed_extendor",
         "metadata_category",
         "feature",
@@ -129,14 +129,14 @@ def write_seed_outputs(rows, seeds_path, sidecar_path):
         writer.writeheader()
         for row in rows:
             writer.writerow({col: row.get(col, "") for col in columns})
-    print(f"Wrote {len(anchors)} unique compactor anchors from {len(rows)} unannotated plot rows to {seeds_path}")
+    print(f"Wrote {len(seeds)} unique compactor seeds from {len(rows)} unannotated plot rows to {seeds_path}")
     print(f"Wrote compactor seed sidecar to {sidecar_path}")
 
 
 def write_seed_chunks(seeds_path, chunk_outputs):
-    anchors = []
+    seeds = []
     with open(seeds_path, newline="") as handle:
-        anchors = [line.strip() for line in handle if line.strip()]
+        seeds = [line.strip() for line in handle if line.strip()]
 
     chunk_paths = [Path(path) for path in chunk_outputs]
     for path in chunk_paths:
@@ -144,12 +144,12 @@ def write_seed_chunks(seeds_path, chunk_outputs):
 
     handles = [open(path, "w", newline="") for path in chunk_paths]
     try:
-        for idx, anchor in enumerate(anchors):
-            handles[idx % len(handles)].write(f"{anchor}\n")
+        for idx, seed in enumerate(seeds):
+            handles[idx % len(handles)].write(f"{seed}\n")
     finally:
         for handle in handles:
             handle.close()
-    print(f"Wrote {len(anchors)} anchors across {len(chunk_paths)} compactor seed chunks")
+    print(f"Wrote {len(seeds)} seeds across {len(chunk_paths)} compactor seed chunks")
 
 
 def command_merge_compactors(args):
@@ -188,6 +188,8 @@ def read_seed_sidecar(path):
         reader = csv.DictReader(handle, delimiter="\t")
         for idx, row in enumerate(reader, start=1):
             row.setdefault("seed_row", idx)
+            if not row.get("seed") and row.get("seed_anchor"):
+                row["seed"] = row.get("seed_anchor", "")
             row.setdefault("seed_source", str(path))
             row.setdefault("raw_seed_row", "")
             rows.append(row)
@@ -277,7 +279,7 @@ def parse_args():
     seeds.add_argument("--summary", required=True)
     seeds.add_argument("--seeds", required=True)
     seeds.add_argument("--sidecar", required=True)
-    seeds.add_argument("--anchor_len", type=int, default=31)
+    seeds.add_argument("--anchor_len", type=int, default=31, help="Compactor seed length; kept as anchor_len for compatibility.")
     seeds.add_argument("--chunk_outputs", nargs="*", default=[])
     seeds.set_defaults(func=command_seeds)
 
@@ -308,7 +310,7 @@ def parse_args():
     annotate.add_argument("--output_summary", required=True)
     annotate.add_argument("--compactor_annotations", required=True)
     annotate.add_argument("--seed_annotations", required=True)
-    annotate.add_argument("--anchor_len", type=int, default=31)
+    annotate.add_argument("--anchor_len", type=int, default=31, help="Compactor seed length; kept as anchor_len for compatibility.")
     annotate.set_defaults(func=command_annotate)
     return parser.parse_args()
 

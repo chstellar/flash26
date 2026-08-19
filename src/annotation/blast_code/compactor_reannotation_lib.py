@@ -841,7 +841,7 @@ def read_seed_rows(seeds_path, anchor_len):
                 {
                     "seed_row": idx,
                     "seed_extendor": extendor,
-                    "seed_anchor": extendor[-anchor_len:] if len(extendor) >= anchor_len else extendor,
+                    "seed": extendor[-anchor_len:] if len(extendor) >= anchor_len else extendor,
                     "seed_source": str(seeds_path),
                     "raw_seed_row": line.replace("\t", "\\t"),
                 }
@@ -891,7 +891,7 @@ def read_plot_summary_seed_rows(summary_path, anchor_len):
                 {
                     "seed_row": idx,
                     "seed_extendor": extendor,
-                    "seed_anchor": extendor[-anchor_len:],
+                    "seed": extendor[-anchor_len:],
                     "seed_source": str(summary_path),
                     "raw_seed_row": "\t".join(str(row.get(col, "")) for col in (reader.fieldnames or [])).replace(
                         "\t", "\\t"
@@ -927,7 +927,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
     output_path.parent.mkdir(parents=True, exist_ok=True)
     columns = [
         "seed_row",
-        "seed_anchor",
+        "seed",
         "seed_extendor",
         "compactor_query",
         "compactor",
@@ -983,12 +983,14 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         writer = csv.DictWriter(handle, delimiter="\t", fieldnames=columns)
         writer.writeheader()
         for seed in seeds:
-            matched_records = records_by_anchor.get(seed["seed_anchor"], [])
+            seed_sequence = seed.get("seed") or seed.get("seed_anchor", "")
+            matched_records = records_by_anchor.get(seed_sequence, [])
             if not matched_records:
                 matched_records = [{}]
             for record in matched_records:
                 query = record.get("query", "")
                 row = {**seed}
+                row["seed"] = seed_sequence
                 if record:
                     row.update(
                         {

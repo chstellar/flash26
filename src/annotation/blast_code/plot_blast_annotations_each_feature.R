@@ -587,6 +587,23 @@ infer_residual_focus_class <- function(category, metadata_source_col, metadata_v
   NA_character_
 }
 
+infer_residual_focus_label <- function(category) {
+  category <- as.character(category)
+  focus <- str_match(category, "_+residual_(.*?)(?:_adjustment\\d+)?$")[, 2]
+  focus <- ifelse(is.na(focus) | focus == "" | str_detect(focus, "^adjustment\\d+$"),
+                  NA_character_, focus)
+  focus
+}
+
+replace_residual_class_with_focus <- function(class_value, focus_value) {
+  class_value <- as.character(class_value)
+  focus_value <- as.character(focus_value)
+  ifelse(!is.na(focus_value) & focus_value != "" &
+           !is.na(class_value) & class_value == "residual",
+         focus_value,
+         class_value)
+}
+
 make_plotmath_other_taxa_label <- function(label) {
   label <- as.character(label)
   label <- replace_na(label, "")
@@ -848,8 +865,13 @@ with_plot_coefficients <- function(tbl) {
                                              parsed_max_signed_coef),
            max_coefficient = coalesce(suppressWarnings(as.numeric(max_coefficient)),
                                       abs(max_coefficient_signed))) %>%
+    mutate(residual_focus_label = infer_residual_focus_label(metadata_category),
+           first_class = replace_residual_class_with_focus(first_class, residual_focus_label),
+           second_class = replace_residual_class_with_focus(second_class, residual_focus_label),
+           max_coefficient_class = replace_residual_class_with_focus(max_coefficient_class,
+                                                                     residual_focus_label)) %>%
     select(-parsed_first_coef, -parsed_second_coef, -parsed_first_class, -parsed_second_class,
-           -parsed_max_signed_coef, -parsed_max_coefficient_class)
+           -parsed_max_signed_coef, -parsed_max_coefficient_class, -residual_focus_label)
 }
 
 has_restricted_label <- function(label) {
@@ -918,10 +940,10 @@ make_compactor_selected_dt <- function(path) {
     return(empty_dt)
   }
   selected_dt <- fread(path)
-  selected_dt <- ensure_columns(selected_dt, c("anchor", "compactor_anchor", "seed_anchor",
+  selected_dt <- ensure_columns(selected_dt, c("anchor", "compactor_anchor", "seed", "seed_anchor",
                                                "compactor_sequence", "compactor", "sequence"))
   selected_out <- selected_dt %>%
-    mutate(anchor = coalesce_text_cols(anchor, compactor_anchor, seed_anchor)) %>%
+    mutate(anchor = coalesce_text_cols(anchor, compactor_anchor, seed, seed_anchor)) %>%
     mutate(anchor = str_remove_all(as.character(anchor), "-")) %>%
     mutate(compactor_selected_sequence = coalesce_text_cols(compactor_sequence, compactor, sequence)) %>%
     filter(!is.na(anchor), nchar(anchor) > 0,
@@ -1201,7 +1223,7 @@ compactor_selected_anchor_len <- if (nrow(compactor_selected_dt) > 0) {
 }
 if (nrow(compactor_selected_dt) > 0) {
   message(paste0("Selected compactor sequences loaded for anchor lookup: ",
-                 nrow(compactor_selected_dt), " anchors of length ",
+                 nrow(compactor_selected_dt), " seeds of length ",
                  compactor_selected_anchor_len))
 } else {
   message("Selected compactor sequence lookup loaded 0 usable rows.")
@@ -1923,6 +1945,7 @@ for (category in categories) {
           `Blast Label` %in% c("NO MATCH", "NO TARGET") ~ "no_taxon",
           TRUE ~ "within_taxid"
         )) %>%
+        ungroup() %>%
         mutate(classes = map_chr(classes, \(x) paste(unlist(x), collapse=","))) %>%
         mutate(significant_class = coalesce(max_coefficient_class, first_class),
                significant_coefficient = max_coefficient_signed) %>%

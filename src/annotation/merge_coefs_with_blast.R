@@ -52,12 +52,25 @@ clean_blast_species_field <- function(x) {
   x
 }
 
+ensure_columns <- function(tbl, cols) {
+  for (col in cols) {
+    if (!col %in% colnames(tbl)) {
+      tbl[[col]] <- NA
+    }
+  }
+  tbl
+}
+
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
 if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
+  blastp_cols <- c("query", "evalue", "identity", "qcovs", "qframe", "stitle",
+                   "staxids", "sscinames", "species_origin",
+                   "NCBI_protein_accession", "UniProt_accession", "method", "GO")
+  annotations <- ensure_columns(annotations, blastp_cols)
   annotations <- annotations %>%
-    select(query, evalue, identity, qcovs, qframe, stitle, any_of(c("staxids", "sscinames", "species_origin")), `NCBI_protein_accession`, UniProt_accession, method, GO) %>%
+    select(any_of(blastp_cols)) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
   if (!"sscinames" %in% colnames(annotations)) {
     annotations$sscinames <- NA_character_
@@ -136,7 +149,19 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
     }
     aas <- Biostrings::AAStringSet(aa_dt_filtered$translated_sequence %>% str_remove("\\*.+$"))
     names(aas) <- aa_dt_filtered$query
-    aligned <- msa::msa(aas, order = "input")
+    aligned <- tryCatch(
+      msa::msa(aas, order = "input"),
+      error = function(e) {
+        message("Skipping amino-acid MSA for cluster ",
+                aa_dt_filtered$cluster[[1]],
+                " because msa failed: ", conditionMessage(e))
+        return(NULL)
+      }
+    )
+    if (is.null(aligned)) {
+      return(aa_dt_filtered %>%
+               transmute(query = query, aligned_sequence = translated_sequence))
+    }
     aligned <- Biostrings::AAStringSet(aligned)
     aligned_seqs <- data.frame(query = names(aligned), aligned_sequence = aligned)
     return(aligned_seqs)
@@ -154,8 +179,12 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   # now bind it all together
   annotations <- annotations %>% left_join(sequence_dt, by = c("query", "qframe"))
 } else {
+  blast_cols <- c("query", "evalue", "identity", "qcovs", "subject", "sacc",
+                  "staxids", "sscinames", "stitle", "species_origin",
+                  "features", "features_10000_window", "features_all")
+  annotations <- ensure_columns(annotations, blast_cols)
   annotations <- annotations %>%
-    select(query, evalue, identity, qcovs, any_of(c("subject", "sacc", "staxids", "sscinames", "stitle", "species_origin")), features, contains("window")) %>%
+    select(any_of(blast_cols), contains("window")) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
   if (!"sscinames" %in% colnames(annotations)) {
     annotations$sscinames <- NA_character_
@@ -170,11 +199,16 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
 
 
 coefficients <- fread(opt$coefficients, header = TRUE)
+coefficients <- ensure_columns(coefficients, c("metadata_category", "feature", "coefficients"))
 coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
 
 # because we have run grouped elastic net there will be multiple rows per cluster. We want to keep the one with the highest absolute coefficient
 get_max_coef <- function(coef_string) {
   coefs <- as.numeric(strsplit(gsub("\\[|\\]", "", coef_string), split = ",", fixed = TRUE)[[1]])
+  coefs <- coefs[is.finite(coefs)]
+  if (length(coefs) == 0) {
+    return(NA_real_)
+  }
   return(max(abs(coefs)))
 }
 
