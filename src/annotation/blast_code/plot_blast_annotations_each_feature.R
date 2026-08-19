@@ -826,7 +826,7 @@ ensure_annotation_columns <- function(tbl) {
                      "max_coefficient", "max_coefficient_class", "max_coefficient_signed")
   for (col in fallback_cols) {
     if (!col %in% colnames(tbl)) {
-      tbl[[col]] <- NA_character_
+      tbl[[col]] <- rep(NA_character_, nrow(tbl))
     }
   }
   for (col in c("metadata_category", "feature", "cluster", "query", "classes",
@@ -1194,17 +1194,17 @@ dt2 <- ensure_annotation_columns(dt2)
 for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_sequence", "compactor_length",
                         "compactor_exact_support", "compactor_raw_annotation")) {
   if (!compactor_col %in% colnames(dt)) {
-    dt[[compactor_col]] <- NA_character_
+    dt[[compactor_col]] <- rep(NA_character_, nrow(dt))
   }
   if (!compactor_col %in% colnames(dt2)) {
-    dt2[[compactor_col]] <- NA_character_
+    dt2[[compactor_col]] <- rep(NA_character_, nrow(dt2))
   }
 }
 if (!"confounders" %in% colnames(dt)) {
-  dt$confounders <- NA_character_
+  dt$confounders <- rep(NA_character_, nrow(dt))
 }
 if (!"confounders" %in% colnames(dt2)) {
-  dt2$confounders <- NA_character_
+  dt2$confounders <- rep(NA_character_, nrow(dt2))
 }
 message(paste0("Compactor-labeled annotation rows seen by plotter: blastp=",
                sum(has_restricted_label(dt$compactor_annotation), na.rm=TRUE),

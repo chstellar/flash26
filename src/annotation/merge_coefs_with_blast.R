@@ -55,7 +55,7 @@ clean_blast_species_field <- function(x) {
 ensure_columns <- function(tbl, cols) {
   for (col in cols) {
     if (!col %in% colnames(tbl)) {
-      tbl[[col]] <- NA
+      tbl[[col]] <- rep(NA, nrow(tbl))
     }
   }
   tbl
@@ -229,10 +229,10 @@ merged_data <- merged_data %>%
 # relocate sequences in blastp output
 if (str_detect(opt$blast_annotations, "blastp")) {
   if (!"translated_sequence" %in% colnames(merged_data)) {
-    merged_data$translated_sequence <- NA_character_
+    merged_data$translated_sequence <- rep(NA_character_, nrow(merged_data))
   }
   if (!"aligned_sequence" %in% colnames(merged_data)) {
-    merged_data$aligned_sequence <- NA_character_
+    merged_data$aligned_sequence <- rep(NA_character_, nrow(merged_data))
   }
   merged_data <- merged_data %>%
     relocate(translated_sequence, aligned_sequence,
