@@ -3,7 +3,7 @@
 #SBATCH --partition=horence
 #SBATCH --time=0-01:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu
 
@@ -26,29 +26,30 @@ PYTHON="${PYTHON:-python}"
 # ---- Edit these defaults once, then run: sbatch distribute.sh ----
 # The SATC table is hardcoded to the 260714 run requested here.
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
-SATC="${SATC:-$PROJECT_DIR/results/260714-00-3ants-challenge/filter1/noCluster/target1/2000-clusters/all_satc_merged.txt}"
+SATC="${SATC:-$PROJECT_DIR/results/260819-00-cfloridanus-fungus/filter1/noCluster/target1/2000-clusters/all_satc_merged.txt}"
 
 # Put your extendor list/table and sample partition sheet here, or override them
 # at submit time, for example:
 #   sbatch --export=ALL,INPUT_TSV=my_extendors.tsv,PARTITION_SHEET=my_partitions.csv distribute.sh
 # INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/260714-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
-INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/fungus.tsv}"
-PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260713_01_3ants_challenge/partition.csv}"
-OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution.tsv}"
-HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/distribution_heatmaps.pdf}"
+INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/fungus.tsv}"
+grep "fungus_species" /scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_compactor.tsv > $INPUT_TSV
+PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
+OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/distribution.tsv}"
+HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/distribution_heatmaps.pdf}"
 
 # Column settings. These can be header names or 1-based column indices.
-EXTENDOR_COL="${EXTENDOR_COL:-4}"
-# ANNOTATION_COL="${ANNOTATION_COL:-20}"
-ANNOTATION_COL="${ANNOTATION_COL:-12}"
+EXTENDOR_COL="${EXTENDOR_COL:-13}"
+ANNOTATION_COL="${ANNOTATION_COL:-20}"
 SAMPLE_COL="${SAMPLE_COL:-1}"
 MAJOR_COL="${MAJOR_COL:-2}"
 MINOR_COL="${MINOR_COL:-3}"
-MAJOR_ORDER="${MAJOR_ORDER:-no_fungus,not_given,bbassiana,ocamponoti-floridani}"
-MINOR_ORDER="${MINOR_ORDER:-manipulation,timecourse,tnylanderi,tcurvispinsosus}"
+MAJOR_ORDER="${MAJOR_ORDER:-no_fungus,bbassiana,ocamponoti-floridani}"
+MINOR_ORDER="${MINOR_ORDER:-manipulation,timecourse}"
 MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-fungus_species}"
 MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-dataset}"
-MAJOR_COLORS="${MAJOR_COLORS:-no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
+MAJOR_COLORS="${MAJOR_COLORS:-no_fungus:#7F7F7F,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
+# no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00
 
 # Header and delimiter handling.
 INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-yes}"

@@ -12,7 +12,7 @@ lookup_table_for_artifact_filtering: resources/lookup_tables/mini_artifact_looku
 entrez_email: "v8514616@outlook.com" # YOUR_EMAIL
 
 # blast database path (if using local databases)
-blast_db_path: "/scratch/users/jiamuyu/dabs_ref/blast/" # provide with path to local blast databases if available
+blast_db_path: "/scratch/groups/horence/blast" # provide with path to local blast databases if available
 
 # set paths to conda env definitions
 envs:
