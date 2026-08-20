@@ -33,13 +33,13 @@ SATC="${SATC:-$PROJECT_DIR/results/260819-00-cfloridanus-fungus/filter1/noCluste
 #   sbatch --export=ALL,INPUT_TSV=my_extendors.tsv,PARTITION_SHEET=my_partitions.csv distribute.sh
 # INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260714-00-3ants-challenge/filter1/noCluster/hyena/normalized/260714-00-3ants-challenge_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
 INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/fungus.tsv}"
-grep "fungus_species" /scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_compactor.tsv > $INPUT_TSV
+grep "fungus_species" /scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv > $INPUT_TSV
 PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
 OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/distribution.tsv}"
 HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/distribution_heatmaps.pdf}"
 
 # Column settings. These can be header names or 1-based column indices.
-EXTENDOR_COL="${EXTENDOR_COL:-13}"
+EXTENDOR_COL="${EXTENDOR_COL:-4}"
 ANNOTATION_COL="${ANNOTATION_COL:-20}"
 SAMPLE_COL="${SAMPLE_COL:-1}"
 MAJOR_COL="${MAJOR_COL:-2}"
