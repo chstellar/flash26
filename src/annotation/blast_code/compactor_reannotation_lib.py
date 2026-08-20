@@ -566,22 +566,58 @@ def has_text(value):
     return value not in {"", "NA", "NaN", "None", "none", "[]"}
 
 
-def clean_label(value):
+BOILERPLATE_LABEL_PATTERNS = [
+    r"\bGnomon\b",
+    r"Derived by automated computational analysis",
+    r"Supporting evidence includes",
+    r"coverage of the annotated genomic feature",
+    r"support for all annotated introns",
+]
+
+
+def is_boilerplate_label(value):
+    return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in BOILERPLATE_LABEL_PATTERNS)
+
+
+def clean_label_component(value):
     value = "" if value is None else str(value)
     value = re.sub(r"LOC\d+[- ]*", "", value)
     value = re.sub(r"\s+isoform\s+X\d+\b", "", value)
     value = re.sub(r"\s+transcript\s+variant\s+X?\d+\b", "", value)
     value = re.sub(r"\s+variant\s+X?\d+\b", "", value)
-    value = re.sub(r"\s+", " ", value).strip(" ,;")
+    value = re.sub(r"\s+", " ", value).strip(" ,;.")
+    if not value:
+        return None
+    if value.upper() in {"NA", "N/A", "NONE", "NAN", "COMPACTOR"}:
+        return None
+    if is_boilerplate_label(value):
+        return None
     if re.search(
         r"uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
         value,
         flags=re.IGNORECASE,
     ):
         return "UNANNOTATED"
-    if value == "UNCHARACTERISED" or value == "UNCHARACTERIZED":
+    if value.upper() in {"UNCHARACTERISED", "UNCHARACTERIZED"}:
         return "UNANNOTATED"
-    return value or None
+    return value
+
+
+def clean_label(value):
+    value = "" if value is None else str(value)
+    parts = []
+    for part in re.split(r";+", value):
+        cleaned = clean_label_component(part)
+        if cleaned and cleaned not in parts:
+            parts.append(cleaned)
+    if not parts:
+        return None
+    real_parts = [part for part in parts if part != "UNANNOTATED"]
+    if real_parts:
+        return ";".join(real_parts)
+    if "UNANNOTATED" in parts:
+        return "UNANNOTATED"
+    return None
 
 
 def extract_qualifier(features, qualifier):
@@ -1036,12 +1072,14 @@ UNRESOLVED_LABELS = {
     "NO PROTEIN/GENE HIT",
     "BLAST",
     "BLASTP",
+    "COMPACTOR",
 }
 
 
 def is_real_annotation(label):
+    label = clean_label(label)
     label = "" if label is None else str(label).strip()
-    return label.upper() not in UNRESOLVED_LABELS
+    return bool(label) and label.upper() not in UNRESOLVED_LABELS
 
 
 def sequence_from_plot_query(query):
@@ -1254,13 +1292,14 @@ def row_has_real_plot_annotation(row, mode):
     )
 
 
-def fake_feature_annotation(label):
+def fake_feature_annotation(label, feature_type="compactor", note="COMPACTOR"):
     safe_label = str(label).strip()
     safe_label = safe_label.replace("'", "").replace('"', "")
+    note_text = str(note).replace("'", "").replace('"', "")
     return (
-        "[{'type': 'compactor', 'start': '0', 'end': '0', "
+        f"[{{'type': '{feature_type}', 'start': '0', 'end': '0', "
         f"'gene': ['{safe_label}'], 'product': ['{safe_label}'], "
-        "'protein_seq': None, 'protein_id': None, 'note': ['COMPACTOR']}]"
+        f"'protein_seq': None, 'protein_id': None, 'note': ['{note_text}']}}]"
     )
 
 
@@ -1297,6 +1336,24 @@ def summary_compactor_hit(row):
         "cluster": row.get("cluster", ""),
         "sequence": clean_sequence_candidate(row.get("sequence")),
     }
+
+
+def first_present_label_column(row, fieldnames):
+    for col in ("Blast Label", "label", "annotation"):
+        if col in fieldnames and has_text(row.get(col)):
+            return col
+    return None
+
+
+def clean_existing_summary_label(row, fieldnames):
+    col = first_present_label_column(row, fieldnames)
+    if not col:
+        return None, None
+    raw_label = row.get(col)
+    cleaned_label = clean_label(raw_label)
+    if cleaned_label and cleaned_label != raw_label:
+        row[col] = cleaned_label
+    return col, cleaned_label or raw_label
 
 
 def plot_match_key(row, sequence):
@@ -1469,6 +1526,26 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
     return True
 
 
+def clean_plot_annotation_row(row, mode):
+    if mode == "blastp":
+        for col in ("annotation", "stitle"):
+            value = row.get(col)
+            if col == "stitle":
+                value = re.sub(r"\s*\[[^\]]+\]\s*$", "", str(value or ""))
+            cleaned = clean_label(value)
+            if cleaned:
+                row[col] = cleaned
+    else:
+        for col in ("features", "features_all", "features_10000_window"):
+            if col not in row or not has_text(row.get(col)):
+                continue
+            products = extract_qualifier(row.get(col), "product")
+            genes = extract_qualifier(row.get(col), "gene")
+            labels = products or genes
+            if labels:
+                row[col] = fake_feature_annotation(";".join(labels), feature_type="feature", note="cleaned")
+
+
 def make_synthetic_annotation_row(summary_row, template, fieldnames, mode):
     row = {col: template.get(col, "NA") for col in fieldnames}
     for col in ("metadata_category", "feature", "cluster"):
@@ -1570,6 +1647,7 @@ def fill_plot_annotation_tsv(
                     row.setdefault("compactor_raw_annotation", "NA")
                 if has_text(row.get("compactor_sequence")):
                     rows_with_compactor_sequence += 1
+                clean_plot_annotation_row(row, mode)
                 writer.writerow({col: row.get(col, "NA") for col in fieldnames})
 
             for summary_row in summary_rows or []:
@@ -1587,6 +1665,7 @@ def fill_plot_annotation_tsv(
                 synthetic_row = make_synthetic_annotation_row(summary_row, template, fieldnames, mode)
                 if has_text(synthetic_row.get("compactor_sequence")):
                     rows_with_compactor_sequence += 1
+                clean_plot_annotation_row(synthetic_row, mode)
                 writer.writerow({col: synthetic_row.get(col, "NA") for col in fieldnames})
                 existing_summary_keys.add(key)
                 appended += 1
@@ -1660,7 +1739,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     if sequence:
                         break
                 compactor_hit = lookup_compactor_hit(sequence, compactor_map, anchor_map, anchor_len)
-                label = row.get("Blast Label") or row.get("label") or row.get("annotation")
+                label_col, label = clean_existing_summary_label(row, fieldnames)
                 if compactor_hit:
                     row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
                     row["compactor_query"] = compactor_hit["compactor_query"]
