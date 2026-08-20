@@ -23,6 +23,13 @@ snakemake --unlock -s "$SNAKEMAKE_FILE" || true
 SNAKEMAKE_CMD="snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/"
 SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_CMD"
 SNAKEMAKE_TARGET="all_embeddings"
+if [ "${GENOME_ONLY:-0}" = "1" ]; then
+    SNAKEMAKE_TARGET="all_genomes"
+fi
+if [ -n "$FORCE_RULE" ] && [[ " $FORCE_RULE " == *"genome"* ]] && \
+   [ "${COMPACTOR_PRE_ONLY:-0}" != "1" ] && [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" != "1" ]; then
+    SNAKEMAKE_TARGET="all_genomes"
+fi
 if [ "${COMPACTOR_PRE_ONLY:-0}" = "1" ]; then
     SNAKEMAKE_TARGET="all_compactor_before_compactors"
     FORCE_RULE="${FORCE_RULE:-$COMPACTOR_PRE_RULES}"
