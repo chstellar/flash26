@@ -716,7 +716,9 @@ rule run_blast_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blast"),
@@ -732,7 +734,7 @@ rule run_blast_nonzero_features:
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path} 0 plot_selected {input.coefficients} 10 {input.sample_sequences} {wildcards.kmer_width}
     """
 
 
@@ -741,7 +743,9 @@ rule run_blastp_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp"),
@@ -756,7 +760,7 @@ rule run_blastp_nonzero_features:
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path} "" 0 plot_selected {input.coefficients} 10 {input.sample_sequences} {wildcards.kmer_width}
     """
 
 
@@ -868,7 +872,9 @@ rule run_blast_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database for OHE features
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blast"),
@@ -884,7 +890,7 @@ rule run_blast_nonzero_features_OHE:
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path} 0 plot_selected {input.coefficients} 10 {input.sample_sequences} {wildcards.kmer_width}
     """
 
 
@@ -893,7 +899,9 @@ rule run_blastp_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
+        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
+        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp"),
@@ -907,7 +915,7 @@ rule run_blastp_nonzero_features_OHE:
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path} "" 0 plot_selected {input.coefficients} 10 {input.sample_sequences} {wildcards.kmer_width}
     """
 
 

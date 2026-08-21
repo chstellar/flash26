@@ -7,6 +7,8 @@ import argparse
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 import pandas as pd
 
 SPLIT_THRESH = 20  # 100
@@ -178,13 +180,41 @@ def get_observed_sequences_by_cluster(sample_sequences_file, selected_clusters, 
     for cluster, index in cluster_indices.items():
         start = index * cluster_length
         end = start + cluster_length
-        observed[cluster].update(
-            seq[start:end]
-            for seq in concatenated_sequences
-            if len(seq) >= end
-        )
+        for seq in concatenated_sequences:
+            seq = str(seq).strip().upper()
+            if len(seq) < end:
+                continue
+            sequence = seq[start:end]
+            if re.fullmatch(r"[ACGTN]+", sequence):
+                observed[cluster].add(sequence)
         observed[cluster].discard("")
     return observed
+
+
+def add_observed_variant_records(selected, observed_sequences, seen_cluster_sequences):
+    added = 0
+    if observed_sequences is None:
+        return selected, added
+
+    seen_ids = {record.id for record in selected}
+    for cluster, sequences in observed_sequences.items():
+        for sequence in sorted(sequences):
+            sequence = str(sequence).strip().upper()
+            if not sequence:
+                continue
+            cluster_sequence = (cluster, sequence)
+            if cluster_sequence in seen_cluster_sequences:
+                continue
+
+            record_id = f"{cluster}_{sequence}"
+            if record_id in seen_ids:
+                continue
+
+            selected.append(SeqRecord(Seq(sequence), id=record_id, description=""))
+            seen_ids.add(record_id)
+            seen_cluster_sequences.add(cluster_sequence)
+            added += 1
+    return selected, added
 
 
 def filter_plot_selected_clusters(
@@ -205,20 +235,30 @@ def filter_plot_selected_clusters(
         )
 
     selected = []
+    seen_cluster_sequences = set()
     for record in records:
         cluster = get_record_cluster(record)
         if cluster not in selected_clusters:
             continue
+        sequence = str(record.seq).strip().upper()
         if observed_sequences is not None:
             cluster_observed = observed_sequences.get(cluster, set())
-            if cluster_observed and str(record.seq) not in cluster_observed:
+            if cluster_observed and sequence not in cluster_observed:
                 continue
         selected.append(record)
+        seen_cluster_sequences.add((cluster, sequence))
+
+    selected, added_observed = add_observed_variant_records(
+        selected, observed_sequences, seen_cluster_sequences
+    )
 
     SeqIO.write(selected, output_file, "fasta")
     observed_message = ""
     if observed_sequences is not None:
-        observed_message = "; restricted to observed sample-sequence variants"
+        observed_message = (
+            f"; includes observed sample-sequence variants "
+            f"({added_observed} added beyond significant FASTA)"
+        )
     print(
         f"Sending {len(selected)}/{total} sequences to BLAST query "
         f"(plot-selected clusters: {len(selected_clusters)} clusters from top {num_hits} plotted coefficients per metadata category{observed_message})."
@@ -245,17 +285,20 @@ def filter_plot_selected_and_top_clusters(
         )
 
     selected = []
+    seen_cluster_sequences = set()
     nonplot_cluster_counts = {}
     plot_selected_count = 0
     top_n_selected_count = 0
     for record in records:
         cluster = get_record_cluster(record)
         if cluster in selected_clusters:
+            sequence = str(record.seq).strip().upper()
             if observed_sequences is not None:
                 cluster_observed = observed_sequences.get(cluster, set())
-                if cluster_observed and str(record.seq) not in cluster_observed:
+                if cluster_observed and sequence not in cluster_observed:
                     continue
             selected.append(record)
+            seen_cluster_sequences.add((cluster, sequence))
             plot_selected_count += 1
             continue
 
@@ -267,10 +310,18 @@ def filter_plot_selected_and_top_clusters(
             top_n_selected_count += 1
         nonplot_cluster_counts[cluster] = count + 1
 
+    selected, added_observed = add_observed_variant_records(
+        selected, observed_sequences, seen_cluster_sequences
+    )
+    plot_selected_count += added_observed
+
     SeqIO.write(selected, output_file, "fasta")
     observed_message = ""
     if observed_sequences is not None:
-        observed_message = "; plot-selected clusters restricted to observed sample-sequence variants"
+        observed_message = (
+            f"; plot-selected clusters include observed sample-sequence variants "
+            f"({added_observed} added beyond significant FASTA)"
+        )
     print(
         f"Sending {len(selected)}/{total} sequences to BLAST query "
         f"(plot-selected-and-top mode: {plot_selected_count} plot-selected sequences from "
