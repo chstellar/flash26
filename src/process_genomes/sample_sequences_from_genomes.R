@@ -220,6 +220,7 @@ wide_satc <- wide_satc %>%
   mutate(seq = str_c(anchor, target, sep = "")) %>%
   select(sample, cluster_id, seq)
 
+wide_satc <- as.data.table(wide_satc)
 wide_satc <- dcast(wide_satc, sample ~ cluster_id, value.var = "seq")
 wide_satc <- as.data.frame(wide_satc)
 
@@ -326,7 +327,7 @@ wide_satc <- base::cbind(
   map2_df(
     wide_satc[, 2:ncol(wide_satc)],
     1:length(representative_anchors),
-    \(x, y) ifelse(is.na(x), str_c(representative_anchors[y], strrep("N", 27), sep = ""), x)
+    \(x, y) ifelse(is.na(x), str_c(representative_anchors[y], strrep("N", opt$target_len), sep = ""), x)
   )
 )
 wide_satc <- wide_satc %>% ungroup()
