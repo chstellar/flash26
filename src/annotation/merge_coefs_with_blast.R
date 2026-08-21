@@ -204,7 +204,12 @@ coefficients <- coefficients %>% mutate(cluster = str_extract(feature, "(^.*clus
 
 # because we have run grouped elastic net there will be multiple rows per cluster. We want to keep the one with the highest absolute coefficient
 get_max_coef <- function(coef_string) {
-  coefs <- as.numeric(strsplit(gsub("\\[|\\]", "", coef_string), split = ",", fixed = TRUE)[[1]])
+  coef_string <- as.character(coef_string)
+  if (length(coef_string) == 0 || is.na(coef_string) || !nzchar(coef_string)) {
+    return(NA_real_)
+  }
+  coef_string <- gsub("\\[|\\]|c\\(|\\)", "", coef_string)
+  coefs <- suppressWarnings(as.numeric(unlist(strsplit(coef_string, "[,;[:space:]]+"))))
   coefs <- coefs[is.finite(coefs)]
   if (length(coefs) == 0) {
     return(NA_real_)
@@ -214,7 +219,7 @@ get_max_coef <- function(coef_string) {
 
 coefficients <- coefficients %>%
   rowwise() %>%
-  mutate(max_coef = get_max_coef(coefficients)) %>%
+  mutate(max_coef = get_max_coef(.data$coefficients)) %>%
   arrange(cluster, -max_coef) %>%
   group_by(cluster) %>%
   slice(1) %>%
