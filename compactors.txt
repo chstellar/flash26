@@ -1,0 +1,44 @@
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887748.out:    Shift 10: [2026-08-14T03:04:36.007] error: *** JOB 38887748 ON sh03-11n23 CANCELLED AT 2026-08-14T03:04:36 DUE TO TIME LIMIT ***
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887784.out:    Shift 10: [2026-08-14T03:03:01.210] error: *** JOB 38887784 ON sh04-11n01 CANCELLED AT 2026-08-14T03:03:01 DUE TO TIME LIMIT ***
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887789.out:    Shift 0: [2026-08-14T03:03:01.206] error: *** JOB 38887789 ON sh03-16n22 CANCELLED AT 2026-08-14T03:03:01 DUE TO TIME LIMIT ***
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887798.out:    Shift 10: [2026-08-14T03:12:13.538] error: *** JOB 38887798 ON sh03-01n43 CANCELLED AT 2026-08-14T03:12:13 DUE TO TIME LIMIT ***
+logs/14-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-39002876.out:    Trying to extend (272 total extenders) [2026-08-14T22:28:32.424] error: *** JOB 39002876 ON sh03-11n23 CANCELLED AT 2026-08-14T22:28:32 DUE TO TIME LIMIT ***
+logs/14-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-39002880.out:    Trying to extend (161 total extenders) [2026-08-14T22:28:32.426] error: *** JOB 39002880 ON sh03-11n23 CANCELLED AT 2026-08-14T22:28:32 DUE TO TIME LIMIT ***
+logs/14-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-39002883.out:    Shift 10: [2026-08-14T22:28:32.427] error: *** JOB 39002883 ON sh03-16n22 CANCELLED AT 2026-08-14T22:28:32 DUE TO TIME LIMIT ***
+logs/14-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-39002885.out:    Shift 5: [2026-08-14T22:28:32.427] error: *** JOB 39002885 ON sh03-16n22 CANCELLED AT 2026-08-14T22:28:32 DUE TO TIME LIMIT ***
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636562.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636564.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636566.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636568.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636569.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636570.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636574.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/11-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38636576.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763274.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763288.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763290.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763292.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763297.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763298.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763304.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38763305.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774462.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774484.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774490.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774499.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774503.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774507.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774511.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/12-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38774513.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869588.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869592.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869597.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869601.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869606.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869608.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869611.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38869613.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887782.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887785.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887787.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
+logs/13-08-26/run_compactors_for_reannotation/run_compactors_for_reannotation-38887799.out:Finished jobid: 0 (Rule: run_compactors_for_reannotation)
