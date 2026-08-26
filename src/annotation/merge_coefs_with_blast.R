@@ -65,7 +65,7 @@ ensure_columns <- function(tbl, cols) {
 annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
 if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
-  blastp_cols <- c("query", "evalue", "identity", "qcovs", "qframe", "stitle",
+  blastp_cols <- c("query", "subject", "sacc", "evalue", "identity", "qcovs", "qframe", "stitle",
                    "staxids", "sscinames", "species_origin",
                    "NCBI_protein_accession", "UniProt_accession", "method", "GO")
   annotations <- ensure_columns(annotations, blastp_cols)

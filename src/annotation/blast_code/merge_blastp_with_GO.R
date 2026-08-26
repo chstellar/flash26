@@ -90,7 +90,7 @@ if (length(df_lengths) == 0) {
   empty_blastp_df() %>%
     mutate(NCBI_protein_accession=character(), UniProt_accession=character(),
            method=character(), GO=character()) %>%
-    select(query, identity, evalue, qcovs, qframe, staxids, sscinames, stitle,
+    select(query, subject, sacc, identity, evalue, qcovs, qframe, staxids, sscinames, stitle,
            NCBI_protein_accession, UniProt_accession, method, GO) %>%
     write_tsv(opt$output_file, col_names = T, quote="needed")
   quit(save="no", status=0)
@@ -124,9 +124,10 @@ merge_on_go_terms <- function(file, df, uniprot_mapping, go_mapping) {
 }
 
 if (TRUE) {
-  merged_df <- map(blast_dfs, \(x) x %>% mutate(staxids=as.character(staxids))) %>% bind_rows() %>% mutate(NCBI_protein_accession=str_extract(subject, "ref\\|(.+)\\|", group=1)) %>%
+  merged_df <- map(blast_dfs, \(x) x %>% mutate(staxids=as.character(staxids))) %>% bind_rows() %>%
+    mutate(NCBI_protein_accession=coalesce(str_extract(subject, "ref\\|(.+)\\|", group=1), sacc)) %>%
     mutate(UniProt_accession=str_extract(subject, "sp\\|(.+)\\|", group=1), method=NA, GO=NA) %>%
-    select(query, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO)
+    select(query, subject, sacc, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO)
 } else {
   merged_df <- future_map2(blast_files, blast_dfs, \(x,y) merge_on_go_terms(x,y,opt$uniprot_mapping_path,opt$go_mapping_path)) %>% bind_rows()
 }
@@ -135,5 +136,5 @@ if (!"sscinames" %in% colnames(merged_df)) {
   merged_df$sscinames <- NA_character_
 }
 
-merged_df %>% select(query, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO) %>%
+merged_df %>% select(query, subject, sacc, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO) %>%
   write_tsv(opt$output_file, col_names = T, quote="needed")

@@ -47,6 +47,20 @@ BLASTN_COLUMNS_LEGACY = [
     "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
     "sacc", "slen", "staxids", "stitle",
 ]
+BLAST_FEATURE_COLUMNS = [
+    "query",
+    "subject",
+    "identity",
+    "evalue",
+    "qcovs",
+    "sacc",
+    "staxids",
+    "sscinames",
+    "stitle",
+    "species_origin",
+    "features",
+    "features_10000_window",
+]
 
 
 def read_blastn_output(path):
@@ -224,7 +238,12 @@ def process_blast_file(blast_out, blast_feat_out, blast_window, sacc_records):
         df_features.to_csv(blast_feat_out, index=None, sep="\t")
         print(f"Featurize blast output complete for {blast_out}. Output file: {blast_feat_out}")
     else:
-        print(f"Featurize blast output failed for {blast_out}. File was empty.")
+        columns = BLAST_FEATURE_COLUMNS.copy()
+        window_col = f"features_{blast_window}_window"
+        if window_col != "features_10000_window":
+            columns[-1] = window_col
+        pd.DataFrame(columns=columns).to_csv(blast_feat_out, index=None, sep="\t")
+        print(f"BLAST output {blast_out} was empty. Wrote header-only feature file: {blast_feat_out}")
     
 
 if __name__ == "__main__":
@@ -265,6 +284,13 @@ if __name__ == "__main__":
 
     # Concatenate all .blastfeatout.tsv files into the output file
     all_feat_outs = [pd.read_csv(join(blast_folder, f), sep="\t") for f in os.listdir(blast_folder) if f.endswith(".blastfeatout.tsv")]
-    concatenated_df = pd.concat(all_feat_outs, ignore_index=True)
+    if all_feat_outs:
+        concatenated_df = pd.concat(all_feat_outs, ignore_index=True)
+    else:
+        columns = BLAST_FEATURE_COLUMNS.copy()
+        window_col = f"features_{blast_window}_window"
+        if window_col != "features_10000_window":
+            columns[-1] = window_col
+        concatenated_df = pd.DataFrame(columns=columns)
     concatenated_df.to_csv(output_file, index=None, sep="\t")
     print(f"All .blastfeatout.tsv files have been concatenated into {output_file}")
