@@ -792,6 +792,29 @@ metadata_entropy_stats <- function(metadata_string, total_samples) {
   )
 }
 
+ensure_entropy_stat_columns <- function(tbl) {
+  tbl <- as_tibble(tbl)
+  numeric_cols <- c("metadata_entropy", "metadata_normalized_entropy",
+                    "metadata_specificity_score", "dominant_metadata_count",
+                    "dominant_metadata_fraction")
+  text_cols <- c("dominant_metadata")
+  for (col in numeric_cols) {
+    if (!col %in% colnames(tbl)) {
+      tbl[[col]] <- rep(NA_real_, nrow(tbl))
+    } else {
+      tbl[[col]] <- suppressWarnings(as.numeric(tbl[[col]]))
+    }
+  }
+  for (col in text_cols) {
+    if (!col %in% colnames(tbl)) {
+      tbl[[col]] <- rep(NA_character_, nrow(tbl))
+    } else {
+      tbl[[col]] <- as.character(tbl[[col]])
+    }
+  }
+  tbl
+}
+
 read_optional_tsv <- function(path) {
   if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
     return(data.table())
@@ -2220,6 +2243,7 @@ unannotated_summary <- all_features_summary %>%
   mutate(total_samples = suppressWarnings(as.numeric(total_samples))) %>%
   mutate(entropy_stats = map2(metadata, total_samples, metadata_entropy_stats)) %>%
   unnest(entropy_stats) %>%
+  ensure_entropy_stat_columns() %>%
   arrange(desc(metadata_specificity_score), desc(total_samples), metadata_normalized_entropy) %>%
   relocate(metadata_category, feature, cluster)
 
