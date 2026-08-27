@@ -812,6 +812,44 @@ def get_group_ids(column_names):
     return np.array(group_ids, dtype=np.int32)
 
 
+def remove_zero_variance_groups(X_train, X_test, column_names):
+    """Remove feature groups that are constant across the training samples."""
+    X_train = np.asarray(X_train, dtype=np.float64)
+    column_names = pd.Index(column_names)
+    group_starts = get_group_ids(column_names)
+    group_ends = np.append(group_starts[1:], X_train.shape[1])
+    keep_columns = np.zeros(X_train.shape[1], dtype=bool)
+    removed_groups = 0
+
+    for start, end in zip(group_starts, group_ends):
+        group = X_train[:, start:end]
+        if not np.isfinite(group).all():
+            keep_columns[start:end] = True
+            continue
+        if np.any(np.var(group, axis=0) > 0):
+            keep_columns[start:end] = True
+        else:
+            removed_groups += 1
+
+    if not keep_columns.any():
+        raise ValueError("all feature groups have zero variance in the training data")
+
+    removed_features = int((~keep_columns).sum())
+    if removed_groups:
+        print(
+            f"Removed {removed_groups} zero-variance groups "
+            f"({removed_features} features) from the training subset."
+        )
+
+    filtered_train = np.asfortranarray(X_train[:, keep_columns])
+    filtered_test = None
+    if X_test is not None:
+        filtered_test = np.asfortranarray(
+            np.asarray(X_test, dtype=np.float64)[:, keep_columns]
+        )
+    return filtered_train, filtered_test, column_names[keep_columns]
+
+
 def train_adelie_model(
     X_train, y_train, n_threads=1, group_ids=None, max_iters=1e5, tol=1e-7, alpha=0.5
 ):
@@ -985,6 +1023,14 @@ def main():
                 print(f"Fitting continuous target for {metadata_col}.")
                 confound_label = residual_confound_labels.get(metadata_col, "")
                 if args.grouped:
+                    try:
+                        X_train, X_test, model_features = remove_zero_variance_groups(
+                            X_train, X_test, model_features
+                        )
+                    except ValueError as e:
+                        print(f"Skipping {metadata_col}: {e}")
+                        print()
+                        continue
                     group_ids = get_group_ids(model_features)
                     print(f"Using grouped elastic net with {len(group_ids)} groups.")
                 else:
@@ -1005,35 +1051,46 @@ def main():
                     print(f"Failed to train model for {metadata_col}: {e}")
                     continue
 
-                yhat_train = np.asarray(model.predict(X_train.astype(np.float64))).flatten()
-                train_r2 = r2_score(y_train, yhat_train)
-                print(f"Train R2 for {metadata_col}: {train_r2:.4f}")
-                append_regression_log_rows(
-                    confusion_log_rows,
-                    raw_metadata,
-                    metadata_col,
-                    "train",
-                    y_train,
-                    yhat_train,
-                    train_sample_names,
-                )
-
-                if args.train_prop == 1:
-                    test_r2 = None
-                    print("Not calculating test R2 as we are not using test data...")
-                else:
-                    yhat = np.asarray(model.predict(X_test.astype(np.float64))).flatten()
-                    test_r2 = r2_score(y_test, yhat)
-                    print(f"Test R2 for {metadata_col}: {test_r2:.4f}")
+                try:
+                    yhat_train = np.asarray(
+                        model.predict(X_train.astype(np.float64))
+                    ).flatten()
+                    train_r2 = r2_score(y_train, yhat_train)
+                    print(f"Train R2 for {metadata_col}: {train_r2:.4f}")
                     append_regression_log_rows(
                         confusion_log_rows,
                         raw_metadata,
                         metadata_col,
-                        "test",
-                        y_test,
-                        yhat,
-                        test_sample_names,
+                        "train",
+                        y_train,
+                        yhat_train,
+                        train_sample_names,
                     )
+
+                    if args.train_prop == 1:
+                        test_r2 = None
+                        print(
+                            "Not calculating test R2 as we are not using test data..."
+                        )
+                    else:
+                        yhat = np.asarray(
+                            model.predict(X_test.astype(np.float64))
+                        ).flatten()
+                        test_r2 = r2_score(y_test, yhat)
+                        print(f"Test R2 for {metadata_col}: {test_r2:.4f}")
+                        append_regression_log_rows(
+                            confusion_log_rows,
+                            raw_metadata,
+                            metadata_col,
+                            "test",
+                            y_test,
+                            yhat,
+                            test_sample_names,
+                        )
+                except Exception as e:
+                    print(f"Failed to evaluate model for {metadata_col}: {e}")
+                    print()
+                    continue
 
                 coef = flatten_coefficients(model.coef_)
                 model_features = pd.DataFrame(
@@ -1090,6 +1147,14 @@ def main():
 
             # set group ids based on feature names if --grouped is supplied
             if args.grouped and num_classes < 4:
+                try:
+                    X_train, X_test, model_features = remove_zero_variance_groups(
+                        X_train, X_test, model_features
+                    )
+                except ValueError as e:
+                    print(f"Skipping {metadata_col}: {e}")
+                    print()
+                    continue
                 group_ids = get_group_ids(model_features)
                 print(f"Using grouped elastic net with {len(group_ids)} groups.")
             else:
