@@ -2,7 +2,7 @@
 #SBATCH --partition=horence
 #SBATCH --time=0-01:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=32G
+#SBATCH --mem=8G
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu
 
