@@ -2265,6 +2265,11 @@ for (category in categories) {
 
 dev.off()
 
+if (!file.exists(opt$output) || file.info(opt$output)$size == 0) {
+  stop(paste0("Expected split PDF was not created or is empty: ", opt$output), call. = FALSE)
+}
+message(paste0("Wrote split PDF to: ", opt$output))
+
 if (!"metadata_category" %in% colnames(all_features_summary)) {
   stop("No feature plot summary rows were generated; check category-level errors above.", call. = FALSE)
 }
