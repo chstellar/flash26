@@ -14,6 +14,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import shlex
 import subprocess
 import sys
@@ -192,18 +193,15 @@ def require(path, label):
         raise FileNotFoundError(f"Missing {label}: {path}")
 
 
-def optional_compactor_aux(summary_path):
+def stage_compactor_aux(summary_path, work_dir):
     prefix = str(summary_path)[: -len(SUMMARY_SUFFIX)]
-    out = []
-    for pattern, flag in (
-        ("_compactor_*_selected.tsv", "--compactor_selected"),
-        ("_compactor_*_seed_annotations.tsv", "--compactor_seed_annotations"),
-    ):
+    for pattern in ("_compactor_*_selected.tsv", "_compactor_*_seed_annotations.tsv"):
         matches = sorted(Path(summary_path).parent.glob(Path(prefix).name + pattern))
         matches = [path for path in matches if path.exists() and path.stat().st_size > 0]
-        if matches:
-            out.extend([flag, str(matches[0])])
-    return out
+        for src in matches:
+            dst = work_dir / src.name
+            if src.resolve() != dst.resolve():
+                shutil.copy2(src, dst)
 
 
 def main():
@@ -232,21 +230,22 @@ def main():
             for label in ("blastp", "blast", "summary", "clusters", "sample_seqs", "feather"):
                 require(paths[label], label)
 
-            work_dir = final_pdf.parent / "split_replot_inputs"
             category_tag = sanitize("-".join(sorted(categories)))
-            filtered_blastp = work_dir / f"{paths['prefix']}_{category_tag}_blastp_annotated_compactor.tsv"
-            filtered_blast = work_dir / f"{paths['prefix']}_{category_tag}_blast_annotated_compactor.tsv"
-            filtered_summary = work_dir / f"{paths['prefix']}_{category_tag}{SUMMARY_SUFFIX}"
-
-            if filter_category_table(paths["blastp"], filtered_blastp, categories) == 0:
-                print(f"Skipping {final_pdf}: no matching metadata_category rows", file=sys.stderr)
-                continue
-            filter_category_table(paths["blast"], filtered_blast, categories)
-            filter_category_table(paths["summary"], filtered_summary, categories)
-
             for value in values:
                 value_tag = sanitize(value)
+                work_dir = final_pdf.parent / "split_replot_inputs" / value_tag
+                filtered_blastp = work_dir / f"{paths['prefix']}_{category_tag}_blastp_annotated_compactor.tsv"
+                filtered_blast = work_dir / f"{paths['prefix']}_{category_tag}_blast_annotated_compactor.tsv"
+                filtered_summary = work_dir / f"{paths['prefix']}{SUMMARY_SUFFIX}"
                 split_metadata = work_dir / f"metadata_{sanitize(args.split_metadata_col)}_{value_tag}.tsv"
+
+                if filter_category_table(paths["blastp"], filtered_blastp, categories) == 0:
+                    print(f"Skipping {final_pdf}: no matching metadata_category rows", file=sys.stderr)
+                    break
+                filter_category_table(paths["blast"], filtered_blast, categories)
+                filter_category_table(paths["summary"], filtered_summary, categories)
+                stage_compactor_aux(paths["summary"], work_dir)
+
                 n_samples = filter_metadata_by_split(
                     metadata_file, args.split_metadata_col, value, split_metadata
                 )
@@ -281,7 +280,6 @@ def main():
                     "--cluster_length",
                     str(paths["cluster_length"]),
                 ]
-                cmd.extend(optional_compactor_aux(paths["summary"]))
 
                 print(" ".join(shlex.quote(part) for part in cmd))
                 if not args.dry_run:
