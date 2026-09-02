@@ -5,9 +5,10 @@ Temporary helper for replotting final compactor BLAST plots split by metadata.
 Expected input in RESULTS_DIR:
   *_nonzero_coefficients_blast_annotated_plots_compactor.pdf
 
-For each matching final PDF, this derives the companion compactor TSVs, filters
-them to the selected metadata_category values, then reruns the normal compactor
-plot script once per class in SPLIT_METADATA_COL.
+For each matching final PDF, this derives the companion compactor TSVs and
+reruns the normal compactor plot script once per class in SPLIT_METADATA_COL.
+The scratch PDFs are merged into one final PDF, and the scratch summary TSVs
+are merged into one final sidecar TSV.
 """
 
 import argparse
@@ -69,6 +70,18 @@ def write_dicts(path, rows, fieldnames, delimiter="\t"):
         writer.writeheader()
         for row in rows:
             writer.writerow({col: row.get(col, "") for col in fieldnames})
+
+
+def append_summary_rows(src, split_col, split_value, merged_rows, merged_fieldnames):
+    rows, fieldnames, _ = read_dicts(src)
+    out_fieldnames = [split_col] + [field for field in fieldnames if field != split_col]
+    for field in out_fieldnames:
+        if field not in merged_fieldnames:
+            merged_fieldnames.append(field)
+    for row in rows:
+        out = dict(row)
+        out[split_col] = split_value
+        merged_rows.append(out)
 
 
 def filter_category_table(src, dst, categories):
@@ -209,6 +222,41 @@ def stage_compactor_aux(summary_path, work_dir):
                 shutil.copy2(src, dst)
 
 
+def merge_pdfs(inputs, output):
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        for path in inputs:
+            writer.append(str(path))
+        with open(output, "wb") as handle:
+            writer.write(handle)
+        return
+    except ImportError:
+        pass
+
+    try:
+        from PyPDF2 import PdfMerger
+
+        merger = PdfMerger()
+        for path in inputs:
+            merger.append(str(path))
+        with open(output, "wb") as handle:
+            merger.write(handle)
+        merger.close()
+        return
+    except ImportError:
+        pass
+
+    pdfunite = shutil.which("pdfunite")
+    if pdfunite:
+        subprocess.run([pdfunite, *map(str, inputs), str(output)], check=True)
+        return
+
+    raise RuntimeError("Could not merge PDFs: install pypdf/PyPDF2 or make pdfunite available")
+
+
 def main():
     args = parse_args()
     project_dir = Path(__file__).resolve().parent
@@ -236,6 +284,18 @@ def main():
                 require(paths[label], label)
 
             category_tag = sanitize("-".join(sorted(categories)))
+            split_tag = sanitize(args.split_metadata_col)
+            final_output_pdf = (
+                final_pdf.parent
+                / f"{paths['prefix']}_blast_annotated_plots_compactor_split-by-{split_tag}.pdf"
+            )
+            final_summary = (
+                final_pdf.parent
+                / f"{paths['prefix']}_blast_annotated_plots_compactor_split-by-{split_tag}_summary.tsv"
+            )
+            split_pdfs = []
+            merged_summary_rows = []
+            merged_summary_fieldnames = []
             for value in values:
                 value_tag = sanitize(value)
                 work_dir = final_pdf.parent / "split_replot_inputs" / value_tag
@@ -257,11 +317,7 @@ def main():
                 if n_samples == 0:
                     continue
 
-                output_pdf = (
-                    final_pdf.parent
-                    / f"{paths['prefix']}_blast_annotated_plots_compactor_split-by-"
-                    f"{sanitize(args.split_metadata_col)}_{value_tag}.pdf"
-                )
+                output_pdf = work_dir / f"{paths['prefix']}_split-by-{split_tag}_{value_tag}.pdf"
                 cmd = [
                     "Rscript",
                     "--vanilla",
@@ -291,7 +347,20 @@ def main():
                     env = os.environ.copy()
                     env.setdefault("MPLBACKEND", "Agg")
                     subprocess.run(cmd, check=True, env=env)
-                    print(f"Wrote {output_pdf}")
+                    split_pdfs.append(output_pdf)
+                    append_summary_rows(
+                        filtered_summary,
+                        args.split_metadata_col,
+                        value,
+                        merged_summary_rows,
+                        merged_summary_fieldnames,
+                    )
+
+            if not args.dry_run and split_pdfs:
+                merge_pdfs(split_pdfs, final_output_pdf)
+                write_dicts(final_summary, merged_summary_rows, merged_summary_fieldnames)
+                print(f"Wrote {final_output_pdf}")
+                print(f"Wrote {final_summary}")
         except Exception as exc:
             failures += 1
             print(f"Error processing {final_pdf}: {exc}", file=sys.stderr)
