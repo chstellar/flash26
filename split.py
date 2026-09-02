@@ -28,6 +28,7 @@ NUM_HITS = 10
 FINAL_PDF_SUFFIX = "_blast_annotated_plots_compactor.pdf"
 PREFIX_SUFFIX = "_nonzero_coefficients"
 SUMMARY_SUFFIX = "_blast_annotated_plots_summary_compactor.tsv"
+SUMMARY_INFER_SUFFIX = "_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv"
 
 
 def parse_args():
@@ -194,9 +195,13 @@ def require(path, label):
 
 
 def stage_compactor_aux(summary_path, work_dir):
-    prefix = str(summary_path)[: -len(SUMMARY_SUFFIX)]
+    summary_path = Path(summary_path)
+    summary_base = summary_path.name
+    if not summary_base.endswith(SUMMARY_INFER_SUFFIX):
+        return
+    run_prefix = summary_base[: -len(SUMMARY_INFER_SUFFIX)]
     for pattern in ("_compactor_*_selected.tsv", "_compactor_*_seed_annotations.tsv"):
-        matches = sorted(Path(summary_path).parent.glob(Path(prefix).name + pattern))
+        matches = sorted(summary_path.parent.glob(run_prefix + pattern))
         matches = [path for path in matches if path.exists() and path.stat().st_size > 0]
         for src in matches:
             dst = work_dir / src.name
