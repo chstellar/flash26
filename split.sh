@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --partition=horence
-#SBATCH --time=0-04:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=32G
 #SBATCH --mail-type=FAIL,END
@@ -11,7 +11,7 @@ set -euo pipefail
 ml purge
 eval "$(/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/bin/conda shell.bash hook)"
 eval "$(mamba shell hook --shell bash)"
-mamba activate biopython_env-R
+mamba activate default-R_env
 
 PROJECT_DIR="/scratch/users/jiamuyu/proj_botryllus/flash"
 RESULTS_DIR="${PROJECT_DIR}/results/260826-01-2flies-wolbachia/filter1/shiftDist-levFilter/hyena/normalized"
