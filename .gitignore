@@ -7,8 +7,8 @@ slurm-*
 results/*
 src/*.tar
 tempClustalOmega.aln
-# tmp
-# tmp/*
+tmp
+tmp/*
 splash-*/
 benchmarks
 benchmarks/*

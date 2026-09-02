@@ -8,56 +8,105 @@
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu
 
+set -euo pipefail
+
+# ============================================================
+# Configuration — EDIT THESE PATHS for your machine
+# ============================================================
+MINIFORGE_DIR="/oak/stanford/groups/horence/chester/dabs_ref/miniforge3"
+FLASH_ENV="flash"
+# MINIFORGE_DIR="/path/to/miniforge3"       # your miniforge/conda install
+# FLASH_ENV="name_of_flash_env"             # name of the FLASH conda environment
+
+# ============================================================
+# Usage:
+#   ./run_flash.sh <Snakefile> [rule1 rule2 ...]
+#   MODE=embeddings|genomes|ohe|umap ./run_flash.sh <Snakefile> [rule1 rule2 ...]
+#
+# Provide at least the Snakefile for Running. For example, to reproduce the bacterial run:
+#    ./run_flash.sh Snakefile
+# MODE selects the target meta-rule (default: embeddings).
+# Any rules delimited by spaces listed after the Snakefile are forced with -R.
+# ============================================================
+
+MODE="${MODE:-embeddings}"
+SNAKEMAKE_FILE="${1:?Usage: $0 <Snakefile> [rules_to_force...]}"
+shift || true
+FORCE_RULES=("$@")
+
+# ---- activate conda environment ----
 ml purge
-eval "$(/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/bin/conda shell.bash hook)" 
-eval "$(mamba shell hook --shell bash)"
-mamba activate flash
+source "${MINIFORGE_DIR}/etc/profile.d/conda.sh"
+conda activate "$FLASH_ENV"
 
-SNAKEMAKE_FILE="${1:-}"
-FORCE_RULE="${*:2}"
-COMPACTOR_DOWNSTREAM_RULES="merge_compactors_for_reannotation select_compactors_for_reannotation run_blast_compactors_for_reannotation run_blastp_compactors_for_reannotation compactor_reannotation plot_compactor_reannotation"
-COMPACTOR_PRE_RULES="merge_annotations run_blast_nonzero_features run_blastp_nonzero_features merge_blast_results merge_blastp_results merge_reblast_results merge_reblastp_results plot_blast_features select_unannotated_extendors_for_compactor"
+# ---- pick target meta-rule for the chosen mode ----
+case "$MODE" in
+    embeddings) TARGET="all_embeddings" ;;
+    genomes)    TARGET="all_genomes" ;;
+    ohe)        TARGET="all_ohe" ;;
+    umap)       TARGET="all_umap" ;;
+    *) echo "ERROR: MODE must be one of: embeddings, genomes, ohe, umap (got '$MODE')" >&2; exit 1 ;;
+esac
 
+# ---- unlock and run ----
+SNAKEMAKE_CMD=(snakemake --sdm conda --use-conda --conda-base-path "$MINIFORGE_DIR" --profile slurm_profile/ -s "$SNAKEMAKE_FILE")
 snakemake --unlock -s "$SNAKEMAKE_FILE" || true
-
-SNAKEMAKE_CMD="snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/"
-SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_CMD"
-SNAKEMAKE_TARGET="all_embeddings"
-if [ "${GENOME_ONLY:-0}" = "1" ]; then
-    SNAKEMAKE_TARGET="all_genomes"
-fi
-if [ -n "$FORCE_RULE" ] && [[ " $FORCE_RULE " == *"genome"* ]] && \
-   [ "${COMPACTOR_PRE_ONLY:-0}" != "1" ] && [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" != "1" ]; then
-    SNAKEMAKE_TARGET="all_genomes"
-fi
-if [ "${COMPACTOR_PRE_ONLY:-0}" = "1" ]; then
-    SNAKEMAKE_TARGET="all_compactor_before_compactors"
-    FORCE_RULE="${FORCE_RULE:-$COMPACTOR_PRE_RULES}"
-    SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_before_compactors $COMPACTOR_PRE_RULES"
-fi
-if [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" = "1" ]; then
-    SNAKEMAKE_TARGET="all_compactor_after_compactors"
-    FORCE_RULE="${FORCE_RULE:-$COMPACTOR_DOWNSTREAM_RULES}"
-    SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_after_compactors $COMPACTOR_DOWNSTREAM_RULES"
-fi
-if [ -n "$FORCE_RULE" ]; then
-    SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD -R $FORCE_RULE"
+if [ "${#FORCE_RULES[@]}" -gt 0 ]; then
+    "${SNAKEMAKE_CMD[@]}" "$TARGET" -R "${FORCE_RULES[@]}"
+else
+    "${SNAKEMAKE_CMD[@]}" "$TARGET"
 fi
 
-eval "$SNAKEMAKE_EMBED_CMD $SNAKEMAKE_TARGET -s $SNAKEMAKE_FILE"
-# eval "$SNAKEMAKE_CMD all_genomes -s $SNAKEMAKE_FILE"
+# ml purge
+# eval "$(/oak/stanford/groups/horence/chester/dabs_ref/miniforge3/bin/conda shell.bash hook)" 
+# eval "$(mamba shell hook --shell bash)"
+# mamba activate flash
 
-# SNAKEMAKE_CMD="$SNAKEMAKE_CMD all_embeddings -s $SNAKEMAKE_FILE"
-# eval $SNAKEMAKE_CMD
+# SNAKEMAKE_FILE="${1:-}"
+# FORCE_RULE="${*:2}"
+# COMPACTOR_DOWNSTREAM_RULES="merge_compactors_for_reannotation select_compactors_for_reannotation run_blast_compactors_for_reannotation run_blastp_compactors_for_reannotation compactor_reannotation plot_compactor_reannotation"
+# COMPACTOR_PRE_RULES="merge_annotations run_blast_nonzero_features run_blastp_nonzero_features merge_blast_results merge_blastp_results merge_reblast_results merge_reblastp_results plot_blast_features select_unannotated_extendors_for_compactor"
 
-# snakemake --unlock -s $SNAKEMAKE_FILE
-# snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/ all_embeddings -s $SNAKEMAKE_FILE
+# snakemake --unlock -s "$SNAKEMAKE_FILE" || true
 
-# NUM_CORES=${SLURM_CPUS_PER_TASK:-1}
-# snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/ -j $NUM_CORES all_embeddings
+# SNAKEMAKE_CMD="snakemake -n --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/"
+# SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_CMD"
+# SNAKEMAKE_TARGET="all_embeddings"
+# if [ "${GENOME_ONLY:-0}" = "1" ]; then
+#     SNAKEMAKE_TARGET="all_genomes"
+# fi
+# if [ -n "$FORCE_RULE" ] && [[ " $FORCE_RULE " == *"genome"* ]] && \
+#    [ "${COMPACTOR_PRE_ONLY:-0}" != "1" ] && [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" != "1" ]; then
+#     SNAKEMAKE_TARGET="all_genomes"
+# fi
+# if [ "${COMPACTOR_PRE_ONLY:-0}" = "1" ]; then
+#     SNAKEMAKE_TARGET="all_compactor_before_compactors"
+#     FORCE_RULE="${FORCE_RULE:-$COMPACTOR_PRE_RULES}"
+#     SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_before_compactors $COMPACTOR_PRE_RULES"
+# fi
+# if [ "${COMPACTOR_DOWNSTREAM_ONLY:-0}" = "1" ]; then
+#     SNAKEMAKE_TARGET="all_compactor_after_compactors"
+#     FORCE_RULE="${FORCE_RULE:-$COMPACTOR_DOWNSTREAM_RULES}"
+#     SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD --rerun-triggers mtime --allowed-rules all_compactor_after_compactors $COMPACTOR_DOWNSTREAM_RULES"
+# fi
+# if [ -n "$FORCE_RULE" ]; then
+#     SNAKEMAKE_EMBED_CMD="$SNAKEMAKE_EMBED_CMD -R $FORCE_RULE"
+# fi
+
+# eval "$SNAKEMAKE_EMBED_CMD $SNAKEMAKE_TARGET -s $SNAKEMAKE_FILE"
+# # eval "$SNAKEMAKE_CMD all_genomes -s $SNAKEMAKE_FILE"
+
+# # SNAKEMAKE_CMD="$SNAKEMAKE_CMD all_embeddings -s $SNAKEMAKE_FILE"
+# # eval $SNAKEMAKE_CMD
+
+# # snakemake --unlock -s $SNAKEMAKE_FILE
+# # snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/ all_embeddings -s $SNAKEMAKE_FILE
+
+# # NUM_CORES=${SLURM_CPUS_PER_TASK:-1}
+# # snakemake --sdm conda --use-conda --conda-base-path /oak/stanford/groups/horence/chester/dabs_ref/miniforge3 --profile slurm_profile/ -j $NUM_CORES all_embeddings
 
 
-### tmp
-# 260714_00 compactor summary tsv, compactor blast plots
-# 260714_00 compactor summary tsv, compactor blast plots
-# 260811_00 choose_anchors
+# ### tmp
+# # 260714_00 compactor summary tsv, compactor blast plots
+# # 260714_00 compactor summary tsv, compactor blast plots
+# # 260811_00 choose_anchors

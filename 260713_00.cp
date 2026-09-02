@@ -37,36 +37,14 @@ KMER_STEP = [ANCHOR_LENGTH + TARGET_LENGTH] # this can be used to let the steps 
 MODELS = config["options"]["models"]
 NORMALIZE = config["options"]["normalize_embeddings"]
 TRAIN_PROPORTION = config["options"]["train_proportion"] # this is the proportion of the data to use for training, the rest will be used for testing
-TARGET_VARS = "fungus_species;fungus_species;tissue;tissue;timepoint_code;timepoint_code;zt_time;zt_time;dataset;"
-CONFOUND_VARS = "tissue,dataset;;dataset,fungus_species;;tissue,fungus_species;;fungus_species;;;"
-BLAST_SELECTION_MODE = "plot_selected" # all, top_n_per_cluster, plot_selected, or plot_selected_and_top
-BLAST_TOP_N_SEQUENCES_PER_CLUSTER = 10 # used by top_n_per_cluster and as fallback for plot_selected_and_top
-BLAST_NUM_PLOT_HITS = 10 # should match plot_blast_annotations_each_feature.R --num_hits default
-BLASTP_PROTEIN_DB = "refseq_protein" # set to "swissprot" to use SwissProt for the main BLASTP/BLASTX searches
-COMPACTOR_REANNOTATE = True # rescue unannotated plotted extendors by compacting their 31-nt target anchors and re-BLASTing
-COMPACTOR_MODE = "regular" # regular or sensitive
-COMPACTOR_SUFFIX = "" # suffix for seeds/compactor outputs generated for the rescue branch
-COMPACTOR_ANCHOR_LEN = TARGET_LENGTH
-COMPACTOR_NUM_CHUNKS = 1
-COMPACTOR_CHUNKS = list(range(COMPACTOR_NUM_CHUNKS))
-COMPACTOR_THRESHOLDS = "1000,100,5"
-COMPACTOR_BINARY = "/oak/stanford/groups/horence/chester/dabs_ref/splash2.11.9/compactors"
 raw_target_rank = config["options"]["target_rank"] # this is the rank of the target to use for prediction (1 = top target, 2 = second target, etc.)
 TARGET_RANK = raw_target_rank if isinstance(raw_target_rank, (list, tuple)) else [raw_target_rank]
-
-if COMPACTOR_MODE not in ["regular", "sensitive"]:
-    raise ValueError("COMPACTOR_MODE must be either 'regular' or 'sensitive'")
-
-def splash_sample_sheet(wildcards):
-    return Path(dataset_table.loc[wildcards.dataset, "SPLASH_results"], "sample_sheet.txt")
 
 # whether to generate plots or to stop at the output of the prediction task
 GENERATE_PLOTS = config["options"]["generate_plots"]
 if GENERATE_PLOTS:
     FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf",
                     "nonzero_coefficients_blast_annotated_plots.pdf", "nonzero_coefficients_heatmaps.pdf"]
-    if COMPACTOR_REANNOTATE:
-        FILE_SUFFIXES.append("nonzero_coefficients_blast_annotated_plots_compactor.pdf")
 else:
     FILE_SUFFIXES = ["nonzero_coefficients_annotated.tsv", "confusion_matrices.pdf"]
 
@@ -82,7 +60,6 @@ wildcard_constraints:
     num_clusters=r"\d+",
     kmer_width=r"\d+",
     kmer_step=r"\d+",
-    compactor_chunk=r"\d+",
     normalize=r"[A-Za-z]+"
 
 ## TARGET RULES --------------------------------
@@ -105,64 +82,6 @@ rule all_embeddings:
                normalize=NORMALIZE,
                train_proportion=TRAIN_PROPORTION,
                FILE = FILE_SUFFIXES)
-
-
-rule all_compactor_reannotations:
-    """
-    Generate compactor-rescued BLAST plot PDFs for all configured embedding runs.
-    """
-    input:
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_compactor.pdf"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               model=MODELS,
-               num_clusters=NUM_CLUSTERS,
-               target_rank=TARGET_RANK,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
-               train_proportion=TRAIN_PROPORTION)
-
-
-rule all_compactor_before_compactors:
-    """
-    Prepare compactor seed chunks for all configured embedding runs.
-    """
-    input:
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seed_chunk{chunk}.txt"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               model=MODELS,
-               num_clusters=NUM_CLUSTERS,
-               target_rank=TARGET_RANK,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
-               train_proportion=TRAIN_PROPORTION,
-               chunk=COMPACTOR_CHUNKS)
-
-
-rule all_compactor_after_compactors:
-    """
-    Finish compactor reannotation from existing compactor chunk outputs.
-    """
-    input:
-        expand(Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}",
-                    "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_compactor.pdf"),
-               dataset=DATASETS,
-               select_type=SELECT_TYPES,
-               cluster_type=CLUSTER_TYPES,
-               model=MODELS,
-               num_clusters=NUM_CLUSTERS,
-               target_rank=TARGET_RANK,
-               kmer_width=KMER_WIDTH,
-               kmer_step=KMER_STEP,
-               normalize=NORMALIZE,
-               train_proportion=TRAIN_PROPORTION)
 
 
 rule all_genomes:
@@ -559,12 +478,7 @@ rule run_adelie:
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"{wildcards.model}", f"{wildcards.normalize}", f"{wildcards.dataset}_{wildcards.model}_adelie_results_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
         min_samples = config["extended_options"]["min_samples_adelie"],
         grouped_flag = "--grouped" if config["options"]["grouped_model"] else "",
-        alpha = config["extended_options"]["adelie_alpha"],
-        residual_fitting_args = (
-            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
-            if TARGET_VARS and CONFOUND_VARS
-            else ""
-        )
+        alpha = config["extended_options"]["adelie_alpha"]
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -576,7 +490,6 @@ rule run_adelie:
         --min_samples {params.min_samples} \
         --n_threads {threads} --train_prop {wildcards.train_proportion} \
         --alpha {params.alpha} \
-        {params.residual_fitting_args} \
         {params.grouped_flag}
     """
 
@@ -606,12 +519,7 @@ rule run_adelie_ohe:
         output_prefix = lambda wildcards: Path("results", f"{wildcards.dataset}", f"{wildcards.select_type}", f"{wildcards.cluster_type}", f"ohe", f"{wildcards.dataset}_ohe_adelie_results_top{wildcards.num_clusters}_target{wildcards.target_rank}_k{wildcards.kmer_width}_s{wildcards.kmer_step}_trainProp{wildcards.train_proportion}"),
         min_samples = config["extended_options"]["min_samples_adelie"],
         grouped_flag = "--grouped" if config["options"]["grouped_model"] else "",
-        alpha = config["extended_options"]["adelie_alpha"],
-        residual_fitting_args = (
-            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
-            if TARGET_VARS and CONFOUND_VARS
-            else ""
-        )
+        alpha = config["extended_options"]["adelie_alpha"]
     output:
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
         Path("results", "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_adelie_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_confusion_matrices.pdf"),
@@ -623,7 +531,6 @@ rule run_adelie_ohe:
         --min_samples {params.min_samples} \
         --n_threads {threads} --train_prop {wildcards.train_proportion} \
         --alpha {params.alpha} \
-        {params.residual_fitting_args} \
         {params.grouped_flag}
     """
 
@@ -811,32 +718,23 @@ rule run_blast_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
-        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
-        top_n_sequences_per_cluster = BLAST_TOP_N_SEQUENCES_PER_CLUSTER,
-        blast_selection_mode = BLAST_SELECTION_MODE,
-        blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
-        cluster_length = lambda wildcards: wildcards.kmer_width
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        blast = Path(TEMP_DIR,
-                     "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-                     "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv"),
-        reblast = Path(TEMP_DIR,
-                       "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-                       "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblast.tsv")
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blast.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output.blast} {threads} "{params.taxid}" {params.entrez_email} {params.temp_dir} {params.blast_db_path} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length} {output.reblast}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path}
     """
 
 
@@ -845,32 +743,22 @@ rule run_blastp_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
-        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
-        protein_db = BLASTP_PROTEIN_DB,
-        top_n_sequences_per_cluster = BLAST_TOP_N_SEQUENCES_PER_CLUSTER,
-        blast_selection_mode = BLAST_SELECTION_MODE,
-        blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
-        cluster_length = lambda wildcards: wildcards.kmer_width
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
-        blastp = Path(TEMP_DIR,
-                      "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-                      "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv"),
-        reblastp = Path(TEMP_DIR,
-                        "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-                        "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblastp.tsv")
+        Path(TEMP_DIR, 
+             "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
+             "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output.blastp} {threads} "{params.taxid}" {params.translation_table} {params.blast_db_path} {params.protein_db} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length} {output.reblastp}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path}
     """
 
 
@@ -879,21 +767,15 @@ rule run_blastp_swissprot_nonzero_features:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp_swissprot"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp_swissprot"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
         blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
-        protein_db = "swissprot",
-        top_n_sequences_per_cluster = BLAST_TOP_N_SEQUENCES_PER_CLUSTER,
-        blast_selection_mode = BLAST_SELECTION_MODE,
-        blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
-        cluster_length = lambda wildcards: wildcards.kmer_width
+        protein_db = "swissprot"
     output:
         Path(TEMP_DIR, 
              "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
@@ -901,7 +783,7 @@ rule run_blastp_swissprot_nonzero_features:
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} "{params.taxid}" {params.translation_table} {params.blast_db_path} {params.protein_db} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path} {params.protein_db}
     """
 
 
@@ -924,25 +806,6 @@ rule merge_blast_results:
     """
 
 
-rule merge_reblast_results:
-    """
-    Merge unrestricted reblast results for sequences that lacked restricted BLAST annotation.
-    """
-    input:
-        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblast.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
-    params:
-        script = config["scripts"]["merge_blast_results"]
-    output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblast_annotated.tsv")
-    conda:
-        config["envs"]["default_r"]
-    shell:"""
-        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output}
-    """
-
-
 rule merge_blastp_results:
     """
     Merge the blast results with the annotated sequences
@@ -956,26 +819,6 @@ rule merge_blastp_results:
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
     output:
         Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv")
-    conda:
-        config["envs"]["default_r"]
-    shell:"""
-        Rscript --vanilla {params.script} --blast_annotations {input.blast_annotations} --coefficients {input.coefficients} --output {output} --translation_table {params.translation_table}
-    """
-
-
-rule merge_reblastp_results:
-    """
-    Merge unrestricted reblastp results for sequences that lacked restricted BLASTP annotation.
-    """
-    input:
-        blast_annotations = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}",
-                                 "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_reblastp.tsv"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv")
-    params:
-        script = config["scripts"]["merge_blast_results"],
-        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"]
-    output:
-        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblastp_annotated.tsv")
     conda:
         config["envs"]["default_r"]
     shell:"""
@@ -1027,21 +870,15 @@ rule run_blast_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database for OHE features
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blast"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blast"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
         temp_dir = config["temp_dir"],
-        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
-        top_n_sequences_per_cluster = BLAST_TOP_N_SEQUENCES_PER_CLUSTER,
-        blast_selection_mode = BLAST_SELECTION_MODE,
-        blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
-        cluster_length = lambda wildcards: wildcards.kmer_width
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path(TEMP_DIR, 
              "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{num_clusters}", "target" + "{target_rank}", "{predictionTask}", "trainProp" + "{train_proportion}",
@@ -1049,7 +886,7 @@ rule run_blast_nonzero_features_OHE:
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} "{params.taxid}" {params.entrez_email} {params.temp_dir} {params.blast_db_path} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.entrez_email} {params.temp_dir} {params.blast_db_path}
     """
 
 
@@ -1058,28 +895,21 @@ rule run_blastp_nonzero_features_OHE:
     Run a blast search on the significant sequences to find the closest matches in the NCBI database
     """
     input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta"),
-        coefficients = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients.tsv"),
-        sample_sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv")
+        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences.fasta")
     params:
         script = lambda wildcards: config["scripts"]["run_blastp"],
         blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "blastp"),
         split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, "ohe", wildcards.num_clusters, "target"+ wildcards.target_rank, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "split_fasta_blastp"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
+        taxid = lambda wildcards: int(dataset_table.loc[wildcards.dataset, "taxid"]),
         translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
-        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
-        protein_db = BLASTP_PROTEIN_DB,
-        top_n_sequences_per_cluster = BLAST_TOP_N_SEQUENCES_PER_CLUSTER,
-        blast_selection_mode = BLAST_SELECTION_MODE,
-        blast_num_plot_hits = BLAST_NUM_PLOT_HITS,
-        cluster_length = lambda wildcards: wildcards.kmer_width
+        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
     output:
         Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "ohe", "{num_clusters}", "target" + "{target_rank}", "{predictionTask}", "trainProp" + "{train_proportion}",
              "{dataset}_ohe_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_significant_sequences_blastp.tsv")
     conda:
         config["envs"]["biopython_env_r"]
     shell:"""
-        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} "{params.taxid}" {params.translation_table} {params.blast_db_path} {params.protein_db} {params.top_n_sequences_per_cluster} {params.blast_selection_mode} {input.coefficients} {params.blast_num_plot_hits} {input.sample_sequences} {params.cluster_length}
+        bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output} {threads} {params.taxid} {params.translation_table} {params.blast_db_path}
     """
 
 
@@ -1150,22 +980,14 @@ rule plot_blast_features:
     input:
         nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
         nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
-        reblastp_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblastp_annotated.tsv"),
-        reblast_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblast_annotated.tsv"),
         sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
         clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
         metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
         feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
     params:
-        script = config["scripts"]["plot_blast_results"],
-        residual_fitting_args = (
-            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
-            if TARGET_VARS and CONFOUND_VARS
-            else ""
-        )
+        script = config["scripts"]["plot_blast_results"]
     output:
-        pdf = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf"),
-        summary = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_summary.tsv")
+        Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots.pdf")
     conda:
         config["envs"]["default_r"]
     resources:
@@ -1177,275 +999,7 @@ rule plot_blast_features:
         --feather_file {input.feather} \
         --sample_seqs {input.sequences} \
         --metadata {input.metadata} \
-        --reblastp_annotations {input.reblastp_features} \
-        --reblast_annotations {input.reblast_features} \
-        {params.residual_fitting_args} \
-        --output {output.pdf}
-    """
-
-
-rule select_unannotated_extendors_for_compactor:
-    """
-    Select plotted unannotated extendors and write 31-nt anchor seeds plus sidecar metadata.
-    """
-    input:
-        summary = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_summary.tsv")
-    params:
-        script = "src/annotation/blast_code/prepare_compactor_reannotation.py",
-        anchor_len = COMPACTOR_ANCHOR_LEN
-    output:
-        seeds = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seeds.txt"),
-        sidecar = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seed_sidecar.tsv"),
-        chunks = expand(Path('results', "{{dataset}}", "{{select_type}}", "{{cluster_type}}", "{{model}}", "{{normalize}}", "{{dataset}}_{{model}}_{{predictionTask}}_results_top{{num_clusters}}_target{{target_rank}}_k{{kmer_width}}_s{{kmer_step}}_trainProp{{train_proportion}}_compactor_" + COMPACTOR_SUFFIX + "_seed_chunk{chunk}.txt"), chunk=COMPACTOR_CHUNKS)
-    conda:
-        config["envs"]["biopython_env"]
-    shell:"""
-        python {params.script} seeds \
-        --summary {input.summary} \
-        --seeds {output.seeds} \
-        --sidecar {output.sidecar} \
-        --anchor_len {params.anchor_len} \
-        --chunk_outputs {output.chunks}
-    """
-
-
-rule run_compactors_for_reannotation:
-    """
-    Run SPLASH compactors on unannotated extendor target anchors.
-    """
-    input:
-        seeds = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seed_chunk{compactor_chunk}.txt"),
-        fastq = splash_sample_sheet
-    params:
-        compactor_bin = COMPACTOR_BINARY,
-        mode = COMPACTOR_MODE
-    output:
-        compactors = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_chunk{compactor_chunk}.tsv")
-    threads: 4
-    resources:
-        mem_mb=512000 if COMPACTOR_MODE == "sensitive" else 128000,
-        time="48:00:00" if COMPACTOR_MODE == "sensitive" else "12:00:00",
-        partition="horence,owners,normal"
-    shell:"""
-        if [ ! -s {input.seeds} ]; then
-            printf "anchor\tcompactor\tid\tparent_id\tsupport\texact_support\textender_specificity\textender_shift\ttotal_length\tnum_extended\texpected_read_count\n" > {output.compactors}
-        elif [ "{params.mode}" = "regular" ]; then
-            awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt
-            {params.compactor_bin} --keep_temp --max_length 200 --num_threads {threads} \
-            --epsilon 0.001 --beta 0.5 --num_kmers 2 --min_extender_specificity 0.8 \
-            --num_extenders 1 --input_format fastq \
-            {output.compactors}.fastq_files.txt {input.seeds} {output.compactors}
-        else
-            awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt
-            {params.compactor_bin} --keep_temp --max_length 500 --num_threads {threads} \
-            --lower_bound 2 --epsilon 0.001 --beta 0.5 --num_kmers 2 \
-            --min_extender_specificity 0.8 --num_extenders 3 --extenders_shift 5 \
-            --independent_outputs --input_format fastq \
-            {output.compactors}.fastq_files.txt {input.seeds} {output.compactors}
-        fi
-    """
-
-
-rule merge_compactors_for_reannotation:
-    """
-    Merge chunked compactor outputs before representative selection.
-    """
-    input:
-        compactors = expand(Path('results', "{{dataset}}", "{{select_type}}", "{{cluster_type}}", "{{model}}", "{{normalize}}", "{{dataset}}_{{model}}_{{predictionTask}}_results_top{{num_clusters}}_target{{target_rank}}_k{{kmer_width}}_s{{kmer_step}}_trainProp{{train_proportion}}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_chunk{chunk}.tsv"), chunk=COMPACTOR_CHUNKS)
-    params:
-        script = "src/annotation/blast_code/prepare_compactor_reannotation.py"
-    output:
-        compactors = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + ".tsv")
-    conda:
-        config["envs"]["biopython_env"]
-    shell:"""
-        python {params.script} merge_compactors \
-        --output {output.compactors} \
-        --inputs {input.compactors}
-    """
-
-
-rule select_compactors_for_reannotation:
-    """
-    Pick one representative compactor per seed anchor and write a BLAST FASTA.
-    """
-    input:
-        compactors = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + ".tsv")
-    params:
-        script = "src/annotation/blast_code/prepare_compactor_reannotation.py",
-        thresholds = COMPACTOR_THRESHOLDS
-    output:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + ".fasta"),
-        selected = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_selected.tsv")
-    conda:
-        config["envs"]["biopython_env"]
-    shell:"""
-        python {params.script} select \
-        --compactors {input.compactors} \
-        --fasta {output.fasta} \
-        --selected {output.selected} \
-        --thresholds {params.thresholds}
-    """
-
-
-rule run_blast_compactors_for_reannotation:
-    """
-    BLASTN selected compactors, then unrestricted reblast misses.
-    """
-    input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + ".fasta")
-    params:
-        script = lambda wildcards: config["scripts"]["run_blast"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "compactor_blast"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "compactor_split_fasta"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
-        entrez_email = config["entrez_email"] if config["entrez_email"] else 0,
-        temp_dir = config["temp_dir"],
-        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0
-    output:
-        blast = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_blast.tsv"),
-        reblast = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_reblast.tsv")
-    threads: 32
-    conda:
-        config["envs"]["biopython_env_r"]
-    resources:
-        mem_mb=128000,
-        time="9:00:00",
-        partition="horence,owners,normal"
-    shell:"""
-        if [ ! -s {input.fasta} ]; then
-            : > {output.blast}
-            : > {output.reblast}
-        else
-            bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output.blast} {threads} "{params.taxid}" {params.entrez_email} {params.temp_dir} {params.blast_db_path} 0 all "" 10 "" 0 {output.reblast}
-        fi
-    """
-
-
-rule run_blastp_compactors_for_reannotation:
-    """
-    BLASTP/BLASTX selected compactors, then unrestricted reblast misses.
-    """
-    input:
-        fasta = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + ".fasta")
-    params:
-        script = lambda wildcards: config["scripts"]["run_blastp"],
-        blast_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "compactor_blastp"),
-        split_fasta_temp_dir = lambda wildcards: Path(TEMP_DIR, wildcards.dataset, wildcards.select_type, wildcards.cluster_type, wildcards.model, wildcards.num_clusters, "target" + wildcards.target_rank, wildcards.normalize, wildcards.predictionTask, "trainProp" + wildcards.train_proportion, "compactor_split_fasta_blastp"),
-        taxid = lambda wildcards: str(dataset_table.loc[wildcards.dataset, "taxid"]),
-        translation_table = lambda wildcards: dataset_table.loc[wildcards.dataset, "translation_table"],
-        blast_db_path = config["blast_db_path"] if config["blast_db_path"] else 0,
-        protein_db = BLASTP_PROTEIN_DB
-    output:
-        blastp = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_blastp.tsv"),
-        reblastp = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_reblastp.tsv")
-    threads: 32
-    conda:
-        config["envs"]["biopython_env_r"]
-    resources:
-        mem_mb=256000,
-        time="12:00:00",
-        partition="horence,owners,normal"
-    shell:"""
-        if [ ! -s {input.fasta} ]; then
-            : > {output.blastp}
-            : > {output.reblastp}
-        else
-            bash {params.script} {input.fasta} {params.split_fasta_temp_dir} {params.blast_temp_dir} {output.blastp} {threads} "{params.taxid}" {params.translation_table} {params.blast_db_path} {params.protein_db} 0 all "" 10 "" 0 {output.reblastp}
-        fi
-    """
-
-
-rule compactor_reannotation:
-    """
-    Fill original BLAST annotation inputs and plot summary with compactor rescue labels.
-    """
-    input:
-        selected = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_selected.tsv"),
-        sidecar = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_seed_sidecar.tsv"),
-        blast = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_blast.tsv"),
-        reblast = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_reblast.tsv"),
-        blastp = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_blastp.tsv"),
-        reblastp = Path(TEMP_DIR, "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{num_clusters}", "target" + "{target_rank}", "{normalize}", "{predictionTask}", "trainProp" + "{train_proportion}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_reblastp.tsv"),
-        plot_blastp_annotated = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated.tsv"),
-        plot_blast_annotated = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated.tsv"),
-        plot_summary = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_summary.tsv")
-    params:
-        script = "src/annotation/blast_code/prepare_compactor_reannotation.py",
-        anchor_len = COMPACTOR_ANCHOR_LEN
-    output:
-        blastp_annotated = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated_compactor.tsv"),
-        blast_annotated = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_compactor.tsv"),
-        summary = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv"),
-        compactor_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_annotations.tsv"),
-        seed_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_seed_annotations.tsv")
-    conda:
-        config["envs"]["biopython_env"]
-    shell:"""
-        python {params.script} annotate \
-        --selected {input.selected} \
-        --sidecar {input.sidecar} \
-        --blast {input.blast} \
-        --blastp {input.blastp} \
-        --reblast {input.reblast} \
-        --reblastp {input.reblastp} \
-        --plot_blast_annotated {input.plot_blast_annotated} \
-        --plot_blastp_annotated {input.plot_blastp_annotated} \
-        --plot_summary {input.plot_summary} \
-        --output_blast_annotated {output.blast_annotated} \
-        --output_blastp_annotated {output.blastp_annotated} \
-        --output_summary {output.summary} \
-        --compactor_annotations {output.compactor_annotations} \
-        --seed_annotations {output.seed_annotations} \
-        --anchor_len {params.anchor_len}
-    """
-
-
-rule plot_compactor_reannotation:
-    """
-    Replot BLAST results using compactor-rescued annotations and the original plot style.
-    """
-    input:
-        nonzero_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blastp_annotated_compactor.tsv"),
-        nonzero_features2 = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_compactor.tsv"),
-        compactor_summary = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv"),
-        compactor_selected = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_selected.tsv"),
-        compactor_seed_annotations = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_seed_annotations.tsv"),
-        reblastp_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblastp_annotated.tsv"),
-        reblast_features = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_reblast_annotated.tsv"),
-        sequences = Path(TEMP_DIR, "{dataset}", "{dataset}_prepared_sequences_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_sample_sequences.tsv"),
-        clusters = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{dataset}_sequences_per_cluster_top{num_clusters}-clusters_target{target_rank}_k{kmer_width}_s{kmer_step}.tsv"),
-        metadata = lambda wildcards: dataset_table.loc[wildcards.dataset, "metadata_file"],
-        feather = Path(TEMP_DIR, "{dataset}", "{dataset}_{model}_top_variance_features_for_glmnet_{select_type}_{cluster_type}_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_{normalize}.feather")
-    params:
-        script = config["scripts"]["plot_blast_results"],
-        num_hits = BLAST_NUM_PLOT_HITS,
-        residual_fitting_args = (
-            f"--target_vars '{TARGET_VARS}' --confound_vars '{CONFOUND_VARS}'"
-            if TARGET_VARS and CONFOUND_VARS
-            else ""
-        )
-    output:
-        pdf = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_nonzero_coefficients_blast_annotated_plots_compactor.pdf")
-    conda:
-        config["envs"]["default_r"]
-    resources:
-        msa=1
-    shell:"""
-        Rscript --vanilla {params.script} \
-        --nonzero_annotations {input.nonzero_features}\
-        --clusters {input.clusters} \
-        --feather_file {input.feather} \
-        --sample_seqs {input.sequences} \
-        --metadata {input.metadata} \
-        --reblastp_annotations {input.reblastp_features} \
-        --reblast_annotations {input.reblast_features} \
-        --compactor_summary {input.compactor_summary} \
-        --compactor_selected {input.compactor_selected} \
-        --compactor_seed_annotations {input.compactor_seed_annotations} \
-        --num_hits {params.num_hits} \
-        {params.residual_fitting_args} \
-        --output {output.pdf}
+        --output {output}
     """
 
 

@@ -45,7 +45,7 @@ BLAST_NUM_PLOT_HITS = 10 # should match plot_blast_annotations_each_feature.R --
 BLASTP_PROTEIN_DB = "swissprot" # swissprot for a faster preview or refseq_protein for the full run
 COMPACTOR_REANNOTATE = True # rescue unannotated plotted extendors by compacting their 31-nt target anchors and re-BLASTing
 COMPACTOR_MODE = "regular" # regular or sensitive
-COMPACTOR_SUFFIX = "fungus" # suffix for seeds/compactor outputs generated for the rescue branch
+COMPACTOR_SUFFIX = "" # suffix for seeds/compactor outputs generated for the rescue branch
 COMPACTOR_ANCHOR_LEN = TARGET_LENGTH
 COMPACTOR_NUM_CHUNKS = 1
 COMPACTOR_CHUNKS = list(range(COMPACTOR_NUM_CHUNKS))
@@ -1182,7 +1182,7 @@ rule run_compactors_for_reannotation:
         mode = COMPACTOR_MODE
     output:
         compactors = Path('results', "{dataset}", "{select_type}", "{cluster_type}", "{model}", "{normalize}", "{dataset}_{model}_{predictionTask}_results_top{num_clusters}_target{target_rank}_k{kmer_width}_s{kmer_step}_trainProp{train_proportion}_compactor_" + COMPACTOR_SUFFIX + "_" + COMPACTOR_MODE + "_chunk{compactor_chunk}.tsv")
-    threads: 4
+    threads: 16
     resources:
         mem_mb=512000 if COMPACTOR_MODE == "sensitive" else 128000,
         time="48:00:00" if COMPACTOR_MODE == "sensitive" else "12:00:00",
@@ -1194,7 +1194,7 @@ rule run_compactors_for_reannotation:
             awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt
             {params.compactor_bin} --keep_temp --max_length 200 --num_threads {threads} \
             --epsilon 0.001 --beta 0.5 --num_kmers 2 --min_extender_specificity 0.8 \
-            --num_extenders 3 --extenders_shift 5 --input_format fastq \
+            --num_extenders 1 --input_format fastq \
             {output.compactors}.fastq_files.txt {input.seeds} {output.compactors}
         else
             awk 'NF >= 2 {{print $2; next}} NF == 1 {{print $1}}' {input.fastq} > {output.compactors}.fastq_files.txt

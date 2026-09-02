@@ -11,7 +11,7 @@ lookup_table_for_artifact_filtering: resources/lookup_tables/mini_artifact_looku
 entrez_email: "v8514616@outlook.com" # YOUR_EMAIL
 
 # blast database path (if using local databases)
-blast_db_path: "/scratch/users/jiamuyu/dabs_ref/blast/" # provide with path to local blast databases if available
+blast_db_path: "/scratch/groups/horence/blast" # provide with path to local blast databases if available
 
 # set paths to conda env definitions
 envs:
@@ -34,12 +34,12 @@ options:
   generate_plots: true # set to true to generate plots after model training
   num_clusters: 20000 # number of clusters to use for clustering anchors
   filters: ["filter1"] # define which anchor selection filters to use
-  cluster_types: ["shiftDist-levFilter"] # define which clustering methods to use # see scripts section for available options
+  cluster_types: ["shiftDist-levFilter"] # define which clustering methods to use # see scripts section for available options "shiftDist-levFilter" "noCluster"
   models: ["hyena"] # currently only 'hyena' is supported
   normalize_embeddings: ['normalized'] # define whether to use normalized or unnormalized embeddings (for pca whether to scale/center prior to pca)
   train_proportion: 0.8 # proportion of samples to use for training GLMnet models
-  anchor_length: 27 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
-  target_length: 27 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
+  anchor_length: 31 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
+  target_length: 31 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
   target_rank: 1 # this is the rank of the target to use when assembling the anchor-target pairs, change as needed
   cluster_filter:
     # reccomend increasing the number of clusters if applying a cluster filter to ensure that you have enough clusters after filtering for embedding and prediction.
