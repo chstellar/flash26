@@ -901,7 +901,7 @@ def write_heatmap_pdf(
             draw_heatmap_panel(
                 fig,
                 outer[1, 1],
-                "Anchor-target occurrence",
+                "Sequence count",
                 count_matrix,
                 major_labels,
                 minor_labels,
