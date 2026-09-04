@@ -3,6 +3,7 @@ suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(optparse))
 suppressPackageStartupMessages(library(ggpubr))
 suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(ggtext))
 
 option_list <- list(
   make_option(c("--project_dir"), type = "character", default = ".",
@@ -267,6 +268,26 @@ class_color_for <- function(class_name) {
 
 display_class_name <- function(class_name) {
   ifelse(class_name == "none", "no_fungus", class_name)
+}
+
+html_escape <- function(x) {
+  x <- safe_text(x)
+  x <- str_replace_all(x, "&", "&amp;")
+  x <- str_replace_all(x, "<", "&lt;")
+  str_replace_all(x, ">", "&gt;")
+}
+
+colored_count_order_label <- function(class_cols) {
+  classes <- ordered_class_columns(class_cols)
+  labels <- display_class_name(classes)
+  pieces <- vapply(seq_along(classes), function(i) {
+    paste0(
+      "<span style='color:", class_color_for(classes[[i]]), "'>",
+      html_escape(labels[[i]]),
+      "</span>"
+    )
+  }, character(1))
+  paste(pieces, collapse = "/")
 }
 
 blank_like_multiline <- function(x) {
@@ -857,7 +878,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
     classes_to_plot <- focus
     message("Binary target ", category, ": plotting only class '", focus, "'.")
   }
-  count_order_label <- paste(display_class_name(ordered_class_columns(class_cols)), collapse = "/")
+  count_order_label <- colored_count_order_label(class_cols)
 
   for (class_to_plot in classes_to_plot) {
     if (!class_to_plot %in% colnames(p_sub)) {
@@ -894,7 +915,6 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       geom_text_repel(
         aes(color = point_label_color),
         size = opt$label_size,
-        family = "mono",
         seed = 1,
         max.overlaps = Inf,
         min.segment.length = 0,
@@ -913,6 +933,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
           color = "black",
           size = opt$label_size,
           family = "mono",
+          fontface = "bold",
           seed = 1,
           max.overlaps = Inf,
           min.segment.length = 0,
@@ -935,6 +956,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
             color = part_color,
             size = opt$label_size,
             family = "mono",
+            fontface = "bold",
             seed = 1,
             max.overlaps = Inf,
             min.segment.length = 0,
@@ -963,7 +985,10 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
       ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
       ggtitle(paste(category, cluster_id, sep = " | "),
-              subtitle = paste("Color: proportion", class_to_plot, "| counts:", count_order_label)) +
+              subtitle = paste0(
+                "Color: proportion ", html_escape(class_to_plot),
+                " | counts: ", count_order_label
+              )) +
       theme(
         panel.grid.minor.y = element_blank(),
         axis.title = element_text(size = opt$axis_title_size),
@@ -971,7 +996,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
         legend.title = element_text(size = opt$axis_title_size),
         legend.text = element_text(size = opt$axis_text_size),
         plot.title = element_text(size = opt$plot_title_size),
-        plot.subtitle = element_text(size = opt$plot_subtitle_size, lineheight = 0.95)
+        plot.subtitle = ggtext::element_markdown(size = opt$plot_subtitle_size, lineheight = 0.95)
       )
     print(p2)
   }
