@@ -316,29 +316,32 @@ get_focus_class_beta <- function(tbl, focus_class, default_beta) {
 }
 
 clean_blast_label <- function(x) {
-  x <- as.character(x)
-  x <- replace_na(x, "")
-  x <- str_replace_all(x, "\\s*\\[[^\\]]+\\]\\s*$", "")
-  x <- str_replace(x, "^RecName:\\s*Full=([^;]+).*$", "\\1")
-  x <- str_replace(x, "^SubName:\\s*Full=([^;]+).*$", "\\1")
-  x <- str_replace(x, "^AltName:\\s*Full=([^;]+).*$", "\\1")
-  x <- str_replace(x, "(^|;\\s*)Short=([^;]+).*$", "\\2")
-  x <- str_replace_all(x, "\\bRecName:\\s*Full=", "")
-  x <- str_replace_all(x, "\\bAltName:\\s*Full=", "")
-  x <- str_replace_all(x, "\\bSubName:\\s*Full=", "")
-  x <- str_replace_all(x, "\\bFlags:\\s*[^;]+;?", "")
-  x <- str_replace_all(x, "LOC\\d+[- ]*", "")
-  x <- str_replace_all(x, "\\s+isoform\\s+X\\d+\\b", "")
-  x <- str_replace_all(x, "\\s+transcript\\s+variant\\s+X?\\d+\\b", "")
-  x <- str_replace_all(x, "\\s+variant\\s+X?\\d+\\b", "")
-  x <- str_replace_all(x, "\\s+", " ")
-  x <- str_replace_all(x, "\\s*[,;]\\s*$", "")
-  x <- str_trim(x)
-  x <- str_replace_all(x, fixed("UNCHARACTERISED"), "UNCHARACTERIZED")
-  x <- ifelse(str_detect(x, regex("uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
-                                  ignore_case=TRUE)),
-              "UNANNOTATED", x)
-  ifelse(nchar(x) == 0, NA_character_, x)
+  boilerplate <- regex(
+    "Gnomon|Derived by automated computational analysis|Supporting evidence includes|coverage of the annotated genomic feature|support for all annotated introns",
+    ignore_case=TRUE
+  )
+  clean_one <- function(value) {
+    if (is.na(value)) return(NA_character_)
+    parts <- unlist(str_split(as.character(value), ";+"), use.names=FALSE)
+    parts <- parts[!str_detect(parts, boilerplate)]
+    if (length(parts) == 0) return(NA_character_)
+    value <- paste(parts, collapse=";")
+    value <- str_replace_all(value, "\\s*\\[[^\\]]+\\]\\s*$", "")
+    value <- str_replace(value, "^RecName:\\s*Full=([^;]+).*$", "\\1")
+    value <- str_replace(value, "^SubName:\\s*Full=([^;]+).*$", "\\1")
+    value <- str_replace(value, "^AltName:\\s*Full=([^;]+).*$", "\\1")
+    value <- str_replace(value, "(^|;\\s*)Short=([^;]+).*$", "\\2")
+    value <- str_replace_all(value, "\\b(RecName|AltName|SubName):\\s*Full=", "")
+    value <- str_replace_all(value, "\\bFlags:\\s*[^;]+;?", "")
+    value <- str_replace_all(value, "LOC\\d+[- ]*", "")
+    value <- str_replace_all(value, "\\s+(isoform|transcript\\s+variant|variant)\\s+X?\\d+\\b", "")
+    value <- str_squish(str_replace_all(value, "\\s*[,;]\\s*$", ""))
+    value <- str_replace_all(value, fixed("UNCHARACTERISED"), "UNCHARACTERIZED")
+    if (str_detect(value, regex("uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
+                                ignore_case=TRUE))) value <- "UNANNOTATED"
+    if (nchar(value) == 0) NA_character_ else value
+  }
+  vapply(as.character(x), clean_one, character(1), USE.NAMES=FALSE)
 }
 
 collapse_blast_labels <- function(x) {
@@ -990,7 +993,15 @@ make_compactor_summary_label_dt <- function(path) {
                      compactor_summary_sequence=character(),
                      compactor_summary_subject_id=character(), compactor_summary_accession=character(),
                      compactor_summary_ncbi_protein_accession=character(),
-                     compactor_summary_uniprot_accession=character())
+                     compactor_summary_uniprot_accession=character(),
+                     compactor_summary_blast_query_sequence=character(),
+                     compactor_summary_exact_support=character(),
+                     compactor_summary_support=character(),
+                     compactor_summary_expected_read_count=character(),
+                     compactor_summary_extender_specificity=character(),
+                     compactor_summary_num_extended=character(),
+                     compactor_summary_support_threshold=character(),
+                     compactor_summary_selection_reason=character())
   if (is.null(path) || is.na(path) || nchar(path) == 0 || !file.exists(path) || file.info(path)$size == 0) {
     return(empty_dt)
   }
@@ -998,6 +1009,10 @@ make_compactor_summary_label_dt <- function(path) {
   compactor_cols <- c("metadata_category", "feature", "cluster", "sequence", "compactor_annotation",
                       "Blast Label", "identity", "qcovs", "compactor_species", "compactor_staxids",
                       "compactor_sscinames", "compactor_sequence",
+                      "compactor_blast_query_sequence", "compactor_exact_support",
+                      "compactor_support", "compactor_expected_read_count",
+                      "compactor_extender_specificity", "compactor_num_extended",
+                      "compactor_support_threshold", "compactor_selection_reason",
                       "compactor_blast_subject_id", "compactor_blast_accession",
                       "compactor_ncbi_protein_accession", "compactor_uniprot_accession")
   compactor_dt <- ensure_columns(compactor_dt, compactor_cols)
@@ -1024,6 +1039,14 @@ make_compactor_summary_label_dt <- function(path) {
               compactor_summary_accession = first_text_or_na(compactor_blast_accession),
               compactor_summary_ncbi_protein_accession = first_text_or_na(compactor_ncbi_protein_accession),
               compactor_summary_uniprot_accession = first_text_or_na(compactor_uniprot_accession),
+              compactor_summary_blast_query_sequence = first_text_or_na(compactor_blast_query_sequence),
+              compactor_summary_exact_support = first_text_or_na(compactor_exact_support),
+              compactor_summary_support = first_text_or_na(compactor_support),
+              compactor_summary_expected_read_count = first_text_or_na(compactor_expected_read_count),
+              compactor_summary_extender_specificity = first_text_or_na(compactor_extender_specificity),
+              compactor_summary_num_extended = first_text_or_na(compactor_num_extended),
+              compactor_summary_support_threshold = first_text_or_na(compactor_support_threshold),
+              compactor_summary_selection_reason = first_text_or_na(compactor_selection_reason),
               .groups="drop")
 }
 
@@ -1284,8 +1307,12 @@ dt <- fread(opt$nonzero_annotations)
 if (TRUE) {dt2 <- fread(gsub("blastp_annotated", "blast_annotated", opt$nonzero_annotations))}
 dt <- ensure_annotation_columns(dt)
 dt2 <- ensure_annotation_columns(dt2)
-for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_sequence", "compactor_length",
-                        "compactor_exact_support", "compactor_raw_annotation")) {
+for (compactor_col in c("compactor_annotation", "compactor_query", "compactor_sequence",
+                        "compactor_blast_query_sequence", "compactor_length",
+                        "compactor_exact_support", "compactor_support",
+                        "compactor_expected_read_count", "compactor_extender_specificity",
+                        "compactor_num_extended", "compactor_support_threshold",
+                        "compactor_selection_reason", "compactor_raw_annotation")) {
   if (!compactor_col %in% colnames(dt)) {
     dt[[compactor_col]] <- rep(NA_character_, nrow(dt))
   }
@@ -1936,7 +1963,12 @@ for (category in categories) {
                compactor_summary_sequence,
                compactor_summary_subject_id, compactor_summary_accession,
                compactor_summary_ncbi_protein_accession,
-               compactor_summary_uniprot_accession)
+               compactor_summary_uniprot_accession,
+               compactor_summary_blast_query_sequence,
+               compactor_summary_exact_support, compactor_summary_support,
+               compactor_summary_expected_read_count, compactor_summary_extender_specificity,
+               compactor_summary_num_extended, compactor_summary_support_threshold,
+               compactor_summary_selection_reason)
 
       label_dt <- dt_sub %>%
         mutate(any_identity = coalesce(`identity.y`, identity),
@@ -1990,7 +2022,12 @@ for (category in categories) {
                                       "compactor_seed_sequence",
                                       "blastp_compactor_sequence",
                                       "blastn_compactor_sequence",
-                                      "compactor_selected_sequence"))
+                                      "compactor_selected_sequence",
+                                      "compactor_blast_query_sequence",
+                                      "compactor_exact_support", "compactor_support",
+                                      "compactor_expected_read_count", "compactor_extender_specificity",
+                                      "compactor_num_extended", "compactor_support_threshold",
+                                      "compactor_selection_reason"))
 
       p_sub <- summ_sub_dt %>%
         mutate(label = ifelse(is_placeholder_label(label) &
@@ -2009,7 +2046,22 @@ for (category in categories) {
                                                        compactor_seed_sequence,
                                                        blastp_compactor_sequence,
                                                        blastn_compactor_sequence,
-                                                       compactor_selected_sequence)) %>%
+                                                       compactor_selected_sequence),
+               compactor_blast_query_sequence = coalesce_text_cols(compactor_blast_query_sequence,
+                                                                    compactor_summary_blast_query_sequence),
+               compactor_exact_support = coalesce_text_cols(compactor_exact_support,
+                                                             compactor_summary_exact_support),
+               compactor_support = coalesce_text_cols(compactor_support, compactor_summary_support),
+               compactor_expected_read_count = coalesce_text_cols(compactor_expected_read_count,
+                                                                    compactor_summary_expected_read_count),
+               compactor_extender_specificity = coalesce_text_cols(compactor_extender_specificity,
+                                                                    compactor_summary_extender_specificity),
+               compactor_num_extended = coalesce_text_cols(compactor_num_extended,
+                                                            compactor_summary_num_extended),
+               compactor_support_threshold = coalesce_text_cols(compactor_support_threshold,
+                                                                 compactor_summary_support_threshold),
+               compactor_selection_reason = coalesce_text_cols(compactor_selection_reason,
+                                                                 compactor_summary_selection_reason)) %>%
         mutate(identity = ifelse(has_restricted_label(compactor_summary_label) & is.na(identity),
                                  compactor_summary_identity, identity),
                qcovs = ifelse(has_restricted_label(compactor_summary_label) & is.na(qcovs),
@@ -2264,6 +2316,10 @@ for (category in categories) {
         "compactor_summary_subject_id", "compactor_summary_accession",
         "compactor_summary_ncbi_protein_accession",
         "compactor_summary_uniprot_accession",
+        "compactor_summary_blast_query_sequence", "compactor_summary_exact_support",
+        "compactor_summary_support", "compactor_summary_expected_read_count",
+        "compactor_summary_extender_specificity", "compactor_summary_num_extended",
+        "compactor_summary_support_threshold", "compactor_summary_selection_reason",
         "point_label", "point_label_expr", "point_label_color",
         "color_value", "mean_metadata", "median_metadata", "sd_metadata",
         "outside_taxid_only"

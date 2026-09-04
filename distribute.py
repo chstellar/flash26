@@ -628,6 +628,15 @@ def matrix_max(*matrices):
     return value
 
 
+def count_samples_by_partition(sample_to_partition, labels, intersection_sep):
+    counts = {label: 0 for label in labels}
+    for major, minor in sample_to_partition.values():
+        label = f"{major}{intersection_sep}{minor}"
+        if label in counts:
+            counts[label] += 1
+    return counts
+
+
 def adaptive_annotation_font(annotation):
     length = len(annotation or "")
     if length <= 80:
@@ -668,7 +677,7 @@ def contrast_text_color(value, vmax):
     return "white" if value / vmax >= 0.58 else "black"
 
 
-def maybe_annotate(ax, matrix, vmax, fontsize=7):
+def maybe_annotate(ax, matrix, vmax, fontsize=7, denominator_matrix=None):
     n_rows = len(matrix)
     n_cols = len(matrix[0]) if n_rows else 0
     if n_rows * n_cols > 80:
@@ -676,15 +685,23 @@ def maybe_annotate(ax, matrix, vmax, fontsize=7):
     for i, row in enumerate(matrix):
         for j, value in enumerate(row):
             if value:
+                label = format_count(value)
+                if denominator_matrix is not None:
+                    denominator = denominator_matrix[i][j]
+                    label = paste_count_fraction(value, denominator)
                 ax.text(
                     j,
                     i,
-                    format_count(value),
+                    label,
                     ha="center",
                     va="center",
                     fontsize=fontsize,
                     color=contrast_text_color(value, vmax),
                 )
+
+
+def paste_count_fraction(value, denominator):
+    return f"{format_count(value)}/{format_count(denominator)}"
 
 
 def draw_heatmap_panel(
@@ -700,6 +717,7 @@ def draw_heatmap_panel(
     cmap,
     colorbar_label,
     args,
+    denominator_matrix=None,
 ):
     import matplotlib.pyplot as plt
     from matplotlib import gridspec
@@ -709,6 +727,11 @@ def draw_heatmap_panel(
     col_total_values = col_sums(matrix)
     row_total_matrix = [[value] for value in row_total_values]
     col_total_matrix = [col_total_values]
+    row_total_denominator_matrix = None
+    col_total_denominator_matrix = None
+    if denominator_matrix is not None:
+        row_total_denominator_matrix = [[value] for value in row_sums(denominator_matrix)]
+        col_total_denominator_matrix = [col_sums(denominator_matrix)]
     vmax = matrix_max(matrix, row_total_matrix, col_total_matrix)
     vmax = max(vmax, 1.0)
     norm = Normalize(vmin=0, vmax=vmax)
@@ -765,9 +788,11 @@ def draw_heatmap_panel(
         for spine in axis.spines.values():
             spine.set_visible(False)
 
-    maybe_annotate(ax_main, matrix, vmax, fontsize=entry_font)
-    maybe_annotate(ax_top, col_total_matrix, vmax, fontsize=total_font)
-    maybe_annotate(ax_right, row_total_matrix, vmax, fontsize=total_font)
+    maybe_annotate(ax_main, matrix, vmax, fontsize=entry_font, denominator_matrix=denominator_matrix)
+    maybe_annotate(ax_top, col_total_matrix, vmax, fontsize=total_font,
+                   denominator_matrix=col_total_denominator_matrix)
+    maybe_annotate(ax_right, row_total_matrix, vmax, fontsize=total_font,
+                   denominator_matrix=row_total_denominator_matrix)
     ax_footer.axis("off")
 
 
@@ -776,6 +801,7 @@ def write_heatmap_pdf(
     rows,
     major_labels,
     minor_labels,
+    sample_to_partition,
     totals,
     combo_counts,
     sample_sets,
@@ -815,6 +841,21 @@ def write_heatmap_pdf(
 
     with PdfPages(path) as pdf:
         major_colors = parse_color_mapping(args.major_colors)
+        denominator_counts = count_samples_by_partition(
+            sample_to_partition,
+            [
+                f"{major}{args.intersection_sep}{minor}"
+                for major in major_labels
+                for minor in minor_labels
+            ],
+            args.intersection_sep,
+        )
+        denominator_matrix = matrix_from_mapping(
+            major_labels,
+            minor_labels,
+            args.intersection_sep,
+            denominator_counts,
+        )
         for row in unique_rows:
             extendor = row["_extendor_value"]
             count_matrix = matrix_from_mapping(
@@ -897,6 +938,7 @@ def write_heatmap_pdf(
                 "YlGnBu",
                 "samples",
                 args,
+                denominator_matrix,
             )
             draw_heatmap_panel(
                 fig,
@@ -1064,6 +1106,7 @@ def main():
             input_rows,
             major_labels,
             minor_labels,
+            sample_to_partition,
             totals,
             combo_counts,
             sample_sets,

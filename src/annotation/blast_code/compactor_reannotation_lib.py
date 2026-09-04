@@ -55,6 +55,13 @@ DEFAULT_PROTEIN_DB = "refseq_protein"
 DEFAULT_OUTPUT_STEM = "resfungi_compactors"
 REPO_ROOT = Path(__file__).resolve().parent
 
+BLAST_DETAIL_COLUMNS = [
+    "subject", "sacc", "alignment_length", "mismatches", "gap_opens",
+    "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qframe",
+    "sgi", "slen", "stitle", "method", "GO", "features",
+    "features_10000_window", "features_all",
+]
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -341,7 +348,18 @@ def write_fasta(records, output_fasta):
                 f" exact_support={record['exact_support']:g} row={record['row_index']}"
                 f" source={Path(record['source_file']).name}"
             )
-            handle.write(f">{header}\n{record['compactor']}\n")
+            query_sequence = compactor_blast_query_sequence(record)
+            handle.write(f">{header}\n{query_sequence}\n")
+
+
+def compactor_blast_query_sequence(record):
+    """Return the nucleotide query used for COMPACTOR BLAST: anchor then extender."""
+    explicit = clean_sequence_candidate(record.get("compactor_blast_query_sequence"))
+    if explicit:
+        return explicit
+    anchor = clean_sequence_candidate(record.get("anchor") or record.get("compactor_anchor"))
+    compactor = clean_sequence_candidate(record.get("compactor") or record.get("compactor_sequence"))
+    return f"{anchor}{compactor}"
 
 
 def write_selected_compactors(records, output_path):
@@ -350,6 +368,7 @@ def write_selected_compactors(records, output_path):
         "anchor",
         "compactor",
         "compactor_sequence",
+        "compactor_blast_query_sequence",
         "length",
         "exact_support",
         "row_index",
@@ -368,6 +387,7 @@ def write_selected_compactors(records, output_path):
         for record in records:
             row = dict(record)
             row["compactor_sequence"] = row.get("compactor_sequence") or row.get("compactor", "NA")
+            row["compactor_blast_query_sequence"] = compactor_blast_query_sequence(row)
             writer.writerow({col: row.get(col, "NA") for col in columns})
 
 
@@ -378,6 +398,7 @@ def read_selected_compactors(path):
     for row in read_tsv(path):
         record = dict(row)
         record["compactor_sequence"] = record.get("compactor_sequence") or record.get("compactor", "NA")
+        record["compactor_blast_query_sequence"] = compactor_blast_query_sequence(record)
         record["length"] = int(numeric(record.get("length"), 0) or 0)
         record["exact_support"] = numeric(record.get("exact_support"), "NA")
         record["row_index"] = int(numeric(record.get("row_index"), 0) or 0)
@@ -612,6 +633,26 @@ def compactor_trace_fields(row):
     }
 
 
+def compactor_support_fields(row):
+    return {
+        "compactor_blast_query_sequence": first_text(row, "compactor_blast_query_sequence"),
+        "compactor_support": first_text(row, "support", "compactor_support"),
+        "compactor_expected_read_count": first_text(
+            row, "expected_read_count", "compactor_expected_read_count"
+        ),
+        "compactor_extender_specificity": first_text(
+            row, "extender_specificity", "compactor_extender_specificity"
+        ),
+        "compactor_num_extended": first_text(row, "num_extended", "compactor_num_extended"),
+        "compactor_support_threshold": first_text(
+            row, "support_threshold", "compactor_support_threshold"
+        ),
+        "compactor_selection_reason": first_text(
+            row, "selection_reason", "compactor_selection_reason"
+        ),
+    }
+
+
 def hit_source_id(hit):
     return first_text(hit, "blast_accession", "blast_subject_id", "staxids")
 
@@ -811,6 +852,7 @@ def read_annotation_table(path, mode, source):
                     f"{source}_{mode}_sscinames": sscinames,
                     f"{source}_{mode}_subject_id": blast_subject_id,
                     f"{source}_{mode}_accession": blast_accession,
+                    **{column: row.get(column, "NA") for column in BLAST_DETAIL_COLUMNS},
                 }
             )
     return annotations
@@ -840,6 +882,7 @@ def no_hit_entry():
         "ncbi_protein_accession": "NA",
         "uniprot_accession": "NA",
         "raw_annotation": "NA",
+        **{column: "NA" for column in BLAST_DETAIL_COLUMNS},
     }
 
 
@@ -849,8 +892,11 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "anchor",
         "compactor",
         "compactor_sequence",
+        "compactor_blast_query_sequence",
         "length",
         "exact_support",
+        "support_threshold",
+        "selection_reason",
         "source_file",
         "support",
         "expected_read_count",
@@ -870,6 +916,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "ncbi_protein_accession",
         "uniprot_accession",
         "raw_annotation",
+        *BLAST_DETAIL_COLUMNS,
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
@@ -905,6 +952,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
             for entry in entries:
                 row = {**record, **entry}
                 row["compactor_sequence"] = record.get("compactor", "NA")
+                row["compactor_blast_query_sequence"] = compactor_blast_query_sequence(record)
                 source_counts[row["annotation_source"]] += 1
                 writer.writerow({col: row.get(col, "NA") for col in columns})
     print(
@@ -1019,8 +1067,15 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "compactor_query",
         "compactor",
         "compactor_sequence",
+        "compactor_blast_query_sequence",
         "compactor_length",
         "compactor_exact_support",
+        "compactor_support",
+        "compactor_expected_read_count",
+        "compactor_extender_specificity",
+        "compactor_num_extended",
+        "compactor_support_threshold",
+        "compactor_selection_reason",
         "compactor_anchor",
         "compactor_source_file",
         "annotation_label",
@@ -1037,6 +1092,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "ncbi_protein_accession",
         "uniprot_accession",
         "raw_annotation",
+        *BLAST_DETAIL_COLUMNS,
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
@@ -1084,8 +1140,10 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
                             "compactor_query": query,
                             "compactor": record["compactor"],
                             "compactor_sequence": record.get("compactor_sequence") or record["compactor"],
+                            "compactor_blast_query_sequence": compactor_blast_query_sequence(record),
                             "compactor_length": record["length"],
                             "compactor_exact_support": record["exact_support"],
+                            **compactor_support_fields(record),
                             "compactor_anchor": record["anchor"],
                             "compactor_source_file": record["source_file"],
                         }
@@ -1181,6 +1239,7 @@ def read_seed_compactor_annotation_map(path):
                 "compactor_query": row.get("compactor_query", "NA"),
                 "compactor": row.get("compactor", "NA"),
                 "compactor_sequence": compactor_sequence,
+                **compactor_support_fields(row),
                 "compactor_length": row.get("compactor_length", "NA"),
                 "compactor_exact_support": row.get("compactor_exact_support", "NA"),
                 "annotation_source": row.get("annotation_source", "NA"),
@@ -1227,6 +1286,7 @@ def compactor_hit_from_row(row):
         "compactor_query": row.get("query") or row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
         "compactor_sequence": compactor_sequence,
+        **compactor_support_fields(row),
         "compactor_length": row.get("length") or row.get("compactor_length", "NA"),
         "compactor_exact_support": row.get("exact_support") or row.get("compactor_exact_support", "NA"),
         "annotation_source": row.get("annotation_source", "NA"),
@@ -1385,6 +1445,7 @@ def summary_compactor_hit(row):
         "compactor_query": row.get("compactor_query", "NA"),
         "compactor": row.get("compactor", "NA"),
         "compactor_sequence": compactor_sequence,
+        **compactor_support_fields(row),
         "compactor_length": row.get("compactor_length", "NA"),
         "compactor_exact_support": row.get("compactor_exact_support", "NA"),
         "annotation_source": row.get("annotation_source", "NA"),
@@ -1564,6 +1625,8 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
     row["compactor_annotation"] = compactor_hit["label"]
     row["compactor_query"] = compactor_hit["compactor_query"]
     row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
+    for column, value in compactor_support_fields(compactor_hit).items():
+        row[column] = value
     row["compactor_length"] = compactor_hit["compactor_length"]
     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
     row["compactor_raw_annotation"] = compactor_hit["raw_annotation"]
@@ -1644,8 +1707,15 @@ def fill_plot_annotation_tsv(
             "compactor_annotation",
             "compactor_query",
             "compactor_sequence",
+            "compactor_blast_query_sequence",
             "compactor_length",
             "compactor_exact_support",
+            "compactor_support",
+            "compactor_expected_read_count",
+            "compactor_extender_specificity",
+            "compactor_num_extended",
+            "compactor_support_threshold",
+            "compactor_selection_reason",
             "compactor_raw_annotation",
             "compactor_species",
             "compactor_staxids",
@@ -1696,6 +1766,7 @@ def fill_plot_annotation_tsv(
                     row.setdefault("compactor_annotation", "NA")
                     row.setdefault("compactor_query", "NA")
                     row.setdefault("compactor_sequence", "NA")
+                    row.setdefault("compactor_blast_query_sequence", "NA")
                     row.setdefault("compactor_length", "NA")
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")
@@ -1749,8 +1820,15 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
             "compactor_annotation",
             "compactor_query",
             "compactor_sequence",
+            "compactor_blast_query_sequence",
             "compactor_length",
             "compactor_exact_support",
+            "compactor_support",
+            "compactor_expected_read_count",
+            "compactor_extender_specificity",
+            "compactor_num_extended",
+            "compactor_support_threshold",
+            "compactor_selection_reason",
             "compactor_raw_annotation",
             "compactor_species",
             "compactor_staxids",
@@ -1796,6 +1874,8 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                 label_col, label = clean_existing_summary_label(row, fieldnames)
                 if compactor_hit:
                     row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
+                    for column, value in compactor_support_fields(compactor_hit).items():
+                        row[column] = value
                     row["compactor_query"] = compactor_hit["compactor_query"]
                     row["compactor_length"] = compactor_hit["compactor_length"]
                     row["compactor_exact_support"] = compactor_hit["compactor_exact_support"]
@@ -1823,6 +1903,7 @@ def fill_plot_summary_tsv(input_path, output_path, compactor_map, anchor_map, an
                     row.setdefault("compactor_annotation", "NA")
                     row.setdefault("compactor_query", "NA")
                     row.setdefault("compactor_sequence", "NA")
+                    row.setdefault("compactor_blast_query_sequence", "NA")
                     row.setdefault("compactor_length", "NA")
                     row.setdefault("compactor_exact_support", "NA")
                     row.setdefault("compactor_raw_annotation", "NA")

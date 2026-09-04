@@ -61,16 +61,33 @@ ensure_columns <- function(tbl, cols) {
   tbl
 }
 
+annotation_cols <- c(
+  "query", "subject", "sacc", "identity", "alignment_length", "mismatches",
+  "gap_opens", "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue",
+  "qcovs", "qframe", "sgi", "slen", "staxids", "sscinames", "stitle",
+  "species_origin", "NCBI_protein_accession", "UniProt_accession", "method", "GO",
+  "features", "features_10000_window", "features_all", "blast_mode", "blast_scope"
+)
+
+compactor_cols <- c(
+  "compactor_annotation", "compactor_query", "compactor_sequence",
+  "compactor_blast_query_sequence", "compactor_length", "compactor_exact_support",
+  "compactor_support", "compactor_expected_read_count", "compactor_extender_specificity",
+  "compactor_num_extended", "compactor_support_threshold", "compactor_selection_reason",
+  "compactor_raw_annotation", "compactor_species", "compactor_staxids",
+  "compactor_sscinames", "compactor_blast_subject_id", "compactor_blast_accession",
+  "compactor_ncbi_protein_accession", "compactor_uniprot_accession",
+  "blast_subject_id_origin", "blast_accession_origin", "blast_annotation_source_id"
+)
+
 # Read in the data
 annotations <- fread(opt$blast_annotations, header = TRUE, sep = "\t", nThread = 60)
 
 if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
-  blastp_cols <- c("query", "subject", "sacc", "evalue", "identity", "qcovs", "qframe", "stitle",
-                   "staxids", "sscinames", "species_origin",
-                   "NCBI_protein_accession", "UniProt_accession", "method", "GO")
-  annotations <- ensure_columns(annotations, blastp_cols)
+  annotations <- ensure_columns(annotations, c(annotation_cols, compactor_cols))
   annotations <- annotations %>%
-    select(any_of(blastp_cols)) %>%
+    select(any_of(c(annotation_cols, compactor_cols)), everything()) %>%
+    mutate(blast_mode = coalesce(as.character(blast_mode), "blastx")) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
   if (!"sscinames" %in% colnames(annotations)) {
     annotations$sscinames <- NA_character_
@@ -179,12 +196,10 @@ if (str_detect(opt$blast_annotations, "blastp|swissprot")) {
   # now bind it all together
   annotations <- annotations %>% left_join(sequence_dt, by = c("query", "qframe"))
 } else {
-  blast_cols <- c("query", "evalue", "identity", "qcovs", "subject", "sacc",
-                  "staxids", "sscinames", "stitle", "species_origin",
-                  "features", "features_10000_window", "features_all")
-  annotations <- ensure_columns(annotations, blast_cols)
+  annotations <- ensure_columns(annotations, c(annotation_cols, compactor_cols))
   annotations <- annotations %>%
-    select(any_of(blast_cols), contains("window")) %>%
+    select(any_of(c(annotation_cols, compactor_cols)), everything()) %>%
+    mutate(blast_mode = coalesce(as.character(blast_mode), "blastn")) %>%
     mutate(cluster = str_extract(query, "(^.*cluster_\\d+|\\w+_kmer_\\d+)_", group = 1))
   if (!"sscinames" %in% colnames(annotations)) {
     annotations$sscinames <- NA_character_

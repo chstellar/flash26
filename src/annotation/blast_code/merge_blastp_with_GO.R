@@ -50,6 +50,20 @@ empty_blastp_df <- function() {
          sscinames=character(), stitle=character())
 }
 
+add_comprehensive_annotation_columns <- function(tbl) {
+  defaults <- list(
+    species_origin=NA_character_, features=NA_character_,
+    features_10000_window=NA_character_, features_all=NA_character_,
+    blast_mode="blastx"
+  )
+  for (column in names(defaults)) {
+    if (!column %in% colnames(tbl)) {
+      tbl[[column]] <- rep(defaults[[column]], nrow(tbl))
+    }
+  }
+  tbl
+}
+
 read_blastp_file <- function(file) {
   if (!file.exists(file) || file.info(file)$size == 0) {
     return(empty_blastp_df())
@@ -90,8 +104,7 @@ if (length(df_lengths) == 0) {
   empty_blastp_df() %>%
     mutate(NCBI_protein_accession=character(), UniProt_accession=character(),
            method=character(), GO=character()) %>%
-    select(query, subject, sacc, identity, evalue, qcovs, qframe, staxids, sscinames, stitle,
-           NCBI_protein_accession, UniProt_accession, method, GO) %>%
+    add_comprehensive_annotation_columns() %>%
     write_tsv(opt$output_file, col_names = T, quote="needed")
   quit(save="no", status=0)
 }
@@ -127,7 +140,7 @@ if (TRUE) {
   merged_df <- map(blast_dfs, \(x) x %>% mutate(staxids=as.character(staxids))) %>% bind_rows() %>%
     mutate(NCBI_protein_accession=coalesce(str_extract(subject, "ref\\|(.+)\\|", group=1), sacc)) %>%
     mutate(UniProt_accession=str_extract(subject, "sp\\|(.+)\\|", group=1), method=NA, GO=NA) %>%
-    select(query, subject, sacc, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO)
+    add_comprehensive_annotation_columns()
 } else {
   merged_df <- future_map2(blast_files, blast_dfs, \(x,y) merge_on_go_terms(x,y,opt$uniprot_mapping_path,opt$go_mapping_path)) %>% bind_rows()
 }
@@ -136,5 +149,5 @@ if (!"sscinames" %in% colnames(merged_df)) {
   merged_df$sscinames <- NA_character_
 }
 
-merged_df %>% select(query, subject, sacc, identity, evalue, qcovs, qframe, staxids, sscinames, stitle, NCBI_protein_accession, UniProt_accession, method, GO) %>%
+merged_df %>% add_comprehensive_annotation_columns() %>%
   write_tsv(opt$output_file, col_names = T, quote="needed")
