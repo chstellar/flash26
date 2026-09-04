@@ -24,14 +24,14 @@ fi
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 
 # First example: C. floridanus fungus, infection_status, clusters 8143 and 5883.
-DATASET="${DATASET:-260819-00-cfloridanus-fungus}"
+DATASET="${DATASET:-260819-00-cfloridanus-fungus-cp}"
 RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/${DATASET}/filter1/noCluster/hyena/normalized}"
 METADATA="${METADATA:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/metadata.csv}"
 METADATA_COLUMN="${METADATA_COLUMN:-infection_status}"
 CLUSTERS="${CLUSTERS:-8143,5883}"
 CLUSTER_LABEL="$(printf '%s' "$CLUSTERS" | tr ',;[:space:]' '___' | tr -s '_')"
 OUTPUT="${OUTPUT:-${RESULTS_DIR}/${DATASET}_${METADATA_COLUMN}_clusters_${CLUSTER_LABEL}_blast_plots.pdf}"
-NUM_HITS="${NUM_HITS:-100}"
+NUM_HITS="${NUM_HITS:-10}"
 
 usage() {
   echo "Usage: sbatch blot.sh [extra blot.R args...]"
