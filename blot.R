@@ -29,6 +29,14 @@ option_list <- list(
               help = "Repelled point-label text size. Default: 3.2."),
   make_option(c("--hist_label_scale"), type = "numeric", default = 1,
               help = "Multiplier for histogram label text sizes. Default: 1."),
+  make_option(c("--axis_title_size"), type = "numeric", default = 13,
+              help = "Axis title font size for BLOT figures. Default: 13."),
+  make_option(c("--axis_text_size"), type = "numeric", default = 11,
+              help = "Axis tick/legend text font size for BLOT figures. Default: 11."),
+  make_option(c("--plot_title_size"), type = "numeric", default = 14,
+              help = "Plot title font size for BLOT figures. Default: 14."),
+  make_option(c("--plot_subtitle_size"), type = "numeric", default = 10,
+              help = "Plot subtitle font size for BLOT figures. Default: 10."),
   make_option(c("--products"), action = "store_true", default = FALSE,
               help = "Accepted for wrapper compatibility."),
   make_option(c("--plotter"), type = "character", default = "",
@@ -122,7 +130,9 @@ coerce_num <- function(x) {
 
 safe_text <- function(x) {
   x <- as.character(x)
-  x[is.na(x) | x %in% c("NA", "NaN", "NULL")] <- ""
+  x[is.na(x)] <- ""
+  x <- trimws(x)
+  x[toupper(x) %in% c("NA", "NA%", "NAN", "NAN%", "NULL", "N/A")] <- ""
   x
 }
 
@@ -133,6 +143,26 @@ first_nonempty <- function(x) {
     return(NA_character_)
   }
   x[[1]]
+}
+
+format_percent_metric <- function(value) {
+  text <- safe_text(value)
+  nums <- coerce_num(str_replace(text, "%$", ""))
+  ifelse(is.finite(nums), paste0(round(nums, 2), "%"), text)
+}
+
+fill_label_metric <- function(label_value, raw_value) {
+  label <- safe_text(label_value)
+  raw <- format_percent_metric(raw_value)
+  use_raw <- label == "" | label == "-" | toupper(label) %in% c("NA", "NA%")
+  raw_ok <- raw != "" & raw != "-"
+  label[use_raw & raw_ok] <- raw[use_raw & raw_ok]
+  label
+}
+
+is_na_quality <- function(x) {
+  x <- safe_text(x)
+  x == "" | str_detect(x, regex("^I:\\s*(NA%?|-)?\\s*;\\s*C:\\s*(NA%?|-)?\\s*$", ignore_case = TRUE))
 }
 
 collapse_unique_labels <- function(x, sep = ";") {
@@ -246,7 +276,7 @@ choose_interesting_binary_class <- function(classes) {
 }
 
 prepare_point_labels <- function(dt) {
-  for (col in c("Blast Label", "label_identity", "label_coverage", "label_quality")) {
+  for (col in c("Blast Label", "identity", "qcovs", "label_identity", "label_coverage", "label_quality")) {
     if (!col %in% colnames(dt)) {
       dt[[col]] <- ""
     }
@@ -254,11 +284,12 @@ prepare_point_labels <- function(dt) {
   dt %>%
     mutate(
       blast_label = safe_text(`Blast Label`),
-      label_identity = safe_text(label_identity),
-      label_coverage = safe_text(label_coverage),
+      label_identity = fill_label_metric(label_identity, identity),
+      label_coverage = fill_label_metric(label_coverage, qcovs),
       label_quality = safe_text(label_quality),
       label_quality = ifelse(
-        label_quality == "" & (label_identity != "" | label_coverage != ""),
+        is_na_quality(label_quality) &
+          (label_identity != "" | label_coverage != ""),
         paste0("I:", ifelse(label_identity == "", "NA", label_identity),
                "; C:", ifelse(label_coverage == "", "NA", label_coverage)),
         label_quality
@@ -289,6 +320,14 @@ filter_summary <- function(path, metadata_column, selected_clusters) {
   cluster_col <- colnames(dt)[[3]]
   if (!"feature" %in% colnames(dt)) {
     stop("Compactor summary is missing required column: feature", call. = FALSE)
+  }
+  if (!"identity" %in% colnames(dt) && ncol(dt) >= 18) {
+    dt[, identity := get(colnames(dt)[[18]])]
+    message("Using compactor summary column 18 as identity.")
+  }
+  if (!"qcovs" %in% colnames(dt) && ncol(dt) >= 19) {
+    dt[, qcovs := get(colnames(dt)[[19]])]
+    message("Using compactor summary column 19 as qcovs/coverage.")
   }
   dt[, cluster_normalized := normalize_cluster_id(get(cluster_col))]
   filtered <- dt[get(metadata_col) == metadata_column & cluster_normalized %in% selected_clusters]
@@ -383,7 +422,12 @@ plot_histograms <- function(dt, hist_dt, title, subtitle) {
     scale_x_continuous(breaks = seq_len(max(10, max(hist_dt$rank)))) +
     ggtitle(title, subtitle = subtitle) +
     theme_pubr() +
-    theme(plot.subtitle = element_text(size = 8, lineheight = 0.95))
+    theme(
+      axis.title = element_text(size = opt$axis_title_size),
+      axis.text = element_text(size = opt$axis_text_size),
+      plot.title = element_text(size = opt$plot_title_size),
+      plot.subtitle = element_text(size = opt$plot_subtitle_size, lineheight = 0.95)
+    )
   print(p)
 
   stack_dt <- dt %>%
@@ -414,7 +458,12 @@ plot_histograms <- function(dt, hist_dt, title, subtitle) {
     ggtitle(title, subtitle = subtitle) +
     theme_pubr() +
     theme(legend.position = "right",
-          plot.subtitle = element_text(size = 8, lineheight = 0.95))
+          axis.title = element_text(size = opt$axis_title_size),
+          axis.text = element_text(size = opt$axis_text_size),
+          legend.title = element_text(size = opt$axis_title_size),
+          legend.text = element_text(size = opt$axis_text_size),
+          plot.title = element_text(size = opt$plot_title_size),
+          plot.subtitle = element_text(size = opt$plot_subtitle_size, lineheight = 0.95))
   print(p_stack)
 }
 
@@ -536,7 +585,15 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
       ggtitle(paste(category, cluster_id, sep = " | "),
               subtitle = paste("Color: proportion", class_to_plot)) +
-      theme(panel.grid.minor.y = element_blank())
+      theme(
+        panel.grid.minor.y = element_blank(),
+        axis.title = element_text(size = opt$axis_title_size),
+        axis.text = element_text(size = opt$axis_text_size),
+        legend.title = element_text(size = opt$axis_title_size),
+        legend.text = element_text(size = opt$axis_text_size),
+        plot.title = element_text(size = opt$plot_title_size),
+        plot.subtitle = element_text(size = opt$plot_subtitle_size, lineheight = 0.95)
+      )
     print(p2)
   }
 }

@@ -33,6 +33,12 @@ CLUSTER_LABEL="${CLUSTERS//,/_}"
 OUTPUT="${OUTPUT:-${RESULTS_DIR}/${DATASET}_${METADATA_COLUMN}_clusters_${CLUSTER_LABEL}_blast_plots.pdf}"
 NUM_HITS="${NUM_HITS:-10}"
 COMPACTOR_SUMMARY="${COMPACTOR_SUMMARY:-${RESULTS_DIR}/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
+GENE_LABEL_SIZE="${GENE_LABEL_SIZE:-4.4}"
+HIST_LABEL_SCALE="${HIST_LABEL_SCALE:-1.25}"
+AXIS_TITLE_SIZE="${AXIS_TITLE_SIZE:-16}"
+AXIS_TEXT_SIZE="${AXIS_TEXT_SIZE:-12}"
+PLOT_TITLE_SIZE="${PLOT_TITLE_SIZE:-16}"
+PLOT_SUBTITLE_SIZE="${PLOT_SUBTITLE_SIZE:-11}"
 
 usage() {
   echo "Usage: sbatch blot.sh [extra blot.R args...]"
@@ -45,9 +51,15 @@ usage() {
   echo "  CLUSTERS=$CLUSTERS"
   echo "  OUTPUT=$OUTPUT"
   echo "  COMPACTOR_SUMMARY=$COMPACTOR_SUMMARY"
+  echo "  GENE_LABEL_SIZE=$GENE_LABEL_SIZE"
+  echo "  HIST_LABEL_SCALE=$HIST_LABEL_SCALE"
+  echo "  AXIS_TITLE_SIZE=$AXIS_TITLE_SIZE"
+  echo "  AXIS_TEXT_SIZE=$AXIS_TEXT_SIZE"
+  echo "  PLOT_TITLE_SIZE=$PLOT_TITLE_SIZE"
+  echo "  PLOT_SUBTITLE_SIZE=$PLOT_SUBTITLE_SIZE"
   echo
   echo "Common overrides:"
-  echo "  sbatch --export=ALL,METADATA_COLUMN=fungus_species,CLUSTERS=12\\,34 blot.sh"
+  echo "  sbatch --export=ALL,METADATA_COLUMN=fungus_species,CLUSTERS=12\\,34,GENE_LABEL_SIZE=5,AXIS_TITLE_SIZE=18 blot.sh"
 }
 
 [[ "${1:-}" =~ ^(-h|--help)$ ]] && { usage; exit 0; }
@@ -61,4 +73,10 @@ Rscript --vanilla "$PROJECT_DIR/blot.R" \
   --output "$OUTPUT" \
   --compactor_summary "$COMPACTOR_SUMMARY" \
   --num_hits "$NUM_HITS" \
+  --label_size "$GENE_LABEL_SIZE" \
+  --hist_label_scale "$HIST_LABEL_SCALE" \
+  --axis_title_size "$AXIS_TITLE_SIZE" \
+  --axis_text_size "$AXIS_TEXT_SIZE" \
+  --plot_title_size "$PLOT_TITLE_SIZE" \
+  --plot_subtitle_size "$PLOT_SUBTITLE_SIZE" \
   "$@"
