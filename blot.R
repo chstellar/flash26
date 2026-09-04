@@ -63,6 +63,7 @@ within_taxid_label_color <- "#E64B35"
 outside_taxid_label_color <- "#4DBBD5"
 histogram_bar_color <- "#F8766D"
 no_taxon_label_color <- "#7A7A7A"
+label_pad <- "\u00A0"
 
 is_blank <- function(x) {
   is.null(x) || is.na(x) || !nzchar(x)
@@ -158,6 +159,14 @@ safe_text <- function(x) {
   x[is.na(x)] <- ""
   x <- trimws(x)
   x[toupper(x) %in% c("NA", "NA%", "NAN", "NAN%", "NULL", "N/A")] <- ""
+  x
+}
+
+safe_padded_text <- function(x) {
+  x <- as.character(x)
+  x[is.na(x)] <- ""
+  missing <- toupper(trimws(x)) %in% c("NA", "NA%", "NAN", "NAN%", "NULL", "N/A")
+  x[missing] <- ""
   x
 }
 
@@ -258,6 +267,37 @@ class_color_for <- function(class_name) {
 
 display_class_name <- function(class_name) {
   ifelse(class_name == "none", "no_fungus", class_name)
+}
+
+blank_like_multiline <- function(x) {
+  x <- safe_text(x)
+  vapply(
+    strsplit(x, "\n", fixed = TRUE),
+    function(lines) paste(strrep(label_pad, nchar(lines)), collapse = "\n"),
+    character(1)
+  )
+}
+
+make_count_label_components <- function(count_df) {
+  if (ncol(count_df) == 0) {
+    return(tibble(class_count_label = character(), class_count_slashes = character()))
+  }
+  rows <- lapply(seq_len(nrow(count_df)), function(i) {
+    values <- as.integer(replace_na(coerce_num(unlist(count_df[i, ], use.names = FALSE)), 0))
+    tokens <- as.character(values)
+    blanks <- strrep(label_pad, nchar(tokens))
+    out <- list(
+      class_count_label = paste(tokens, collapse = "/"),
+      class_count_slashes = paste(blanks, collapse = "/")
+    )
+    for (j in seq_along(tokens)) {
+      parts <- blanks
+      parts[[j]] <- tokens[[j]]
+      out[[paste0("class_count_part_", j)]] <- paste(parts, collapse = "/")
+    }
+    as_tibble(out)
+  })
+  bind_rows(rows)
 }
 
 sample_size_breaks <- function(values) {
@@ -537,7 +577,8 @@ prepare_point_labels <- function(dt) {
     "qcovs", "direct_qcovs", "direct_blastp_qcovs", "direct_blastn_qcovs",
     "outside_taxid_qcovs", "compactor_summary_qcovs"
   )
-  for (col in c("Blast Label", "label_identity", "label_coverage", "label_quality", "class_count_label",
+  for (col in c("Blast Label", "label_identity", "label_coverage", "label_quality",
+                "class_count_label", "class_count_slashes",
                 identity_candidates, coverage_candidates)) {
     if (!col %in% colnames(dt)) {
       dt[[col]] <- ""
@@ -545,7 +586,7 @@ prepare_point_labels <- function(dt) {
   }
   dt$effective_identity <- first_available_metric(dt, identity_candidates)
   dt$effective_coverage <- first_available_metric(dt, coverage_candidates)
-  dt %>%
+  out <- dt %>%
     mutate(
       blast_label = display_blast_label(`Blast Label`),
       label_identity = fill_label_metric(label_identity, effective_identity),
@@ -561,6 +602,7 @@ prepare_point_labels <- function(dt) {
       blast_label = ifelse(blast_label == "", "NO MATCH", blast_label),
       point_label = str_wrap(str_trunc(blast_label, width = 80, side = "right"), width = 28),
       class_count_label = safe_text(class_count_label),
+      class_count_slashes = safe_padded_text(class_count_slashes),
       point_label = ifelse(
         !is_placeholder_label(blast_label) &
           nzchar(label_quality) &
@@ -568,11 +610,32 @@ prepare_point_labels <- function(dt) {
         paste(point_label, label_quality, sep = "\n"),
         point_label
       ),
+      point_label_blank_body = blank_like_multiline(point_label),
+      point_label_count_blank = strrep(label_pad, nchar(class_count_label)),
+      point_label = ifelse(
+        nzchar(class_count_label),
+        paste(point_label, point_label_count_blank, sep = "\n"),
+        point_label
+      ),
+      point_label_count_slashes = ifelse(
+        nzchar(class_count_slashes),
+        paste(point_label_blank_body, class_count_slashes, sep = "\n"),
+        ""
+      ),
       point_label_color = case_when(
         is_placeholder_label(blast_label) ~ no_taxon_label_color,
         TRUE ~ "black"
       )
     )
+  count_part_cols <- grep("^class_count_part_", colnames(out), value = TRUE)
+  for (col in count_part_cols) {
+    out[[paste0("point_label_", col)]] <- ifelse(
+      nzchar(safe_padded_text(out[[col]])),
+      paste(out$point_label_blank_body, safe_padded_text(out[[col]]), sep = "\n"),
+      ""
+    )
+  }
+  out
 }
 
 filter_summary <- function(path, metadata_column, selected_clusters) {
@@ -764,14 +827,12 @@ prepare_detail_data <- function(dt) {
     for (missing_col in setdiff(count_cols, colnames(dt))) {
       dt[[missing_col]] <- 0
     }
-    dt$class_count_label <- apply(
-      as.data.frame(dt[, count_cols, drop = FALSE]),
-      1,
-      function(x) paste(as.integer(replace_na(coerce_num(x), 0)), collapse = "/")
-    )
-    message("Class-count label order: ", paste(count_cols, collapse = "/"))
+    count_components <- make_count_label_components(as.data.frame(dt[, count_cols, drop = FALSE]))
+    dt <- bind_cols(dt, count_components)
+    message("Class-count label order: ", paste(display_class_name(count_cols), collapse = "/"))
   } else {
     dt$class_count_label <- ""
+    dt$class_count_slashes <- ""
   }
   list(data = prepare_point_labels(dt), class_cols = class_cols)
 }
@@ -806,6 +867,9 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       mutate(class_proportion = ifelse(total_samples > 0,
                                        .data[[class_to_plot]] / total_samples,
                                        NA_real_))
+    count_order <- ordered_class_columns(class_cols)
+    count_part_cols <- paste0("point_label_class_count_part_", seq_along(count_order))
+    count_part_cols <- count_part_cols[count_part_cols %in% colnames(p_class)]
     total_sample_breaks <- sample_size_breaks(p_class$total_samples)
     total_sample_limit <- max(coerce_num(p_class$total_samples), na.rm = TRUE)
     if (!is.finite(total_sample_limit) || total_sample_limit < 1) {
@@ -830,6 +894,8 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       geom_text_repel(
         aes(color = point_label_color),
         size = opt$label_size,
+        family = "mono",
+        seed = 1,
         max.overlaps = Inf,
         min.segment.length = 0,
         segment.color = "grey45",
@@ -839,23 +905,50 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
         force = 6,
         force_pull = 0.08,
         show.legend = FALSE
-      ) +
-      geom_text_repel(
-        data = function(x) filter(x, nzchar(class_count_label)),
-        aes(label = class_count_label),
-        color = class_color_for(class_to_plot),
-        size = opt$label_size * 0.95,
-        max.overlaps = Inf,
-        min.segment.length = 0,
-        segment.color = NA,
-        segment.size = 0.25,
-        box.padding = 0.25,
-        point.padding = 0.8,
-        force = 2,
-        force_pull = 0.02,
-        nudge_y = -0.25,
-        show.legend = FALSE
-      ) +
+      )
+    if ("point_label_count_slashes" %in% colnames(p_class)) {
+      p2 <- p2 +
+        geom_text_repel(
+          aes(label = point_label_count_slashes),
+          color = "black",
+          size = opt$label_size,
+          family = "mono",
+          seed = 1,
+          max.overlaps = Inf,
+          min.segment.length = 0,
+          segment.color = "transparent",
+          segment.size = 0.25,
+          box.padding = 0.75,
+          point.padding = 0.8,
+          force = 6,
+          force_pull = 0.08,
+          show.legend = FALSE
+        )
+    }
+    for (i in seq_along(count_part_cols)) {
+      local({
+        part_col <- count_part_cols[[i]]
+        part_color <- class_color_for(count_order[[i]])
+        p2 <<- p2 +
+          geom_text_repel(
+            aes(label = .data[[part_col]]),
+            color = part_color,
+            size = opt$label_size,
+            family = "mono",
+            seed = 1,
+            max.overlaps = Inf,
+            min.segment.length = 0,
+            segment.color = "transparent",
+            segment.size = 0.25,
+            box.padding = 0.75,
+            point.padding = 0.8,
+            force = 6,
+            force_pull = 0.08,
+            show.legend = FALSE
+          )
+      })
+    }
+    p2 <- p2 +
       scale_fill_gradient(paste0("Proportion\n", class_to_plot),
                           low = "blue", high = "red", limits = c(0, 1)) +
       scale_color_identity(guide = "none") +
