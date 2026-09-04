@@ -253,7 +253,11 @@ class_color_for <- function(class_name) {
   if (class_name %in% names(colors)) {
     return(colors[[class_name]])
   }
-  "red"
+  "black"
+}
+
+display_class_name <- function(class_name) {
+  ifelse(class_name == "none", "no_fungus", class_name)
 }
 
 sample_size_breaks <- function(values) {
@@ -564,15 +568,9 @@ prepare_point_labels <- function(dt) {
         paste(point_label, label_quality, sep = "\n"),
         point_label
       ),
-      point_label = ifelse(
-        nzchar(class_count_label),
-        paste(point_label, class_count_label, sep = "\n"),
-        point_label
-      ),
       point_label_color = case_when(
-        str_detect(`Blast Label`, "\\(OTHER TAXA\\)") ~ "outside_taxid",
-        is_placeholder_label(blast_label) ~ "no_taxon",
-        TRUE ~ "within_taxid"
+        is_placeholder_label(blast_label) ~ no_taxon_label_color,
+        TRUE ~ "black"
       )
     )
 }
@@ -726,7 +724,8 @@ plot_histograms <- function(dt, hist_dt, title, subtitle) {
                  "outside_taxid" = outside_taxid_label_color,
                  "no_taxon" = no_taxon_label_color),
       labels = c("Within requested taxids", "Outside requested taxids", "No hit"),
-      name = "Taxon source"
+      name = "Taxon source",
+      guide = "none"
     ) +
     ggtitle(title, subtitle = subtitle) +
     theme_pubr() +
@@ -797,7 +796,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
     classes_to_plot <- focus
     message("Binary target ", category, ": plotting only class '", focus, "'.")
   }
-  count_order_label <- paste(ordered_class_columns(class_cols), collapse = "/")
+  count_order_label <- paste(display_class_name(ordered_class_columns(class_cols)), collapse = "/")
 
   for (class_to_plot in classes_to_plot) {
     if (!class_to_plot %in% colnames(p_sub)) {
@@ -829,7 +828,6 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
         labels = scales::label_log()
       ) +
       geom_text_repel(
-        data = function(x) filter(x, point_label_color != "outside_taxid"),
         aes(color = point_label_color),
         size = opt$label_size,
         max.overlaps = Inf,
@@ -839,38 +837,34 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
         box.padding = 0.75,
         point.padding = 0.8,
         force = 6,
-        force_pull = 0.08
+        force_pull = 0.08,
+        show.legend = FALSE
       ) +
       geom_text_repel(
-        data = function(x) filter(x, point_label_color == "outside_taxid"),
-        aes(color = point_label_color),
-        size = opt$label_size,
+        data = function(x) filter(x, nzchar(class_count_label)),
+        aes(label = class_count_label),
+        color = class_color_for(class_to_plot),
+        size = opt$label_size * 0.95,
         max.overlaps = Inf,
         min.segment.length = 0,
-        segment.color = "grey45",
+        segment.color = NA,
         segment.size = 0.25,
-        box.padding = 0.75,
+        box.padding = 0.25,
         point.padding = 0.8,
-        force = 6,
-        force_pull = 0.08
+        force = 2,
+        force_pull = 0.02,
+        nudge_y = -0.25,
+        show.legend = FALSE
       ) +
       scale_fill_gradient(paste0("Proportion\n", class_to_plot),
-                          low = "grey92", high = class_color_for(class_to_plot), limits = c(0, 1)) +
-      scale_color_manual(
-        breaks = c("within_taxid", "outside_taxid", "no_taxon"),
-        values = c("within_taxid" = histogram_bar_color,
-                   "outside_taxid" = outside_taxid_label_color,
-                   "no_taxon" = no_taxon_label_color),
-        labels = c("Within requested taxids", "Outside requested taxids", "No hit"),
-        name = "Taxon source"
-      ) +
+                          low = "blue", high = "red", limits = c(0, 1)) +
+      scale_color_identity(guide = "none") +
       guides(
         fill = guide_colorbar(order = 1),
         size = guide_legend(
           order = 2,
           override.aes = list(shape = 16, color = "black", fill = "black", alpha = 1)
-        ),
-        color = guide_legend(order = 3, override.aes = list(label = "A", size = 4))
+        )
       ) +
       theme_minimal() +
       xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +

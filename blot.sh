@@ -39,8 +39,8 @@ AXIS_TITLE_SIZE="${AXIS_TITLE_SIZE:-16}"
 AXIS_TEXT_SIZE="${AXIS_TEXT_SIZE:-12}"
 PLOT_TITLE_SIZE="${PLOT_TITLE_SIZE:-16}"
 PLOT_SUBTITLE_SIZE="${PLOT_SUBTITLE_SIZE:-11}"
-CLASS_ORDER="${CLASS_ORDER:-no_fungus,not_given,bbassiana,ocamponoti-floridani}"
-CLASS_COLORS="${CLASS_COLORS:-no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
+CLASS_ORDER="${CLASS_ORDER:-none,bbassiana,ocamponoti-floridani}"
+CLASS_COLORS="${CLASS_COLORS:-none:#7F7F7F,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
 
 usage() {
   echo "Usage: sbatch blot.sh [extra blot.R args...]"
