@@ -160,6 +160,198 @@ fill_label_metric <- function(label_value, raw_value) {
   label
 }
 
+first_available_metric <- function(dt, candidates) {
+  present <- intersect(candidates, colnames(dt))
+  if (length(present) == 0) {
+    return(rep("", nrow(dt)))
+  }
+  out <- rep("", nrow(dt))
+  for (col in present) {
+    candidate <- format_percent_metric(dt[[col]])
+    use_candidate <- out == "" & candidate != "" & candidate != "-"
+    out[use_candidate] <- candidate[use_candidate]
+  }
+  out
+}
+
+has_metric_value <- function(x) {
+  formatted <- format_percent_metric(x)
+  formatted != "" & formatted != "-"
+}
+
+first_metric_text <- function(x) {
+  x <- format_percent_metric(x)
+  x <- x[x != "" & x != "-"]
+  if (length(x) == 0) {
+    return("")
+  }
+  x[[1]]
+}
+
+coalesce_text_columns <- function(dt, candidates) {
+  present <- intersect(candidates, colnames(dt))
+  out <- rep("", nrow(dt))
+  for (col in present) {
+    value <- safe_text(dt[[col]])
+    use_value <- out == "" & value != ""
+    out[use_value] <- value[use_value]
+  }
+  out
+}
+
+clean_sequence_key <- function(x) {
+  x <- safe_text(x)
+  x <- str_remove(x, "^cluster_\\d+_")
+  str_replace_all(x, "-", "")
+}
+
+clean_label_key <- function(x) {
+  x <- safe_text(x)
+  x <- str_remove(x, "\\s*\\(COMPACTOR\\)\\s*$")
+  str_squish(str_to_lower(x))
+}
+
+find_compactor_metric_files <- function(results_dir, summary_path) {
+  candidates <- list.files(results_dir, pattern = "compactor.*\\.tsv$", full.names = TRUE)
+  candidates <- candidates[file.exists(candidates) & file.info(candidates)$size > 0]
+  summary_norm <- normalizePath(summary_path, mustWork = TRUE)
+  candidates <- candidates[normalizePath(candidates, mustWork = TRUE) != summary_norm]
+  priority <- c(
+    "nonzero_coefficients_blast_annotated_compactor\\.tsv$",
+    "nonzero_coefficients_blastp_annotated_compactor\\.tsv$",
+    "compactor__regular_annotations\\.tsv$",
+    "compactor__regular_seed_annotations\\.tsv$",
+    "compactor__seed_sidecar\\.tsv$",
+    "compactor__regular\\.tsv$"
+  )
+  score <- rep(length(priority) + 1, length(candidates))
+  for (i in seq_along(priority)) {
+    score[str_detect(basename(candidates), priority[[i]])] <- i
+  }
+  candidates[order(score, basename(candidates))]
+}
+
+read_compactor_metric_lookup <- function(path) {
+  dt <- tryCatch(fread(path, showProgress = FALSE), error = function(e) NULL)
+  if (is.null(dt) || nrow(dt) == 0) {
+    return(tibble())
+  }
+  id_candidates <- c("identity", "direct_identity", "direct_blastp_identity", "direct_blastn_identity",
+                     "outside_taxid_identity", "compactor_summary_identity",
+                     "restricted_blastp_identity", "restricted_blast_identity",
+                     "unrestricted_blastp_identity", "unrestricted_blast_identity")
+  cov_candidates <- c("qcovs", "direct_qcovs", "direct_blastp_qcovs", "direct_blastn_qcovs",
+                      "outside_taxid_qcovs", "compactor_summary_qcovs",
+                      "restricted_blastp_qcovs", "restricted_blast_qcovs",
+                      "unrestricted_blastp_qcovs", "unrestricted_blast_qcovs")
+  if (!any(id_candidates %in% colnames(dt)) && !any(cov_candidates %in% colnames(dt))) {
+    return(tibble())
+  }
+  label_candidates <- c("Blast Label", "compactor_annotation", "direct_blast_label",
+                        "direct_blastp_label", "direct_blastn_label",
+                        "outside_taxid_label", "label", "annotation_label",
+                        "blast_label", "point_label", "annotation",
+                        "restricted_blastp_label", "restricted_blast_label",
+                        "unrestricted_blastp_label", "unrestricted_blast_label")
+  sequence_candidates <- c("sequence", "query", "extendor", "seed_extendor",
+                           "anchor_target", "anchor_target_sequence",
+                           "compactor_sequence", "compactor")
+  out <- tibble(
+    metadata_category = coalesce_text_columns(dt, c("metadata_category", "metadata_column", "metadata")),
+    feature = coalesce_text_columns(dt, c("feature")),
+    cluster = normalize_cluster_id(coalesce_text_columns(dt, c("cluster"))),
+    sequence_key = clean_sequence_key(coalesce_text_columns(dt, sequence_candidates)),
+    label_key = clean_label_key(coalesce_text_columns(dt, label_candidates)),
+    lookup_identity = first_available_metric(dt, id_candidates),
+    lookup_qcovs = first_available_metric(dt, cov_candidates),
+    source_file = basename(path)
+  ) %>%
+    filter(lookup_identity != "" | lookup_qcovs != "") %>%
+    filter(sequence_key != "" | label_key != "" | (cluster != "cluster_" & feature != ""))
+  if (nrow(out) > 0) {
+    message("Metric lookup usable rows from ", basename(path), ": ", nrow(out))
+  }
+  out
+}
+
+backfill_metrics_by_keys <- function(dt, lookup, key_cols) {
+  present_keys <- key_cols[key_cols %in% colnames(dt) & key_cols %in% colnames(lookup)]
+  if (length(present_keys) == 0 || nrow(lookup) == 0) {
+    return(dt)
+  }
+  lookup <- lookup %>%
+    filter(if_all(all_of(present_keys), ~ .x != "" & !is.na(.x))) %>%
+    mutate(.join_key = do.call(paste, c(across(all_of(present_keys)), sep = "\r"))) %>%
+    group_by(.join_key) %>%
+    summarise(
+      lookup_identity = first_metric_text(lookup_identity),
+      lookup_qcovs = first_metric_text(lookup_qcovs),
+      .groups = "drop"
+    )
+  if (nrow(lookup) == 0) {
+    return(dt)
+  }
+  dt_key <- dt %>%
+    mutate(.join_key = do.call(paste, c(across(all_of(present_keys)), sep = "\r")))
+  idx <- match(dt_key$.join_key, lookup$.join_key)
+  matched_identity <- rep("", nrow(dt_key))
+  matched_qcovs <- rep("", nrow(dt_key))
+  matched <- !is.na(idx)
+  matched_identity[matched] <- lookup$lookup_identity[idx[matched]]
+  matched_qcovs[matched] <- lookup$lookup_qcovs[idx[matched]]
+  use_identity <- matched & !has_metric_value(dt_key$identity) & matched_identity != ""
+  use_qcovs <- matched & !has_metric_value(dt_key$qcovs) & matched_qcovs != ""
+  dt_key$identity[use_identity] <- matched_identity[use_identity]
+  dt_key$qcovs[use_qcovs] <- matched_qcovs[use_qcovs]
+  dt_key$.join_key <- NULL
+  dt_key
+}
+
+backfill_compactor_metrics <- function(dt, results_dir, summary_path) {
+  if (!"identity" %in% colnames(dt)) dt$identity <- ""
+  if (!"qcovs" %in% colnames(dt)) dt$qcovs <- ""
+  before_identity <- sum(has_metric_value(dt$identity))
+  before_qcovs <- sum(has_metric_value(dt$qcovs))
+  files <- find_compactor_metric_files(results_dir, summary_path)
+  if (length(files) == 0) {
+    message("No sibling compactor TSVs found for identity/coverage backfill.")
+    return(dt)
+  }
+  lookup <- bind_rows(lapply(files, read_compactor_metric_lookup))
+  if (nrow(lookup) == 0) {
+    message("No usable identity/coverage values found in sibling compactor TSVs.")
+    return(dt)
+  }
+  message("Total usable identity/coverage lookup rows: ", nrow(lookup))
+  dt <- dt %>%
+    mutate(
+      metadata_category = safe_text(metadata_category),
+      feature = safe_text(feature),
+      cluster = normalize_cluster_id(cluster),
+      sequence_key = clean_sequence_key(sequence),
+      label_key = clean_label_key(`Blast Label`)
+    )
+  key_sets <- list(
+    c("metadata_category", "feature", "cluster", "sequence_key", "label_key"),
+    c("feature", "cluster", "sequence_key", "label_key"),
+    c("feature", "cluster", "sequence_key"),
+    c("feature", "cluster", "label_key"),
+    c("cluster", "sequence_key", "label_key"),
+    c("sequence_key", "label_key"),
+    c("cluster", "sequence_key")
+  )
+  for (key_cols in key_sets) {
+    dt <- backfill_metrics_by_keys(dt, lookup, key_cols)
+  }
+  dt$sequence_key <- NULL
+  dt$label_key <- NULL
+  after_identity <- sum(has_metric_value(dt$identity))
+  after_qcovs <- sum(has_metric_value(dt$qcovs))
+  message("Backfilled identity values for ", after_identity - before_identity, " selected row(s).")
+  message("Backfilled coverage values for ", after_qcovs - before_qcovs, " selected row(s).")
+  dt
+}
+
 is_na_quality <- function(x) {
   x <- safe_text(x)
   x == "" | str_detect(x, regex("^I:\\s*(NA%?|-)?\\s*;\\s*C:\\s*(NA%?|-)?\\s*$", ignore_case = TRUE))
@@ -276,16 +468,27 @@ choose_interesting_binary_class <- function(classes) {
 }
 
 prepare_point_labels <- function(dt) {
-  for (col in c("Blast Label", "identity", "qcovs", "label_identity", "label_coverage", "label_quality")) {
+  identity_candidates <- c(
+    "identity", "direct_identity", "direct_blastp_identity", "direct_blastn_identity",
+    "outside_taxid_identity", "compactor_summary_identity"
+  )
+  coverage_candidates <- c(
+    "qcovs", "direct_qcovs", "direct_blastp_qcovs", "direct_blastn_qcovs",
+    "outside_taxid_qcovs", "compactor_summary_qcovs"
+  )
+  for (col in c("Blast Label", "label_identity", "label_coverage", "label_quality",
+                identity_candidates, coverage_candidates)) {
     if (!col %in% colnames(dt)) {
       dt[[col]] <- ""
     }
   }
+  dt$effective_identity <- first_available_metric(dt, identity_candidates)
+  dt$effective_coverage <- first_available_metric(dt, coverage_candidates)
   dt %>%
     mutate(
       blast_label = safe_text(`Blast Label`),
-      label_identity = fill_label_metric(label_identity, identity),
-      label_coverage = fill_label_metric(label_coverage, qcovs),
+      label_identity = fill_label_metric(label_identity, effective_identity),
+      label_coverage = fill_label_metric(label_coverage, effective_coverage),
       label_quality = safe_text(label_quality),
       label_quality = ifelse(
         is_na_quality(label_quality) &
@@ -612,6 +815,7 @@ summary_path <- if (!is_blank(opt$compactor_summary)) {
 selected_clusters <- parse_cluster_list(opt$clusters)
 
 plot_dt <- filter_summary(summary_path, opt$metadata_column, selected_clusters)
+plot_dt <- backfill_compactor_metrics(plot_dt, results_dir, summary_path)
 dir.create(dirname(opt$output), recursive = TRUE, showWarnings = FALSE)
 
 hist_dt <- make_histogram_data(plot_dt, opt$num_hits)
