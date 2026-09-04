@@ -23,55 +23,60 @@ fi
 
 PYTHON="${PYTHON:-python}"
 
+# PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
+# RESULTS_DIR="${PROJECT_DIR}/results/260826-01-2flies-wolbachia/filter1/shiftDist-levFilter/hyena/normalized"
+# PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wolbachia/partition.species.csv}"
+# # cut -d',' -f1,2,7 metadata.csv > partition.csv
+# SATC=$(ls ${RESULTS_DIR}/../../target1/*clusters/all_satc_merged.txt 2>/dev/null | head -1)
+# INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/infectant.tsv}"
+# # grep "fungus_species" ${RESULTS_DIR}/*summary_compactor.tsv > $INPUT_TSV
+# grep "Nedd8" ${RESULTS_DIR}/*summary_compactor.tsv | grep -v "residual" > $INPUT_TSV
+# OUTPUT_TSV="${OUTPUT_TSV:-${RESULTS_DIR}/distribution.tsv}"
+# HEATMAP_PDF="${HEATMAP_PDF:-${RESULTS_DIR}/distribution_heatmaps.pdf}"
+
+
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
-RESULTS_DIR="${PROJECT_DIR}/results/260826-01-2flies-wolbachia/filter1/shiftDist-levFilter/hyena/normalized"
-PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wolbachia/partition.species.csv}"
+RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus-cp/filter1/noCluster/hyena/normalized"
+PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
 # cut -d',' -f1,2,7 metadata.csv > partition.csv
 SATC=$(ls ${RESULTS_DIR}/../../target1/*clusters/all_satc_merged.txt 2>/dev/null | head -1)
-INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/infectant.tsv}"
+INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/manuscript.tsv}"
 # grep "fungus_species" ${RESULTS_DIR}/*summary_compactor.tsv > $INPUT_TSV
-grep "Nedd8" ${RESULTS_DIR}/*summary_compactor.tsv | grep -v "residual" > $INPUT_TSV
 OUTPUT_TSV="${OUTPUT_TSV:-${RESULTS_DIR}/distribution.tsv}"
 HEATMAP_PDF="${HEATMAP_PDF:-${RESULTS_DIR}/distribution_heatmaps.pdf}"
-HEATMAP_BASE_FONT_SIZE="${HEATMAP_BASE_FONT_SIZE:-14}"
-HEATMAP_ENTRY_FONT_SIZE="${HEATMAP_ENTRY_FONT_SIZE:-18}"
-HEATMAP_TOTAL_FONT_SIZE="${HEATMAP_TOTAL_FONT_SIZE:-14}"
-
-# INPUT_TSV="${INPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/fungus.tsv}"
-# grep "fungus_species" /scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv > $INPUT_TSV
-# PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
-# OUTPUT_TSV="${OUTPUT_TSV:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/distribution.tsv}"
-# HEATMAP_PDF="${HEATMAP_PDF:-/scratch/users/jiamuyu/proj_botryllus/flash/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized/distribution_heatmaps.pdf}"
 
 # Column settings. These can be header names or 1-based column indices.
-EXTENDOR_COL="${EXTENDOR_COL:-4}"
-ANNOTATION_COL="${ANNOTATION_COL:-20}"
-SAMPLE_COL="${SAMPLE_COL:-1}"
-MAJOR_COL="${MAJOR_COL:-3}"
-MINOR_COL="${MINOR_COL:-2}"
-MAJOR_ORDER="${MAJOR_ORDER:-no_wolbachia,reduced_wolbachia,wolbachia}"
-MINOR_ORDER="${MINOR_ORDER:-SRP179717,SRP243262,SRP295874,SRP423200}"
-MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-wolbachia_infection}"
-MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-sra_study}"
-MAJOR_COLORS="${MAJOR_COLORS:-no_wolbachia:#7F7F7F,reduced_wolbachia:#9467BD,wolbachia:#0072B2}"
 # EXTENDOR_COL="${EXTENDOR_COL:-4}"
 # ANNOTATION_COL="${ANNOTATION_COL:-20}"
 # SAMPLE_COL="${SAMPLE_COL:-1}"
-# MAJOR_COL="${MAJOR_COL:-2}"
-# MINOR_COL="${MINOR_COL:-3}"
-# MAJOR_ORDER="${MAJOR_ORDER:-no_fungus,bbassiana,ocamponoti-floridani}"
-# MINOR_ORDER="${MINOR_ORDER:-manipulation,timecourse}"
-# MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-fungus_species}"
-# MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-dataset}"
-# MAJOR_COLORS="${MAJOR_COLORS:-no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
+# MAJOR_COL="${MAJOR_COL:-3}"
+# MINOR_COL="${MINOR_COL:-2}"
+# MAJOR_ORDER="${MAJOR_ORDER:-no_wolbachia,reduced_wolbachia,wolbachia}"
+# MINOR_ORDER="${MINOR_ORDER:-SRP179717,SRP243262,SRP295874,SRP423200}"
+# MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-wolbachia_infection}"
+# MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-sra_study}"
+# MAJOR_COLORS="${MAJOR_COLORS:-no_wolbachia:#7F7F7F,reduced_wolbachia:#9467BD,wolbachia:#0072B2}"
+EXTENDOR_COL="${EXTENDOR_COL:-4}"
+ANNOTATION_COL="${ANNOTATION_COL:-20}"
+SAMPLE_COL="${SAMPLE_COL:-1}"
+MAJOR_COL="${MAJOR_COL:-2}"
+MINOR_COL="${MINOR_COL:-3}"
+MAJOR_ORDER="${MAJOR_ORDER:-no_fungus,bbassiana,ocamponoti-floridani}"
+MINOR_ORDER="${MINOR_ORDER:-manipulation,timecourse}"
+MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-fungus_species}"
+MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-dataset}"
+MAJOR_COLORS="${MAJOR_COLORS:-no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
 # no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00
 
-INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-yes}"
+INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-auto}"
 PARTITION_HAS_HEADER="${PARTITION_HAS_HEADER:-auto}"
 PARTITION_DELIMITER="${PARTITION_DELIMITER:-auto}"
 SATC_HAS_HEADER="${SATC_HAS_HEADER:-auto}"
 EXTENDOR_ORDER="${EXTENDOR_ORDER:-anchor-target}"
 LONG_OUTPUT="${LONG_OUTPUT:-}"
+HEATMAP_BASE_FONT_SIZE="${HEATMAP_BASE_FONT_SIZE:-14}"
+HEATMAP_ENTRY_FONT_SIZE="${HEATMAP_ENTRY_FONT_SIZE:-18}"
+HEATMAP_TOTAL_FONT_SIZE="${HEATMAP_TOTAL_FONT_SIZE:-14}"
 
 usage() {
   echo "Usage: sbatch distribute.sh [extra distribute.py args...]"

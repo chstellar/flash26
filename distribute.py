@@ -631,12 +631,12 @@ def matrix_max(*matrices):
 def adaptive_annotation_font(annotation):
     length = len(annotation or "")
     if length <= 80:
-        return 14
+        return 18
     if length <= 140:
-        return 13
+        return 17
     if length <= 220:
-        return 12
-    return 11
+        return 16
+    return 12
 
 
 def annotation_lines(annotation, width=150):
@@ -838,7 +838,7 @@ def write_heatmap_pdf(
                 sample_counts,
             )
 
-            width = max(17.0, min(24.0, 12.2 + 0.58 * len(minor_labels)))
+            width = max(24.0, min(24.0, 12.2 + 0.58 * len(minor_labels)))
             height = max(8.5, min(13.5, 6.4 + 0.42 * len(major_labels)))
             fig = plt.figure(figsize=(width, height), constrained_layout=False)
             outer = gridspec.GridSpec(
