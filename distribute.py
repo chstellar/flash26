@@ -159,6 +159,24 @@ def parse_args():
         help="DPI for the heatmap PDF. Default: 300.",
     )
     parser.add_argument(
+        "--heatmap_base_font_size",
+        type=float,
+        default=14,
+        help="Base font size for heatmap PDF labels. Default: 14.",
+    )
+    parser.add_argument(
+        "--heatmap_entry_font_size",
+        type=float,
+        default=18,
+        help="Font size for numbers inside the main heatmap entries. Default: 18.",
+    )
+    parser.add_argument(
+        "--heatmap_total_font_size",
+        type=float,
+        default=14,
+        help="Font size for numbers inside heatmap total entries. Default: 14.",
+    )
+    parser.add_argument(
         "--major_order",
         default="",
         help="Optional comma-separated major partition row order. Unlisted labels are appended.",
@@ -681,6 +699,7 @@ def draw_heatmap_panel(
     minor_display_name,
     cmap,
     colorbar_label,
+    args,
 ):
     import matplotlib.pyplot as plt
     from matplotlib import gridspec
@@ -716,24 +735,28 @@ def draw_heatmap_panel(
     fig.colorbar(image, cax=cax, label=colorbar_label)
 
     ax_main.set_xticks(range(len(minor_labels)))
-    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=9)
+    base_font = args.heatmap_base_font_size
+    entry_font = args.heatmap_entry_font_size
+    total_font = args.heatmap_total_font_size
+
+    ax_main.set_xticklabels(minor_labels, rotation=45, ha="right", fontsize=base_font)
     ax_main.set_yticks(range(len(major_labels)))
-    ax_main.set_yticklabels(major_labels, fontsize=9, fontweight="bold")
+    ax_main.set_yticklabels(major_labels, fontsize=base_font, fontweight="bold")
     for tick in ax_main.get_yticklabels():
         label = tick.get_text()
         if label in major_colors:
             tick.set_color(major_colors[label])
-    ax_main.set_xlabel(minor_display_name, fontsize=10)
-    ax_main.set_ylabel(major_display_name, fontsize=10)
+    ax_main.set_xlabel(minor_display_name, fontsize=base_font + 2)
+    ax_main.set_ylabel(major_display_name, fontsize=base_font + 2)
     ax_panel_title.axis("off")
-    ax_panel_title.text(0.0, 0.5, title, fontsize=14, weight="bold", ha="left", va="center")
+    ax_panel_title.text(0.0, 0.5, title, fontsize=base_font + 6, weight="bold", ha="left", va="center")
 
     ax_top.set_xticks(range(len(minor_labels)))
     ax_top.set_xticklabels([])
     ax_top.set_yticks([0])
-    ax_top.set_yticklabels(["minor total"], fontsize=7)
+    ax_top.set_yticklabels(["minor total"], fontsize=base_font - 1)
     ax_right.set_xticks([0])
-    ax_right.set_xticklabels(["major\ntotal"], fontsize=7)
+    ax_right.set_xticklabels(["major\ntotal"], fontsize=base_font - 1)
     ax_right.set_yticks(range(len(major_labels)))
     ax_right.set_yticklabels([])
 
@@ -742,9 +765,9 @@ def draw_heatmap_panel(
         for spine in axis.spines.values():
             spine.set_visible(False)
 
-    maybe_annotate(ax_main, matrix, vmax, fontsize=7)
-    maybe_annotate(ax_top, col_total_matrix, vmax, fontsize=6)
-    maybe_annotate(ax_right, row_total_matrix, vmax, fontsize=6)
+    maybe_annotate(ax_main, matrix, vmax, fontsize=entry_font)
+    maybe_annotate(ax_top, col_total_matrix, vmax, fontsize=total_font)
+    maybe_annotate(ax_right, row_total_matrix, vmax, fontsize=total_font)
     ax_footer.axis("off")
 
 
@@ -774,7 +797,7 @@ def write_heatmap_pdf(
 
     plt.rcParams.update(
         {
-            "font.size": 8,
+            "font.size": args.heatmap_base_font_size,
             "axes.linewidth": 0.6,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
@@ -816,7 +839,7 @@ def write_heatmap_pdf(
             )
 
             width = max(14.0, min(20.0, 9.8 + 0.48 * len(minor_labels)))
-            height = max(7.2, min(12.5, 5.2 + 0.30 * len(major_labels)))
+            height = max(8.5, min(13.5, 6.4 + 0.42 * len(major_labels)))
             fig = plt.figure(figsize=(width, height), constrained_layout=False)
             outer = gridspec.GridSpec(
                 2,
@@ -833,7 +856,7 @@ def write_heatmap_pdf(
                 0.0,
                 0.78,
                 f"Anchor: {row['_anchor']}",
-                fontsize=11,
+                fontsize=args.heatmap_base_font_size + 2,
                 weight="bold",
                 ha="left",
                 va="center",
@@ -843,7 +866,7 @@ def write_heatmap_pdf(
                 0.0,
                 0.52,
                 f"Target: {row['_target']}",
-                fontsize=11,
+                fontsize=args.heatmap_base_font_size + 2,
                 weight="bold",
                 ha="left",
                 va="center",
@@ -873,6 +896,7 @@ def write_heatmap_pdf(
                 args.minor_display_name,
                 "YlGnBu",
                 "samples",
+                args,
             )
             draw_heatmap_panel(
                 fig,
@@ -886,6 +910,7 @@ def write_heatmap_pdf(
                 args.minor_display_name,
                 "YlOrRd",
                 "count",
+                args,
             )
             pdf.savefig(fig, dpi=args.heatmap_dpi, bbox_inches="tight")
             plt.close(fig)

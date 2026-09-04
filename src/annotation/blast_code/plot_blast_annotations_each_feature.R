@@ -59,7 +59,6 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("plot_blast_annotations_each_feature.R build: compactor-seq-lookup-diagnostics-v12")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
@@ -254,6 +253,66 @@ get_max_abs_class <- function(classes_values, coef_values) {
     n <- min(length(coefs), length(classes))
     classes[which.max(abs(coefs[seq_len(n)]))]
   }, character(1))
+}
+
+class_interest_score <- function(label) {
+  normalized <- str_to_lower(as.character(label)) %>%
+    str_replace_all("[^a-z0-9]+", " ") %>%
+    str_squish()
+  negative_pattern <- paste(
+    c("uninfected", "untreated", "unexposed", "noninfected", "non infected",
+      "not infected", "not treated", "not exposed", "control", "mock", "placebo",
+      "healthy", "negative", "none", "absent", "baseline", "wild type",
+      "wildtype", "susceptible", "not given", "notgiven", "no"),
+    collapse="|"
+  )
+  positive_pattern <- paste(
+    c("infected", "infection", "treated", "treatment", "exposed", "case", "diseased", "positive",
+      "present", "resistant", "mutant", "yes"),
+    collapse="|"
+  )
+  if (str_detect(normalized, paste0("(^| )(", negative_pattern, ")($| )"))) {
+    return(-1)
+  }
+  if (str_detect(normalized, paste0("(^| )(", positive_pattern, ")($| )"))) {
+    return(1)
+  }
+  0
+}
+
+choose_interesting_binary_class <- function(classes, metadata_values=character()) {
+  classes <- unique(as.character(classes))
+  classes <- classes[!is.na(classes) & nchar(classes) > 0]
+  if (length(classes) != 2) {
+    return(classes)
+  }
+
+  scores <- vapply(classes, class_interest_score, numeric(1))
+  if (sum(scores == max(scores)) == 1) {
+    return(classes[which.max(scores)])
+  }
+
+  counts <- table(factor(as.character(metadata_values), levels=classes))
+  if (sum(counts == min(counts)) == 1) {
+    return(classes[which.min(counts)])
+  }
+
+  sort(classes)[2]
+}
+
+get_focus_class_beta <- function(tbl, focus_class, default_beta) {
+  first_values <- suppressWarnings(as.numeric(
+    tbl$first_coef[as.character(tbl$first_class) == focus_class]
+  ))
+  second_values <- suppressWarnings(as.numeric(
+    tbl$second_coef[as.character(tbl$second_class) == focus_class]
+  ))
+  candidates <- c(first_values, second_values)
+  candidates <- candidates[is.finite(candidates)]
+  if (length(candidates) == 0) {
+    return(default_beta)
+  }
+  candidates[which.max(abs(candidates))]
 }
 
 clean_blast_label <- function(x) {
@@ -1756,6 +1815,7 @@ for (category in categories) {
         first_class <- first_class[1]
       }
       all_classes = dt_sub[1,]$classes %>% unlist()
+      coefficient_classes <- all_classes
       classes_to_plot <- all_classes
       if (length(all_classes) == 1 && all_classes[1] == "residual" && !is_quantitative_target) {
         all_classes <- sort(unique(na.omit(as.character(my_metadata$metadata))))
@@ -1763,6 +1823,15 @@ for (category in categories) {
           classes_to_plot <- all_classes
         }
         first_class <- all_classes[1]
+      }
+      if (!is_quantitative_target && length(all_classes) == 2) {
+        focus_class <- choose_interesting_binary_class(all_classes, my_metadata$metadata)
+        classes_to_plot <- focus_class
+        if (length(coefficient_classes) == 2) {
+          first_beta <- get_focus_class_beta(dt_sub, focus_class, first_beta)
+        }
+        message(paste0("Binary target ", category, ": plotting only class '",
+                       focus_class, "'."))
       }
 
       seq_sub <- read_nth_cluster(opt$sample_seqs, as.numeric(str_extract(my_cluster, "\\d+")), opt$cluster_length)

@@ -56,7 +56,6 @@ option_list <- list(
 # parse command line arguments
 opt <- parse_args(OptionParser(option_list = option_list))
 
-cat("select_anchors_filter1.R build: disk-streaming-topn-v1\n")
 
 # check that input file exists
 if (!file.exists(opt$input) || is.null(opt$output)) {

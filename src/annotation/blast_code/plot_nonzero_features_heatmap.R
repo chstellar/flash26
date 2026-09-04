@@ -32,7 +32,6 @@ option_list <- list(
 opt_parser <- OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-message("plot_nonzero_features_heatmap.R build: all-samples-title-v4")
 
 # Check if all required arguments are provided
 if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
@@ -134,6 +133,87 @@ parse_coef_values <- function(x) {
 
 parse_class_values <- function(x) {
   parse_vector_text(x)
+}
+
+class_interest_score <- function(label) {
+  normalized <- str_to_lower(as.character(label)) %>%
+    str_replace_all("[^a-z0-9]+", " ") %>%
+    str_squish()
+  negative_pattern <- paste(
+    c("uninfected", "untreated", "unexposed", "noninfected", "non infected",
+      "not infected", "not treated", "not exposed", "control", "mock", "placebo",
+      "healthy", "negative", "none", "absent", "baseline", "wild type",
+      "wildtype", "susceptible", "not given", "notgiven", "no"),
+    collapse="|"
+  )
+  positive_pattern <- paste(
+    c("infected", "infection", "treated", "treatment", "exposed", "case", "diseased", "positive",
+      "present", "resistant", "mutant", "yes"),
+    collapse="|"
+  )
+  if (str_detect(normalized, paste0("(^| )(", negative_pattern, ")($| )"))) {
+    return(-1)
+  }
+  if (str_detect(normalized, paste0("(^| )(", positive_pattern, ")($| )"))) {
+    return(1)
+  }
+  0
+}
+
+choose_interesting_binary_class <- function(classes, metadata_values=character()) {
+  classes <- unique(as.character(classes))
+  classes <- classes[!is.na(classes) & nchar(classes) > 0]
+  if (length(classes) != 2) {
+    return(classes)
+  }
+
+  scores <- vapply(classes, class_interest_score, numeric(1))
+  if (sum(scores == max(scores)) == 1) {
+    return(classes[which.max(scores)])
+  }
+
+  counts <- table(factor(as.character(metadata_values), levels=classes))
+  if (sum(counts == min(counts)) == 1) {
+    return(classes[which.min(counts)])
+  }
+
+  sort(classes)[2]
+}
+
+reduce_binary_class_specs <- function(specs, metadata, confusion_log=NULL) {
+  if (nrow(specs) == 0) {
+    return(specs)
+  }
+
+  keys <- specs %>% distinct(metadata_category, matrix, kind)
+  retained <- vector("list", nrow(keys))
+  for (i in seq_len(nrow(keys))) {
+    key <- keys[i,]
+    current <- specs %>%
+      filter(metadata_category == key$metadata_category,
+             matrix == key$matrix,
+             kind == key$kind)
+    classes <- unique(as.character(current$focus_class))
+    classes <- classes[!is.na(classes) & nchar(classes) > 0]
+
+    if (key$kind == "classification" && length(classes) == 2) {
+      metadata_values <- character()
+      if (!is.null(confusion_log) &&
+          all(c("row_type", "metadata_category", "true_label") %in% colnames(confusion_log))) {
+        metadata_values <- confusion_log %>%
+          filter(row_type == "sample", metadata_category == key$metadata_category) %>%
+          pull(true_label)
+      } else if (key$metadata_category %in% colnames(metadata)) {
+        metadata_values <- metadata[[key$metadata_category]]
+      }
+      selected_class <- choose_interesting_binary_class(classes, metadata_values)
+      message(paste0("Binary target ", key$metadata_category,
+                     ": generating heatmaps only for class '", selected_class, "'."))
+      current <- current %>% filter(focus_class == selected_class)
+    }
+    retained[[i]] <- current
+  }
+  bind_rows(retained)
 }
 
 safe_file_label <- function(x) {
@@ -379,6 +459,8 @@ if (!is.null(confusion_log) &&
            kind = ifelse(class_label == "residual", "regression", "classification")) %>%
     select(metadata_category, matrix, focus_class, kind)
 }
+
+specs <- reduce_binary_class_specs(specs, all_metadata, confusion_log)
 
 for (i in seq_len(nrow(specs))) {
   spec <- specs[i,]

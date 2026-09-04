@@ -63,7 +63,6 @@ if (is.null(opt$nonzero_annotations) || is.null(opt$output)) {
   stop("All arguments must be supplied", call. = FALSE)
 }
 
-message("split.R build: compactor-aware split replot v1")
 
 if (is.null(opt$taxid_name_cache) || is.na(opt$taxid_name_cache) || nchar(opt$taxid_name_cache) == 0) {
   opt$taxid_name_cache <- file.path(dirname(opt$output), "blast_taxid_species_cache.tsv")
