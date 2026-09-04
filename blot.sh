@@ -8,18 +8,11 @@
 #SBATCH --mail-user=chesteryu@stanford.edu
 
 set -euo pipefail
-ml purge
 
+ml purge
 FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
-if [[ -x "$FLASH_CONDA/bin/conda" ]]; then
-  eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
-fi
-if command -v mamba >/dev/null 2>&1; then
-  eval "$(mamba shell hook --shell bash)"
-  mamba activate "${FLASH_R_ENV:-default-R_env}"
-elif command -v conda >/dev/null 2>&1; then
-  conda activate "${FLASH_R_ENV:-default-R_env}"
-fi
+eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
+conda activate "${FLASH_R_ENV:-default-R_env}"
 
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 
