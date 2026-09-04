@@ -37,6 +37,10 @@ option_list <- list(
               help = "Plot title font size for BLOT figures. Default: 14."),
   make_option(c("--plot_subtitle_size"), type = "numeric", default = 10,
               help = "Plot subtitle font size for BLOT figures. Default: 10."),
+  make_option(c("--class_order"), type = "character", default = "",
+              help = "Comma-separated class order for per-dot count labels."),
+  make_option(c("--class_colors"), type = "character", default = "",
+              help = "Comma-separated class:hex color mapping for class-specific plots."),
   make_option(c("--products"), action = "store_true", default = FALSE,
               help = "Accepted for wrapper compatibility."),
   make_option(c("--plotter"), type = "character", default = "",
@@ -113,6 +117,27 @@ parse_cluster_list <- function(x) {
     stop("--clusters did not contain any comma-delimited cluster IDs.", call. = FALSE)
   }
   normalize_cluster_id(clusters)
+}
+
+parse_comma_list <- function(x) {
+  values <- trimws(unlist(strsplit(safe_text(x), ",", fixed = TRUE), use.names = FALSE))
+  values[nzchar(values)]
+}
+
+parse_color_mapping <- function(x) {
+  values <- parse_comma_list(x)
+  out <- character()
+  for (value in values) {
+    if (!str_detect(value, ":")) {
+      next
+    }
+    key <- str_trim(str_replace(value, ":.*$", ""))
+    color <- str_trim(str_replace(value, "^[^:]*:", ""))
+    if (nzchar(key) && nzchar(color)) {
+      out[[key]] <- color
+    }
+  }
+  out
 }
 
 detect_metadata_col <- function(dt) {
@@ -211,6 +236,35 @@ clean_label_key <- function(x) {
   str_squish(str_to_lower(x))
 }
 
+display_blast_label <- function(x) {
+  x <- safe_text(x)
+  x <- str_remove_all(x, "\\s*\\(COMPACTOR\\)")
+  str_squish(x)
+}
+
+ordered_class_columns <- function(class_cols) {
+  requested <- parse_comma_list(opt$class_order)
+  ordered <- c(requested, setdiff(class_cols, requested))
+  ordered[nzchar(ordered)]
+}
+
+class_color_for <- function(class_name) {
+  colors <- parse_color_mapping(opt$class_colors)
+  if (class_name %in% names(colors)) {
+    return(colors[[class_name]])
+  }
+  "red"
+}
+
+sample_size_breaks <- function(values) {
+  max_value <- max(coerce_num(values), na.rm = TRUE)
+  if (!is.finite(max_value) || max_value <= 1) {
+    return(1)
+  }
+  powers <- 10^(0:ceiling(log10(max_value)))
+  powers[powers <= max_value]
+}
+
 find_compactor_metric_files <- function(results_dir, summary_path) {
   candidates <- list.files(results_dir, pattern = "compactor.*\\.tsv$", full.names = TRUE)
   candidates <- candidates[file.exists(candidates) & file.info(candidates)$size > 0]
@@ -279,9 +333,12 @@ backfill_metrics_by_keys <- function(dt, lookup, key_cols) {
   if (length(present_keys) == 0 || nrow(lookup) == 0) {
     return(dt)
   }
+  make_join_key <- function(df) {
+    do.call(paste, c(as.data.frame(df[, present_keys, drop = FALSE]), sep = "\r"))
+  }
   lookup <- lookup %>%
     filter(if_all(all_of(present_keys), ~ .x != "" & !is.na(.x))) %>%
-    mutate(.join_key = do.call(paste, c(across(all_of(present_keys)), sep = "\r"))) %>%
+    mutate(.join_key = make_join_key(.)) %>%
     group_by(.join_key) %>%
     summarise(
       lookup_identity = first_metric_text(lookup_identity),
@@ -292,7 +349,7 @@ backfill_metrics_by_keys <- function(dt, lookup, key_cols) {
     return(dt)
   }
   dt_key <- dt %>%
-    mutate(.join_key = do.call(paste, c(across(all_of(present_keys)), sep = "\r")))
+    mutate(.join_key = make_join_key(.))
   idx <- match(dt_key$.join_key, lookup$.join_key)
   matched_identity <- rep("", nrow(dt_key))
   matched_qcovs <- rep("", nrow(dt_key))
@@ -476,7 +533,7 @@ prepare_point_labels <- function(dt) {
     "qcovs", "direct_qcovs", "direct_blastp_qcovs", "direct_blastn_qcovs",
     "outside_taxid_qcovs", "compactor_summary_qcovs"
   )
-  for (col in c("Blast Label", "label_identity", "label_coverage", "label_quality",
+  for (col in c("Blast Label", "label_identity", "label_coverage", "label_quality", "class_count_label",
                 identity_candidates, coverage_candidates)) {
     if (!col %in% colnames(dt)) {
       dt[[col]] <- ""
@@ -486,7 +543,7 @@ prepare_point_labels <- function(dt) {
   dt$effective_coverage <- first_available_metric(dt, coverage_candidates)
   dt %>%
     mutate(
-      blast_label = safe_text(`Blast Label`),
+      blast_label = display_blast_label(`Blast Label`),
       label_identity = fill_label_metric(label_identity, effective_identity),
       label_coverage = fill_label_metric(label_coverage, effective_coverage),
       label_quality = safe_text(label_quality),
@@ -499,6 +556,7 @@ prepare_point_labels <- function(dt) {
       ),
       blast_label = ifelse(blast_label == "", "NO MATCH", blast_label),
       point_label = str_wrap(str_trunc(blast_label, width = 80, side = "right"), width = 28),
+      class_count_label = safe_text(class_count_label),
       point_label = ifelse(
         !is_placeholder_label(blast_label) &
           nzchar(label_quality) &
@@ -506,8 +564,13 @@ prepare_point_labels <- function(dt) {
         paste(point_label, label_quality, sep = "\n"),
         point_label
       ),
+      point_label = ifelse(
+        nzchar(class_count_label),
+        paste(point_label, class_count_label, sep = "\n"),
+        point_label
+      ),
       point_label_color = case_when(
-        str_detect(blast_label, "\\(OTHER TAXA\\)") ~ "outside_taxid",
+        str_detect(`Blast Label`, "\\(OTHER TAXA\\)") ~ "outside_taxid",
         is_placeholder_label(blast_label) ~ "no_taxon",
         TRUE ~ "within_taxid"
       )
@@ -533,12 +596,16 @@ filter_summary <- function(path, metadata_column, selected_clusters) {
     message("Using compactor summary column 19 as qcovs/coverage.")
   }
   dt[, cluster_normalized := normalize_cluster_id(get(cluster_col))]
-  filtered <- dt[get(metadata_col) == metadata_column & cluster_normalized %in% selected_clusters]
+  residual_prefix <- paste0(metadata_column, "_residual_")
+  dt[, metadata_selected := get(metadata_col) == metadata_column |
+       startsWith(as.character(get(metadata_col)), residual_prefix)]
+  filtered <- dt[metadata_selected == TRUE & cluster_normalized %in% selected_clusters]
   if (nrow(filtered) == 0) {
-    available_clusters <- unique(dt[get(metadata_col) == metadata_column, cluster_normalized])
+    available_clusters <- unique(dt[metadata_selected == TRUE, cluster_normalized])
     available_clusters <- head(available_clusters[!is.na(available_clusters)], 20)
     stop(
       "No rows matched metadata_column=", metadata_column,
+      " or residual categories beginning ", residual_prefix,
       " and clusters=", paste(selected_clusters, collapse = ","),
       " in ", path,
       ". Example clusters for this metadata column: ",
@@ -550,11 +617,14 @@ filter_summary <- function(path, metadata_column, selected_clusters) {
   missing_clusters <- setdiff(selected_clusters, matched_counts$cluster_normalized)
   message("Matched rows by requested cluster in ", basename(path), ": ",
           paste(paste0(matched_counts$cluster_normalized, "=", matched_counts$N), collapse = ", "))
+  matched_categories <- sort(unique(filtered[[metadata_col]]))
+  message("Included metadata categories: ", paste(matched_categories, collapse = ", "))
   if (length(missing_clusters) > 0) {
     message("Requested cluster(s) with no rows for ", metadata_column, ": ",
             paste(missing_clusters, collapse = ","))
   }
   filtered[, cluster_normalized := NULL]
+  filtered[, metadata_selected := NULL]
   if (metadata_col != "metadata_category") {
     setnames(filtered, metadata_col, "metadata_category")
   }
@@ -565,7 +635,7 @@ filter_summary <- function(path, metadata_column, selected_clusters) {
 }
 
 make_histogram_label <- function(label) {
-  label <- collapse_unique_labels(label, sep = ",")
+  label <- collapse_unique_labels(display_blast_label(label), sep = ",")
   label <- str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")
   str_wrap(str_trunc(label, width = 120, side = "right"), width = 38)
 }
@@ -691,6 +761,18 @@ prepare_detail_data <- function(dt) {
         total_samples,
         rowSums(across(all_of(class_cols)), na.rm = TRUE)
       ))
+    count_cols <- ordered_class_columns(class_cols)
+    for (missing_col in setdiff(count_cols, colnames(dt))) {
+      dt[[missing_col]] <- 0
+    }
+    dt$class_count_label <- apply(
+      as.data.frame(dt[, count_cols, drop = FALSE]),
+      1,
+      function(x) paste(as.integer(replace_na(coerce_num(x), 0)), collapse = "/")
+    )
+    message("Class-count label order: ", paste(count_cols, collapse = "/"))
+  } else {
+    dt$class_count_label <- ""
   }
   list(data = prepare_point_labels(dt), class_cols = class_cols)
 }
@@ -715,6 +797,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
     classes_to_plot <- focus
     message("Binary target ", category, ": plotting only class '", focus, "'.")
   }
+  count_order_label <- paste(ordered_class_columns(class_cols), collapse = "/")
 
   for (class_to_plot in classes_to_plot) {
     if (!class_to_plot %in% colnames(p_sub)) {
@@ -724,6 +807,12 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       mutate(class_proportion = ifelse(total_samples > 0,
                                        .data[[class_to_plot]] / total_samples,
                                        NA_real_))
+    total_sample_breaks <- sample_size_breaks(p_class$total_samples)
+    total_sample_limit <- max(coerce_num(p_class$total_samples), na.rm = TRUE)
+    if (!is.finite(total_sample_limit) || total_sample_limit < 1) {
+      total_sample_limit <- 1
+    }
+    total_sample_limit <- max(total_sample_limit, 1.05)
     p2 <- ggplot(
       p_class,
       aes(x = embedding, y = lev_dist, fill = class_proportion,
@@ -735,8 +824,8 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       scale_size_continuous(
         trans = "log",
         name = "Total Samples",
-        breaks = c(1, 10, 100, 1000, 10000),
-        limits = c(1, 10000),
+        breaks = total_sample_breaks,
+        limits = c(1, total_sample_limit),
         labels = scales::label_log()
       ) +
       geom_text_repel(
@@ -766,7 +855,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
         force_pull = 0.08
       ) +
       scale_fill_gradient(paste0("Proportion\n", class_to_plot),
-                          low = "blue", high = "red", limits = c(0, 1)) +
+                          low = "grey92", high = class_color_for(class_to_plot), limits = c(0, 1)) +
       scale_color_manual(
         breaks = c("within_taxid", "outside_taxid", "no_taxon"),
         values = c("within_taxid" = histogram_bar_color,
@@ -787,7 +876,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       xlab(expression("Embedding" ~ "\u00D7" ~ beta)) +
       ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
       ggtitle(paste(category, cluster_id, sep = " | "),
-              subtitle = paste("Color: proportion", class_to_plot)) +
+              subtitle = paste("Color: proportion", class_to_plot, "| counts:", count_order_label)) +
       theme(
         panel.grid.minor.y = element_blank(),
         axis.title = element_text(size = opt$axis_title_size),

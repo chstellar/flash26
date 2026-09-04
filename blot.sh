@@ -39,6 +39,8 @@ AXIS_TITLE_SIZE="${AXIS_TITLE_SIZE:-16}"
 AXIS_TEXT_SIZE="${AXIS_TEXT_SIZE:-12}"
 PLOT_TITLE_SIZE="${PLOT_TITLE_SIZE:-16}"
 PLOT_SUBTITLE_SIZE="${PLOT_SUBTITLE_SIZE:-11}"
+CLASS_ORDER="${CLASS_ORDER:-no_fungus,not_given,bbassiana,ocamponoti-floridani}"
+CLASS_COLORS="${CLASS_COLORS:-no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
 
 usage() {
   echo "Usage: sbatch blot.sh [extra blot.R args...]"
@@ -57,6 +59,8 @@ usage() {
   echo "  AXIS_TEXT_SIZE=$AXIS_TEXT_SIZE"
   echo "  PLOT_TITLE_SIZE=$PLOT_TITLE_SIZE"
   echo "  PLOT_SUBTITLE_SIZE=$PLOT_SUBTITLE_SIZE"
+  echo "  CLASS_ORDER=$CLASS_ORDER"
+  echo "  CLASS_COLORS=$CLASS_COLORS"
   echo
   echo "Common overrides:"
   echo "  sbatch --export=ALL,METADATA_COLUMN=fungus_species,CLUSTERS=12\\,34,GENE_LABEL_SIZE=5,AXIS_TITLE_SIZE=18 blot.sh"
@@ -79,4 +83,6 @@ Rscript --vanilla "$PROJECT_DIR/blot.R" \
   --axis_text_size "$AXIS_TEXT_SIZE" \
   --plot_title_size "$PLOT_TITLE_SIZE" \
   --plot_subtitle_size "$PLOT_SUBTITLE_SIZE" \
+  --class_order "$CLASS_ORDER" \
+  --class_colors "$CLASS_COLORS" \
   "$@"
