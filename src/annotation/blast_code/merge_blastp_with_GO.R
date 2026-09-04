@@ -61,7 +61,18 @@ add_comprehensive_annotation_columns <- function(tbl) {
       tbl[[column]] <- rep(defaults[[column]], nrow(tbl))
     }
   }
-  tbl
+  scientific_name <- str_squish(as.character(tbl$sscinames))
+  scientific_name[scientific_name == "" | toupper(scientific_name) %in% c("NA", "N/A", "NONE", "NAN")] <- NA_character_
+  title_species <- str_match(as.character(tbl$stitle), "\\[([^\\]]+)\\]\\s*$")[,2]
+  tbl$species_origin <- coalesce(as.character(tbl$species_origin), scientific_name, title_species)
+  canonical_columns <- c(
+    "query", "subject", "sacc", "identity", "alignment_length", "mismatches",
+    "gap_opens", "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue",
+    "qcovs", "qframe", "sgi", "slen", "staxids", "sscinames", "stitle",
+    "species_origin", "NCBI_protein_accession", "UniProt_accession", "method", "GO",
+    "features", "features_10000_window", "features_all", "blast_mode"
+  )
+  tbl %>% select(any_of(canonical_columns), everything())
 }
 
 read_blastp_file <- function(file) {

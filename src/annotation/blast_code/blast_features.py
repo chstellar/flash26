@@ -47,8 +47,9 @@ BLASTN_COLUMNS_LEGACY = [
     "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "sgi",
     "sacc", "slen", "staxids", "stitle",
 ]
-BLAST_FEATURE_COLUMNS = BLASTN_COLUMNS + [
+BLAST_FEATURE_COLUMNS = BLASTN_COLUMNS[:13] + [
     "qframe",
+] + BLASTN_COLUMNS[13:] + [
     "species_origin",
     "NCBI_protein_accession",
     "UniProt_accession",
