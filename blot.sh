@@ -36,6 +36,7 @@ COMPACTOR_SUMMARY="${COMPACTOR_SUMMARY:-${RESULTS_DIR}/260819-00-cfloridanus-fun
 CLUSTERS_FILE="${CLUSTERS_FILE:-${PROJECT_DIR}/results/${DATASET}/260819-00-cfloridanus-fungus/filter1/noCluster/260819-00-cfloridanus-fungus_sequences_per_cluster_top2000-clusters_target1_k41_s41_annotated.tsv}"
 FEATHER_FILE="${FEATHER_FILE:-${PROJECT_DIR}/results/${DATASET}/260819-00-cfloridanus-fungus_hyena_top_variance_features_for_glmnet_filter1_noCluster_top2000_target1_k41_s41_normalized.feather}"
 SAMPLE_SEQS="${SAMPLE_SEQS:-${PROJECT_DIR}/results/${DATASET}/260819-00-cfloridanus-fungus_prepared_sequences_filter1_noCluster_top2000_target1_k41_s41_sample_sequences.tsv}"
+CLUSTER_LENGTH="${CLUSTER_LENGTH:-41}"
 
 usage() {
   echo "Usage: sbatch blot.sh [extra blot.R args...]"
@@ -51,6 +52,7 @@ usage() {
   echo "  CLUSTERS_FILE=$CLUSTERS_FILE"
   echo "  FEATHER_FILE=$FEATHER_FILE"
   echo "  SAMPLE_SEQS=$SAMPLE_SEQS"
+  echo "  CLUSTER_LENGTH=$CLUSTER_LENGTH"
   echo
   echo "Common overrides:"
   echo "  sbatch --export=ALL,METADATA_COLUMN=fungus_species,CLUSTERS=12\\,34 blot.sh"
@@ -69,5 +71,6 @@ Rscript --vanilla "$PROJECT_DIR/blot.R" \
   --clusters_file "$CLUSTERS_FILE" \
   --feather_file "$FEATHER_FILE" \
   --sample_seqs "$SAMPLE_SEQS" \
+  --cluster_length "$CLUSTER_LENGTH" \
   --num_hits "$NUM_HITS" \
   "$@"

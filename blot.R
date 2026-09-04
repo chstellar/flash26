@@ -165,33 +165,6 @@ filter_compactor_summary <- function(input_path, output_path, metadata_column, s
   filtered
 }
 
-filter_annotation_table <- function(input_path, output_path, metadata_column, selected_summary,
-                                    allow_empty = FALSE) {
-  dt <- fread(input_path)
-  metadata_col <- detect_metadata_col(dt)
-  if (!"feature" %in% colnames(dt)) {
-    stop(input_path, " is missing required column: feature", call. = FALSE)
-  }
-  selected_features <- unique(selected_summary$feature)
-  filtered <- dt[get(metadata_col) == metadata_column & feature %in% selected_features]
-  if (nrow(filtered) == 0 && !allow_empty) {
-    stop("No rows in ", input_path, " matched the features selected from the compactor summary.",
-         call. = FALSE)
-  }
-  feature_cluster_map <- unique(selected_summary[, .(feature, selected_cluster = cluster)])
-  filtered <- merge(filtered, feature_cluster_map, by = "feature", all.x = TRUE, sort = FALSE)
-  if ("cluster" %in% colnames(filtered)) {
-    filtered[!is.na(selected_cluster), cluster := selected_cluster]
-    filtered[, selected_cluster := NULL]
-  } else {
-    setnames(filtered, "selected_cluster", "cluster")
-  }
-  fwrite(filtered, output_path, sep = "\t")
-  message("Wrote ", nrow(filtered), " filtered row(s) from ", basename(input_path),
-          " using features selected from the compactor summary.")
-  filtered
-}
-
 find_compactor_summary <- function(results_dir) {
   paths <- list.files(
     results_dir,
@@ -199,6 +172,71 @@ find_compactor_summary <- function(results_dir) {
     full.names = TRUE
   )
   pick_one(paths, "compactor plot summary")
+}
+
+write_blot_plotter <- function(plotter, output_path) {
+  code <- readLines(plotter, warn = FALSE)
+  hook <- c(
+    "",
+    "blot_selection_path <- Sys.getenv('BLOT_SELECTION_TSV')",
+    "blot_normalize_cluster_id <- function(x) {",
+    "  x <- trimws(as.character(x))",
+    "  x <- sub('^cluster_', '', x, ignore.case = TRUE)",
+    "  x <- sub('\\\\.0+$', '', x)",
+    "  paste0('cluster_', x)",
+    "}",
+    "blot_selection <- data.table()",
+    "if (nzchar(blot_selection_path) && file.exists(blot_selection_path)) {",
+    "  blot_selection <- fread(blot_selection_path) %>%",
+    "    mutate(metadata_category = as.character(metadata_category),",
+    "           cluster = blot_normalize_cluster_id(cluster),",
+    "           feature = as.character(feature)) %>%",
+    "    distinct(metadata_category, cluster, feature)",
+    "  message('BLOT selection loaded: ', nrow(blot_selection), ' metadata/cluster/feature row(s).')",
+    "}",
+    "blot_filter_annotation_table <- function(tbl, label) {",
+    "  if (nrow(blot_selection) == 0) {",
+    "    return(tbl)",
+    "  }",
+    "  if (!all(c('metadata_category', 'feature') %in% colnames(tbl))) {",
+    "    stop('BLOT cannot filter ', label, ' table because it lacks metadata_category or feature.')",
+    "  }",
+    "  keep <- tbl %>%",
+    "    mutate(metadata_category = as.character(metadata_category),",
+    "           feature = as.character(feature)) %>%",
+    "    inner_join(blot_selection, by = c('metadata_category', 'feature'), relationship = 'many-to-many')",
+    "  if ('cluster.x' %in% colnames(keep)) {",
+    "    keep <- keep %>% select(-cluster.x) %>% rename(cluster = cluster.y)",
+    "  }",
+    "  if ('cluster.y' %in% colnames(keep)) {",
+    "    keep <- keep %>% rename(cluster = cluster.y)",
+    "  }",
+    "  message('BLOT kept ', nrow(keep), ' row(s) from ', label, ' using compactor-summary-selected features.')",
+    "  keep",
+    "}",
+    ""
+  )
+  parse_idx <- which(code == "opt <- parse_args(opt_parser)")
+  if (length(parse_idx) != 1) {
+    stop("Could not find parse_args hook point in plotter: ", plotter, call. = FALSE)
+  }
+  code <- append(code, hook, after = parse_idx)
+  code <- sub(
+    "^dt <- fread\\(opt\\$nonzero_annotations\\)$",
+    "dt <- fread(opt$nonzero_annotations)\ndt <- blot_filter_annotation_table(dt, 'blastp annotated nonzero')",
+    code
+  )
+  code <- sub(
+    "^if \\(TRUE\\) \\{dt2 <- fread\\(gsub\\(\"blastp_annotated\", \"blast_annotated\", opt\\$nonzero_annotations\\)\\)\\}$",
+    "if (TRUE) {dt2 <- fread(gsub(\"blastp_annotated\", \"blast_annotated\", opt$nonzero_annotations))}\ndt2 <- blot_filter_annotation_table(dt2, 'blast annotated nonzero')",
+    code
+  )
+  if (!any(grepl("dt <- blot_filter_annotation_table\\(dt,", code)) ||
+      !any(grepl("dt2 <- blot_filter_annotation_table\\(dt2,", code))) {
+    stop("Could not inject BLOT filters into plotter: ", plotter, call. = FALSE)
+  }
+  writeLines(code, output_path)
+  normalizePath(output_path, mustWork = TRUE)
 }
 
 derive_run_tokens <- function(nonzero_path) {
@@ -318,17 +356,19 @@ work_dir <- tempfile("blot_", tmpdir = dirname(opt$output))
 dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
 on.exit(unlink(work_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
-filtered_blastp <- file.path(work_dir, "selected_nonzero_coefficients_blastp_annotated.tsv")
-filtered_blastn <- file.path(work_dir, "selected_nonzero_coefficients_blast_annotated.tsv")
+filtered_blastp <- file.path(work_dir, basename(nonzero))
+filtered_blastn <- file.path(work_dir, basename(blastn))
 filtered_compactor_summary <- file.path(work_dir, "selected_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv")
+blot_plotter <- file.path(work_dir, "plot_blast_annotations_each_feature_blot.R")
 filtered_summary <- filter_compactor_summary(
   compactor_summary,
   filtered_compactor_summary,
   opt$metadata_column,
   selected_clusters
 )
-filtered <- filter_annotation_table(nonzero, filtered_blastp, opt$metadata_column, filtered_summary)
-filter_annotation_table(blastn, filtered_blastn, opt$metadata_column, filtered_summary, allow_empty = TRUE)
+file.copy(nonzero, filtered_blastp, overwrite = TRUE)
+file.copy(blastn, filtered_blastn, overwrite = TRUE)
+blot_plotter <- write_blot_plotter(plotter, blot_plotter)
 
 message("Selected ", nrow(filtered_summary), " compactor summary row(s) for ",
         opt$metadata_column, " / ", paste(selected_clusters, collapse = ","))
@@ -336,9 +376,10 @@ message("Using clusters: ", clusters_file)
 message("Using feather: ", feather_file)
 message("Using sample sequences: ", sample_seqs)
 message("Using filtered compactor summary: ", filtered_compactor_summary)
+message("Using temporary regular plotter with BLOT selection hook: ", blot_plotter)
 
 cmd_args <- c(
-  "--vanilla", plotter,
+  "--vanilla", blot_plotter,
   "--nonzero_annotations", filtered_blastp,
   "--clusters", clusters_file,
   "--feather_file", feather_file,
@@ -355,7 +396,7 @@ if (!is.na(opt$cluster_length)) {
   cmd_args <- c(cmd_args, "--cluster_length", as.character(opt$cluster_length))
 }
 
-status <- system2("Rscript", cmd_args)
+status <- system2("Rscript", cmd_args, env = paste0("BLOT_SELECTION_TSV=", filtered_compactor_summary))
 if (!identical(status, 0L)) {
   stop("Underlying blast plotter failed with exit status ", status, call. = FALSE)
 }
