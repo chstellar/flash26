@@ -174,6 +174,21 @@ find_compactor_summary <- function(results_dir) {
   pick_one(paths, "compactor plot summary")
 }
 
+validate_clusters_file <- function(path) {
+  header <- fread(path, nrows = 0)
+  required <- c("cluster", "kmer", "seq")
+  missing <- setdiff(required, colnames(header))
+  if (length(missing) > 0) {
+    stop(
+      "--clusters_file must be the regular sequences_per_cluster TSV with columns ",
+      paste(required, collapse = ", "),
+      ". Missing: ", paste(missing, collapse = ", "),
+      ". Current file: ", path,
+      call. = FALSE
+    )
+  }
+}
+
 write_blot_plotter <- function(plotter, output_path) {
   code <- readLines(plotter, warn = FALSE)
   hook <- c(
@@ -351,6 +366,7 @@ sample_seqs <- if (!is_blank(opt$sample_seqs)) {
 } else {
   find_by_context(project_dir, results_dir, nonzero, "sample_seqs")
 }
+validate_clusters_file(clusters_file)
 
 dir.create(dirname(opt$output), recursive = TRUE, showWarnings = FALSE)
 work_dir <- tempfile("blot_", tmpdir = dirname(opt$output))
@@ -367,8 +383,8 @@ filtered_summary <- filter_compactor_summary(
   opt$metadata_column,
   selected_clusters
 )
-file.copy(nonzero, filtered_blastp, overwrite = TRUE)
-file.copy(blastn, filtered_blastn, overwrite = TRUE)
+invisible(file.copy(nonzero, filtered_blastp, overwrite = TRUE))
+invisible(file.copy(blastn, filtered_blastn, overwrite = TRUE))
 blot_plotter <- write_blot_plotter(plotter, blot_plotter)
 
 message("Selected ", nrow(filtered_summary), " compactor summary row(s) for ",
