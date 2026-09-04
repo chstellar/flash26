@@ -55,11 +55,19 @@ DEFAULT_PROTEIN_DB = "refseq_protein"
 DEFAULT_OUTPUT_STEM = "resfungi_compactors"
 REPO_ROOT = Path(__file__).resolve().parent
 
+COMPREHENSIVE_ANNOTATION_COLUMNS = [
+    "query", "subject", "sacc", "identity", "alignment_length", "mismatches", "gap_opens",
+    "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qcovs", "qframe",
+    "sgi", "slen", "staxids", "sscinames", "stitle", "species_origin",
+    "NCBI_protein_accession", "UniProt_accession", "method", "GO",
+    "features", "features_10000_window", "features_all", "blast_mode",
+]
 BLAST_DETAIL_COLUMNS = [
-    "subject", "sacc", "alignment_length", "mismatches", "gap_opens",
-    "q_start", "q_end", "s_start", "s_end", "sstrand", "evalue", "qframe",
-    "sgi", "slen", "stitle", "method", "GO", "features",
-    "features_10000_window", "features_all",
+    column for column in COMPREHENSIVE_ANNOTATION_COLUMNS
+    if column not in {
+        "query", "identity", "qcovs", "staxids", "sscinames", "species_origin",
+        "NCBI_protein_accession", "UniProt_accession", "blast_mode",
+    }
 ]
 
 
@@ -341,24 +349,30 @@ def seed_annotations_path(output_dir, stem):
 
 def write_fasta(records, output_fasta):
     output_fasta.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_fasta, "w", newline="") as handle:
-        for record in records:
-            header = (
-                f"{record['query']} anchor={record['anchor']} length={record['length']}"
-                f" exact_support={record['exact_support']:g} row={record['row_index']}"
-                f" source={Path(record['source_file']).name}"
-            )
-            query_sequence = compactor_blast_query_sequence(record)
-            handle.write(f">{header}\n{query_sequence}\n")
+    lines = []
+    for record in records:
+        header = (
+            f"{record['query']} anchor={record['anchor']} length={record['length']}"
+            f" exact_support={record['exact_support']:g} row={record['row_index']}"
+            f" source={Path(record['source_file']).name}"
+        )
+        lines.extend((f">{header}", compactor_blast_query_sequence(record)))
+    content = "\n".join(lines) + ("\n" if lines else "")
+    if output_fasta.exists() and output_fasta.read_text() == content:
+        return
+    output_fasta.write_text(content)
 
 
 def compactor_blast_query_sequence(record):
     """Return the nucleotide query used for COMPACTOR BLAST: anchor then extender."""
-    explicit = clean_sequence_candidate(record.get("compactor_blast_query_sequence"))
+    explicit_value = record.get("compactor_blast_query_sequence")
+    explicit = clean_sequence_candidate(explicit_value) if has_text(explicit_value) else ""
     if explicit:
         return explicit
-    anchor = clean_sequence_candidate(record.get("anchor") or record.get("compactor_anchor"))
-    compactor = clean_sequence_candidate(record.get("compactor") or record.get("compactor_sequence"))
+    anchor_value = record.get("anchor") or record.get("compactor_anchor")
+    compactor_value = record.get("compactor") or record.get("compactor_sequence")
+    anchor = clean_sequence_candidate(anchor_value) if has_text(anchor_value) else ""
+    compactor = clean_sequence_candidate(compactor_value) if has_text(compactor_value) else ""
     return f"{anchor}{compactor}"
 
 
@@ -371,6 +385,13 @@ def write_selected_compactors(records, output_path):
         "compactor_blast_query_sequence",
         "length",
         "exact_support",
+        "compactor_exact_support",
+        "compactor_support",
+        "compactor_expected_read_count",
+        "compactor_extender_specificity",
+        "compactor_num_extended",
+        "compactor_support_threshold",
+        "compactor_selection_reason",
         "row_index",
         "support_threshold",
         "selection_reason",
@@ -388,6 +409,8 @@ def write_selected_compactors(records, output_path):
             row = dict(record)
             row["compactor_sequence"] = row.get("compactor_sequence") or row.get("compactor", "NA")
             row["compactor_blast_query_sequence"] = compactor_blast_query_sequence(row)
+            row["compactor_exact_support"] = row.get("exact_support", "NA")
+            row.update(compactor_support_fields(row))
             writer.writerow({col: row.get(col, "NA") for col in columns})
 
 
@@ -442,21 +465,18 @@ def has_output(path):
     return path.exists() and path.stat().st_size > 0
 
 
+def output_is_stale(path, source):
+    return has_output(path) and path.stat().st_mtime < source.stat().st_mtime
+
+
 def write_empty_blastn(path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "query\tsubject\tidentity\talignment_length\tmismatches\tgap_opens\tq_start\tq_end\t"
-        "s_start\ts_end\tsstrand\tevalue\tqcovs\tsgi\tsacc\tslen\tstaxids\tsscinames\tstitle\t"
-        "species_origin\tfeatures\tfeatures_10000_window\n"
-    )
+    path.write_text("\t".join(COMPREHENSIVE_ANNOTATION_COLUMNS) + "\n")
 
 
 def write_empty_blastp(path):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "query\tidentity\tevalue\tqcovs\tqframe\tstaxids\tsscinames\tstitle\t"
-        "NCBI_protein_accession\tUniProt_accession\tmethod\tGO\n"
-    )
+    path.write_text("\t".join(COMPREHENSIVE_ANNOTATION_COLUMNS) + "\n")
 
 
 def count_tsv_rows(path):
@@ -487,11 +507,15 @@ def run_blasts(args, output_fasta, output_dir):
     reblast_arg = str(reblast) if args.reblast_mode == "missing" else ""
     reblastp_arg = str(reblastp) if args.reblast_mode == "missing" else ""
 
-    need_blastn = args.overwrite_blast or not has_output(blast) or (
+    need_blastn = args.overwrite_blast or not has_output(blast) or output_is_stale(blast, output_fasta) or (
         args.reblast_mode == "missing" and not has_output(reblast)
+    ) or (
+        args.reblast_mode == "missing" and output_is_stale(reblast, output_fasta)
     )
-    need_blastp = args.overwrite_blast or not has_output(blastp) or (
+    need_blastp = args.overwrite_blast or not has_output(blastp) or output_is_stale(blastp, output_fasta) or (
         args.reblast_mode == "missing" and not has_output(reblastp)
+    ) or (
+        args.reblast_mode == "missing" and output_is_stale(reblastp, output_fasta)
     )
 
     if should_run_blastn and need_blastn:
@@ -634,8 +658,11 @@ def compactor_trace_fields(row):
 
 
 def compactor_support_fields(row):
+    blast_query_sequence = first_text(row, "compactor_blast_query_sequence")
+    if not has_text(blast_query_sequence):
+        blast_query_sequence = compactor_blast_query_sequence(row) or "NA"
     return {
-        "compactor_blast_query_sequence": first_text(row, "compactor_blast_query_sequence"),
+        "compactor_blast_query_sequence": blast_query_sequence,
         "compactor_support": first_text(row, "support", "compactor_support"),
         "compactor_expected_read_count": first_text(
             row, "expected_read_count", "compactor_expected_read_count"
@@ -895,6 +922,13 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "compactor_blast_query_sequence",
         "length",
         "exact_support",
+        "compactor_exact_support",
+        "compactor_support",
+        "compactor_expected_read_count",
+        "compactor_extender_specificity",
+        "compactor_num_extended",
+        "compactor_support_threshold",
+        "compactor_selection_reason",
         "support_threshold",
         "selection_reason",
         "source_file",
@@ -953,6 +987,8 @@ def write_compactor_annotation_summary(records, annotations, output_path):
                 row = {**record, **entry}
                 row["compactor_sequence"] = record.get("compactor", "NA")
                 row["compactor_blast_query_sequence"] = compactor_blast_query_sequence(record)
+                row["compactor_exact_support"] = record.get("exact_support", "NA")
+                row.update(compactor_support_fields(record))
                 source_counts[row["annotation_source"]] += 1
                 writer.writerow({col: row.get(col, "NA") for col in columns})
     print(

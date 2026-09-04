@@ -117,12 +117,15 @@ get_nth_class <- function(x,n=1) {
 }
 
 clean_blast_label <- function(x) {
-  x <- replace_na(x, "")
-  x <- str_replace_all(x, "LOC\\d+[- ]*", "")
-  x <- str_replace_all(x, "\\s+", " ")
-  x <- str_replace_all(x, "\\s*[,;]\\s*$", "")
-  x <- str_trim(x)
-  ifelse(nchar(x) == 0, NA_character_, x)
+  boilerplate <- regex("Gnomon|Derived by automated computational analysis|Supporting evidence includes|coverage of the annotated genomic feature|support for all annotated introns", ignore_case=TRUE)
+  vapply(as.character(x), function(value) {
+    if (is.na(value)) return(NA_character_)
+    parts <- unlist(str_split(value, ";+"), use.names=FALSE)
+    parts <- parts[!str_detect(parts, boilerplate)]
+    value <- str_trim(str_replace_all(paste(parts, collapse=";"), "\\s+", " "))
+    value <- str_replace_all(str_replace_all(value, "LOC\\d+[- ]*", ""), "\\s*[,;]\\s*$", "")
+    if (nchar(value) == 0) NA_character_ else value
+  }, character(1), USE.NAMES=FALSE)
 }
 
 extract_feature_qualifier <- function(features, qualifier) {

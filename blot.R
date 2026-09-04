@@ -11,7 +11,7 @@ option_list <- list(
   make_option(c("--metadata_column"), type = "character", default = NULL,
               help = "Selected metadata_category/metadata column to replot."),
   make_option(c("--clusters"), type = "character", default = NULL,
-              help = "Comma-separated cluster IDs, e.g. 8143,5883 or cluster_8143,cluster_5883."),
+              help = "Cluster IDs to replot, e.g. 8143,5883 or '8143 5883'. Numeric IDs are matched to cluster_NNN entries."),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Output PDF path."),
   make_option(c("--plotter"), type = "character",
@@ -72,7 +72,8 @@ list_matching_files <- function(root, pattern) {
 
 normalize_cluster_id <- function(x) {
   x <- trimws(as.character(x))
-  x <- sub("^cluster_", "", x)
+  x <- sub("^cluster_", "", x, ignore.case = TRUE)
+  x <- sub("\\.0+$", "", x)
   paste0("cluster_", x)
 }
 
@@ -85,19 +86,53 @@ parse_cluster_list <- function(x) {
   normalize_cluster_id(clusters)
 }
 
+detect_metadata_col <- function(dt) {
+  candidates <- c("metadata_category", "metadata_column", "metadata")
+  found <- candidates[candidates %in% colnames(dt)]
+  if (length(found) > 0) {
+    return(found[[1]])
+  }
+  stop("Could not find a metadata column. Tried: ", paste(candidates, collapse = ", "), call. = FALSE)
+}
+
+detect_cluster_col <- function(dt) {
+  candidates <- c("cluster", "cluster_id", "feature_cluster")
+  found <- candidates[candidates %in% colnames(dt)]
+  if (length(found) > 0) {
+    return(found[[1]])
+  }
+  if (ncol(dt) >= 20) {
+    return(colnames(dt)[[20]])
+  }
+  cluster_like_counts <- vapply(dt, function(col) {
+    sum(grepl("^cluster_[0-9]+$", trimws(as.character(col)), ignore.case = TRUE), na.rm = TRUE)
+  }, integer(1))
+  if (max(cluster_like_counts) > 0) {
+    return(names(which.max(cluster_like_counts)))
+  }
+  stop("Could not find a cluster column by name, column 20, or cluster_NNN pattern.", call. = FALSE)
+}
+
 write_filtered_tsv <- function(input_path, output_path, metadata_column, selected_clusters, allow_empty = FALSE) {
   dt <- fread(input_path)
-  required <- c("metadata_category", "cluster")
-  missing <- setdiff(required, colnames(dt))
-  if (length(missing) > 0) {
-    stop(input_path, " is missing required columns: ", paste(missing, collapse = ", "), call. = FALSE)
-  }
-  dt[, cluster_normalized := normalize_cluster_id(cluster)]
-  filtered <- dt[metadata_category == metadata_column & cluster_normalized %in% selected_clusters]
+  metadata_col <- detect_metadata_col(dt)
+  cluster_col <- detect_cluster_col(dt)
+  dt[, cluster_normalized := normalize_cluster_id(get(cluster_col))]
+  filtered <- dt[get(metadata_col) == metadata_column & cluster_normalized %in% selected_clusters]
   filtered[, cluster_normalized := NULL]
   if (nrow(filtered) == 0 && !allow_empty) {
+    available_clusters <- unique(dt[get(metadata_col) == metadata_column, normalize_cluster_id(get(cluster_col))])
+    available_clusters <- head(available_clusters[!is.na(available_clusters)], 12)
     stop("No rows matched metadata_column=", metadata_column,
-         " and clusters=", paste(selected_clusters, collapse = ","), " in ", input_path, call. = FALSE)
+         " and clusters=", paste(selected_clusters, collapse = ","),
+         " in ", input_path,
+         ". Detected metadata column '", metadata_col,
+         "' and cluster column '", cluster_col, "'.",
+         ifelse(length(available_clusters) > 0,
+                paste0(" Example clusters for this metadata column: ",
+                       paste(available_clusters, collapse = ","), "."),
+                " No rows were found for this metadata column."),
+         call. = FALSE)
   }
   fwrite(filtered, output_path, sep = "\t")
   filtered
