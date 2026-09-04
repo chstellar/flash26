@@ -122,15 +122,18 @@ detect_cluster_col <- function(dt, preferred_index = NA_integer_) {
   stop("Could not find a cluster column by name, column 20, or cluster_NNN pattern.", call. = FALSE)
 }
 
-write_filtered_tsv <- function(input_path, output_path, metadata_column, selected_clusters,
-                               allow_empty = FALSE, preferred_cluster_col = NA_integer_) {
+filter_compactor_summary <- function(input_path, output_path, metadata_column, selected_clusters) {
   dt <- fread(input_path)
   metadata_col <- detect_metadata_col(dt)
-  cluster_col <- detect_cluster_col(dt, preferred_cluster_col)
+  if (ncol(dt) < 3) {
+    stop("Compactor summary must have cluster in column 3, but it has fewer than 3 columns: ",
+         input_path, call. = FALSE)
+  }
+  cluster_col <- colnames(dt)[[3]]
   dt[, cluster_normalized := normalize_cluster_id(get(cluster_col))]
   filtered <- dt[get(metadata_col) == metadata_column & cluster_normalized %in% selected_clusters]
   filtered[, cluster_normalized := NULL]
-  if (nrow(filtered) == 0 && !allow_empty) {
+  if (nrow(filtered) == 0) {
     available_clusters <- unique(dt[get(metadata_col) == metadata_column, normalize_cluster_id(get(cluster_col))])
     available_clusters <- head(available_clusters[!is.na(available_clusters)], 12)
     stop("No rows matched metadata_column=", metadata_column,
@@ -144,20 +147,48 @@ write_filtered_tsv <- function(input_path, output_path, metadata_column, selecte
                 " No rows were found for this metadata column."),
          call. = FALSE)
   }
-  if (nrow(filtered) > 0) {
-    matched_counts <- dt[get(metadata_col) == metadata_column &
-                         cluster_normalized %in% selected_clusters,
-                         .N,
-                         by = cluster_normalized]
-    missing_clusters <- setdiff(selected_clusters, matched_counts$cluster_normalized)
-    message("Matched rows by requested cluster in ", basename(input_path), ": ",
-            paste(paste0(matched_counts$cluster_normalized, "=", matched_counts$N), collapse = ", "))
-    if (length(missing_clusters) > 0 && !allow_empty) {
-      message("Requested cluster(s) with no rows for ", metadata_column, ": ",
-              paste(missing_clusters, collapse = ","))
-    }
+  if (cluster_col != "cluster") {
+    setnames(filtered, cluster_col, "cluster")
+  }
+  matched_counts <- dt[get(metadata_col) == metadata_column &
+                       cluster_normalized %in% selected_clusters,
+                       .N,
+                       by = cluster_normalized]
+  missing_clusters <- setdiff(selected_clusters, matched_counts$cluster_normalized)
+  message("Matched rows by requested cluster in ", basename(input_path), ": ",
+          paste(paste0(matched_counts$cluster_normalized, "=", matched_counts$N), collapse = ", "))
+  if (length(missing_clusters) > 0) {
+    message("Requested cluster(s) with no rows for ", metadata_column, ": ",
+            paste(missing_clusters, collapse = ","))
   }
   fwrite(filtered, output_path, sep = "\t")
+  filtered
+}
+
+filter_annotation_table <- function(input_path, output_path, metadata_column, selected_summary,
+                                    allow_empty = FALSE) {
+  dt <- fread(input_path)
+  metadata_col <- detect_metadata_col(dt)
+  if (!"feature" %in% colnames(dt)) {
+    stop(input_path, " is missing required column: feature", call. = FALSE)
+  }
+  selected_features <- unique(selected_summary$feature)
+  filtered <- dt[get(metadata_col) == metadata_column & feature %in% selected_features]
+  if (nrow(filtered) == 0 && !allow_empty) {
+    stop("No rows in ", input_path, " matched the features selected from the compactor summary.",
+         call. = FALSE)
+  }
+  feature_cluster_map <- unique(selected_summary[, .(feature, selected_cluster = cluster)])
+  filtered <- merge(filtered, feature_cluster_map, by = "feature", all.x = TRUE, sort = FALSE)
+  if ("cluster" %in% colnames(filtered)) {
+    filtered[!is.na(selected_cluster), cluster := selected_cluster]
+    filtered[, selected_cluster := NULL]
+  } else {
+    setnames(filtered, "selected_cluster", "cluster")
+  }
+  fwrite(filtered, output_path, sep = "\t")
+  message("Wrote ", nrow(filtered), " filtered row(s) from ", basename(input_path),
+          " using features selected from the compactor summary.")
   filtered
 }
 
@@ -290,12 +321,16 @@ on.exit(unlink(work_dir, recursive = TRUE, force = TRUE), add = TRUE)
 filtered_blastp <- file.path(work_dir, "selected_nonzero_coefficients_blastp_annotated.tsv")
 filtered_blastn <- file.path(work_dir, "selected_nonzero_coefficients_blast_annotated.tsv")
 filtered_compactor_summary <- file.path(work_dir, "selected_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv")
-filtered <- write_filtered_tsv(nonzero, filtered_blastp, opt$metadata_column, selected_clusters)
-write_filtered_tsv(blastn, filtered_blastn, opt$metadata_column, selected_clusters, allow_empty = TRUE)
-write_filtered_tsv(compactor_summary, filtered_compactor_summary, opt$metadata_column, selected_clusters,
-                   allow_empty = TRUE, preferred_cluster_col = 3L)
+filtered_summary <- filter_compactor_summary(
+  compactor_summary,
+  filtered_compactor_summary,
+  opt$metadata_column,
+  selected_clusters
+)
+filtered <- filter_annotation_table(nonzero, filtered_blastp, opt$metadata_column, filtered_summary)
+filter_annotation_table(blastn, filtered_blastn, opt$metadata_column, filtered_summary, allow_empty = TRUE)
 
-message("Selected ", nrow(filtered), " blastp row(s) for ",
+message("Selected ", nrow(filtered_summary), " compactor summary row(s) for ",
         opt$metadata_column, " / ", paste(selected_clusters, collapse = ","))
 message("Using clusters: ", clusters_file)
 message("Using feather: ", feather_file)
