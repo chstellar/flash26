@@ -19,7 +19,7 @@ METADATA_FILE="/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wo
 RUN_PREFIX="${RESULTS_DIR}/260826-01-2flies-wolbachia_hyena_adelie_results_top20000_target1_k54_s54_trainProp0.8"
 
 METADATA_CATEGORIES="infectant,infection_status"
-SPLIT_METADATA_COL="sra_study"
+SPLIT_METADATA_COL="host_species"
 
 cd "$PROJECT_DIR"
 
