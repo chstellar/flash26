@@ -19,6 +19,8 @@ option_list <- list(
               help = "Underlying blast plotter R script."),
   make_option(c("--nonzero_annotations"), type = "character", default = "",
               help = "Optional explicit blastp_annotated TSV."),
+  make_option(c("--compactor_summary"), type = "character", default = "",
+              help = "Optional explicit blast_annotated_plots_summary_compactor TSV."),
   make_option(c("--clusters_file"), type = "character", default = "",
               help = "Optional explicit sequences_per_cluster TSV."),
   make_option(c("--feather_file"), type = "character", default = "",
@@ -95,10 +97,14 @@ detect_metadata_col <- function(dt) {
   stop("Could not find a metadata column. Tried: ", paste(candidates, collapse = ", "), call. = FALSE)
 }
 
-detect_cluster_col <- function(dt) {
+detect_cluster_col <- function(dt, preferred_index = NA_integer_) {
   cluster_like_counts <- vapply(dt, function(col) {
     sum(grepl("^cluster_[0-9]+$", trimws(as.character(col)), ignore.case = TRUE), na.rm = TRUE)
   }, integer(1))
+  if (!is.na(preferred_index) && ncol(dt) >= preferred_index &&
+      cluster_like_counts[[preferred_index]] > 0) {
+    return(colnames(dt)[[preferred_index]])
+  }
   if (ncol(dt) >= 20 && cluster_like_counts[[20]] > 0) {
     return(colnames(dt)[[20]])
   }
@@ -116,10 +122,11 @@ detect_cluster_col <- function(dt) {
   stop("Could not find a cluster column by name, column 20, or cluster_NNN pattern.", call. = FALSE)
 }
 
-write_filtered_tsv <- function(input_path, output_path, metadata_column, selected_clusters, allow_empty = FALSE) {
+write_filtered_tsv <- function(input_path, output_path, metadata_column, selected_clusters,
+                               allow_empty = FALSE, preferred_cluster_col = NA_integer_) {
   dt <- fread(input_path)
   metadata_col <- detect_metadata_col(dt)
-  cluster_col <- detect_cluster_col(dt)
+  cluster_col <- detect_cluster_col(dt, preferred_cluster_col)
   dt[, cluster_normalized := normalize_cluster_id(get(cluster_col))]
   filtered <- dt[get(metadata_col) == metadata_column & cluster_normalized %in% selected_clusters]
   filtered[, cluster_normalized := NULL]
@@ -152,6 +159,15 @@ write_filtered_tsv <- function(input_path, output_path, metadata_column, selecte
   }
   fwrite(filtered, output_path, sep = "\t")
   filtered
+}
+
+find_compactor_summary <- function(results_dir) {
+  paths <- list.files(
+    results_dir,
+    pattern = "_nonzero_coefficients_blast_annotated_plots_summary_compactor\\.tsv$",
+    full.names = TRUE
+  )
+  pick_one(paths, "compactor plot summary")
 }
 
 derive_run_tokens <- function(nonzero_path) {
@@ -244,6 +260,11 @@ nonzero <- if (!is_blank(opt$nonzero_annotations)) {
 }
 blastn <- sub("blastp_annotated", "blast_annotated", nonzero, fixed = TRUE)
 blastn <- existing_file(blastn, "matching blast annotated nonzero table")
+compactor_summary <- if (!is_blank(opt$compactor_summary)) {
+  existing_file(opt$compactor_summary, "--compactor_summary")
+} else {
+  find_compactor_summary(results_dir)
+}
 
 clusters_file <- if (!is_blank(opt$clusters_file)) {
   existing_file(opt$clusters_file, "--clusters_file")
@@ -268,14 +289,18 @@ on.exit(unlink(work_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
 filtered_blastp <- file.path(work_dir, "selected_nonzero_coefficients_blastp_annotated.tsv")
 filtered_blastn <- file.path(work_dir, "selected_nonzero_coefficients_blast_annotated.tsv")
+filtered_compactor_summary <- file.path(work_dir, "selected_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv")
 filtered <- write_filtered_tsv(nonzero, filtered_blastp, opt$metadata_column, selected_clusters)
 write_filtered_tsv(blastn, filtered_blastn, opt$metadata_column, selected_clusters, allow_empty = TRUE)
+write_filtered_tsv(compactor_summary, filtered_compactor_summary, opt$metadata_column, selected_clusters,
+                   allow_empty = TRUE, preferred_cluster_col = 3L)
 
 message("Selected ", nrow(filtered), " blastp row(s) for ",
         opt$metadata_column, " / ", paste(selected_clusters, collapse = ","))
 message("Using clusters: ", clusters_file)
 message("Using feather: ", feather_file)
 message("Using sample sequences: ", sample_seqs)
+message("Using filtered compactor summary: ", filtered_compactor_summary)
 
 cmd_args <- c(
   "--vanilla", plotter,
@@ -285,6 +310,7 @@ cmd_args <- c(
   "--sample_seqs", sample_seqs,
   "--metadata", metadata,
   "--output", opt$output,
+  "--compactor_summary", filtered_compactor_summary,
   "--num_hits", as.character(opt$num_hits)
 )
 if (isTRUE(opt$products)) {

@@ -32,6 +32,7 @@ CLUSTERS="${CLUSTERS:-8143,5883}"
 CLUSTER_LABEL="${CLUSTERS//,/_}"
 OUTPUT="${OUTPUT:-${RESULTS_DIR}/${DATASET}_${METADATA_COLUMN}_clusters_${CLUSTER_LABEL}_blast_plots.pdf}"
 NUM_HITS="${NUM_HITS:-10}"
+COMPACTOR_SUMMARY="${COMPACTOR_SUMMARY:-${RESULTS_DIR}/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_nonzero_coefficients_blast_annotated_plots_summary_compactor.tsv}"
 
 usage() {
   echo "Usage: sbatch blot.sh [extra blot.R args...]"
@@ -43,6 +44,7 @@ usage() {
   echo "  METADATA_COLUMN=$METADATA_COLUMN"
   echo "  CLUSTERS=$CLUSTERS"
   echo "  OUTPUT=$OUTPUT"
+  echo "  COMPACTOR_SUMMARY=$COMPACTOR_SUMMARY"
   echo
   echo "Common overrides:"
   echo "  sbatch --export=ALL,METADATA_COLUMN=fungus_species,CLUSTERS=12\\,34 blot.sh"
@@ -57,5 +59,6 @@ Rscript --vanilla "$PROJECT_DIR/blot.R" \
   --metadata_column "$METADATA_COLUMN" \
   --clusters "$CLUSTERS" \
   --output "$OUTPUT" \
+  --compactor_summary "$COMPACTOR_SUMMARY" \
   --num_hits "$NUM_HITS" \
   "$@"
