@@ -11,7 +11,7 @@ option_list <- list(
   make_option(c("--metadata_column"), type = "character", default = NULL,
               help = "Selected metadata_category/metadata column to replot."),
   make_option(c("--clusters"), type = "character", default = NULL,
-              help = "Cluster IDs to replot, e.g. 8143,5883 or '8143 5883'. Numeric IDs are matched to cluster_NNN entries."),
+              help = "Comma-separated numeric cluster IDs to replot, e.g. 8143,5883. Numeric IDs are matched exactly to cluster_NNN entries."),
   make_option(c("--output"), type = "character", default = NULL,
               help = "Output PDF path."),
   make_option(c("--plotter"), type = "character",
@@ -78,10 +78,10 @@ normalize_cluster_id <- function(x) {
 }
 
 parse_cluster_list <- function(x) {
-  clusters <- trimws(unlist(strsplit(x, "[,;[:space:]]+"), use.names = FALSE))
+  clusters <- trimws(unlist(strsplit(x, ",", fixed = TRUE), use.names = FALSE))
   clusters <- clusters[nzchar(clusters)]
   if (length(clusters) == 0) {
-    stop("--clusters did not contain any cluster IDs.", call. = FALSE)
+    stop("--clusters did not contain any comma-delimited cluster IDs.", call. = FALSE)
   }
   normalize_cluster_id(clusters)
 }
@@ -96,6 +96,15 @@ detect_metadata_col <- function(dt) {
 }
 
 detect_cluster_col <- function(dt) {
+  cluster_like_counts <- vapply(dt, function(col) {
+    sum(grepl("^cluster_[0-9]+$", trimws(as.character(col)), ignore.case = TRUE), na.rm = TRUE)
+  }, integer(1))
+  if (ncol(dt) >= 20 && cluster_like_counts[[20]] > 0) {
+    return(colnames(dt)[[20]])
+  }
+  if (max(cluster_like_counts) > 0) {
+    return(names(which.max(cluster_like_counts)))
+  }
   candidates <- c("cluster", "cluster_id", "feature_cluster")
   found <- candidates[candidates %in% colnames(dt)]
   if (length(found) > 0) {
@@ -103,12 +112,6 @@ detect_cluster_col <- function(dt) {
   }
   if (ncol(dt) >= 20) {
     return(colnames(dt)[[20]])
-  }
-  cluster_like_counts <- vapply(dt, function(col) {
-    sum(grepl("^cluster_[0-9]+$", trimws(as.character(col)), ignore.case = TRUE), na.rm = TRUE)
-  }, integer(1))
-  if (max(cluster_like_counts) > 0) {
-    return(names(which.max(cluster_like_counts)))
   }
   stop("Could not find a cluster column by name, column 20, or cluster_NNN pattern.", call. = FALSE)
 }
@@ -133,6 +136,19 @@ write_filtered_tsv <- function(input_path, output_path, metadata_column, selecte
                        paste(available_clusters, collapse = ","), "."),
                 " No rows were found for this metadata column."),
          call. = FALSE)
+  }
+  if (nrow(filtered) > 0) {
+    matched_counts <- dt[get(metadata_col) == metadata_column &
+                         cluster_normalized %in% selected_clusters,
+                         .N,
+                         by = cluster_normalized]
+    missing_clusters <- setdiff(selected_clusters, matched_counts$cluster_normalized)
+    message("Matched rows by requested cluster in ", basename(input_path), ": ",
+            paste(paste0(matched_counts$cluster_normalized, "=", matched_counts$N), collapse = ", "))
+    if (length(missing_clusters) > 0 && !allow_empty) {
+      message("Requested cluster(s) with no rows for ", metadata_column, ": ",
+              paste(missing_clusters, collapse = ","))
+    }
   }
   fwrite(filtered, output_path, sep = "\t")
   filtered
