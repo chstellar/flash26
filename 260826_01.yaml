@@ -38,8 +38,8 @@ options:
   models: ["hyena"] # currently only 'hyena' is supported
   normalize_embeddings: ['normalized'] # define whether to use normalized or unnormalized embeddings (for pca whether to scale/center prior to pca)
   train_proportion: 0.8 # proportion of samples to use for training GLMnet models
-  anchor_length: 31 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
-  target_length: 31 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
+  anchor_length: 27 # this is the length of the anchor in nucleotides, change as needed for different SPLASH runs
+  target_length: 27 # this is the length of the target in nucleotides, change as needed for different SPLASH runs
   target_rank: 1 # this is the rank of the target to use when assembling the anchor-target pairs, change as needed
   cluster_filter:
     # reccomend increasing the number of clusters if applying a cluster filter to ensure that you have enough clusters after filtering for embedding and prediction.

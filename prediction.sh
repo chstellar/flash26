@@ -19,11 +19,11 @@ PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 # Edit these defaults or override them through sbatch --export.
 DATASET="${DATASET:-260903-01-bschlosseri-age-a10t31}"
 RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/${DATASET}/filter1/noCluster/hyena/genomes/normalized}"
-SIDECAR="${SIDECAR:-${RESULTS_DIR}/${DATASET}_hyena_adelie_genomes_results_top2000_k41_s41_trainProp0.8_confusion_matrices.tsv}"
+SIDECAR="${SIDECAR:-${RESULTS_DIR}/*_confusion_matrices.tsv}"
 METADATA_CATEGORY="${METADATA_CATEGORY:-age_in_days}"
 MATRIX="${MATRIX:-both}"                 # train, test, or both
 PLOT_TYPE="${PLOT_TYPE:-auto}"           # auto, regression, or confusion
-OUTPUT="${OUTPUT:-${RESULTS_DIR}/${DATASET}_${METADATA_CATEGORY}_${MATRIX}_prediction_plots.pdf}"
+OUTPUT="${OUTPUT:-${RESULTS_DIR}/prediction.pdf}"
 
 # Regression point colors. Leave COLOR_COLUMN empty for one fixed point color.
 COLOR_COLUMN="${COLOR_COLUMN-electric_shock}"
@@ -33,7 +33,7 @@ MISSING_COLOR="${MISSING_COLOR:-#A6A6A6}"
 REGRESSION_CMAP="${REGRESSION_CMAP:-viridis}"
 
 # Confusion-matrix class order and axis-label colors.
-CLASS_ORDER="${CLASS_ORDER-no,yes}"
+CLASS_ORDER="${CLASS_ORDER-yes,no}"
 CLASS_COLORS="${CLASS_COLORS-no:#7F7F7F,yes:#D55E00}"
 CONFUSION_CMAP="${CONFUSION_CMAP:-viridis}"
 

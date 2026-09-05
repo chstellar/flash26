@@ -1,2 +1,2 @@
 dataset_short_name,SPLASH_results,metadata_file,translation_table,genomes_folder,genome_list,genome_metadata_file,taxid
-260826-01-2flies-wolbachia-a31t31,/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wolbachia/a31t31g0r4s4d4/,/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wolbachia/metadata.csv,1,,,,{7227;1386345;46793}
+260826-01-2flies-wolbachia,/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wolbachia/a27t27g0r4s4d4/,/scratch/users/jiamuyu/proj_botryllus/splash2/260826_00_2flies-wolbachia/metadata.csv,1,,,,{7227;1386345;46793}
