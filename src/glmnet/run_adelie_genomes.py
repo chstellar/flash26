@@ -1,4 +1,4 @@
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, r2_score
 from sklearn.preprocessing import OneHotEncoder
 
 import matplotlib.pyplot as plt
@@ -158,6 +158,31 @@ def get_metadata_columns(metadata, min_samples=50):
     return filtered_metadata.columns
 
 
+def clean_metadata_series(series):
+    series = series.copy()
+    if series.dtype == object:
+        series = series.astype(str).str.strip()
+        series = series.replace(
+            {"": np.nan, "nan": np.nan, "NaN": np.nan, "NA": np.nan, "None": np.nan}
+        )
+    return series
+
+
+def get_numeric_metadata_columns(metadata, min_samples=50):
+    """Return metadata columns whose non-missing values are all numeric."""
+    columns = []
+    for column in metadata.columns:
+        if column == "sample_name":
+            continue
+        values = clean_metadata_series(metadata[column])
+        numeric = pd.to_numeric(values, errors="coerce")
+        if values.notna().sum() != numeric.notna().sum():
+            continue
+        if numeric.notna().sum() >= max(2, min_samples) and numeric.nunique() >= 2:
+            columns.append(column)
+    return columns
+
+
 def merge_data(data, metadata, metadata_col, min_samples=50, even_samples=False):
     metadata = metadata[["sample_name", metadata_col]]
     metadata[metadata_col] = metadata[metadata_col].replace("nan", pd.NA)
@@ -196,6 +221,25 @@ def merge_data(data, metadata, metadata_col, min_samples=50, even_samples=False)
     return np.asfortranarray(np.asarray(X, dtype=np.float64)), y, X.columns
 
 
+def merge_continuous_data(data, metadata, metadata_col, min_samples=50):
+    metadata = metadata[["sample_name", metadata_col]].copy()
+    metadata[metadata_col] = pd.to_numeric(
+        clean_metadata_series(metadata[metadata_col]), errors="coerce"
+    )
+    merged_data = pd.merge(data, metadata, on="sample_name", how="left")
+    merged_data = merged_data.dropna(subset=[metadata_col])
+
+    minimum = max(2, min_samples)
+    if len(merged_data) < minimum or (
+        min_samples != 0 and merged_data[metadata_col].nunique() < 2
+    ):
+        return None, None, None
+
+    X = merged_data.drop(["sample_name", metadata_col], axis=1)
+    y = merged_data[metadata_col].to_numpy(dtype=np.float64)
+    return np.asfortranarray(np.asarray(X, dtype=np.float64)), y, X.columns
+
+
 def get_group_ids(column_names):
     """
     Given a list of the column names for X, return a list of the starting
@@ -216,6 +260,38 @@ def get_group_ids(column_names):
             current_group = group
 
     return np.array(group_ids, dtype=np.int32)
+
+
+def remove_zero_variance_groups(X_train, X_test, column_names):
+    """Remove feature groups that are constant across the training genomes."""
+    X_train = np.asarray(X_train, dtype=np.float64)
+    column_names = pd.Index(column_names)
+    group_starts = get_group_ids(column_names)
+    group_ends = np.append(group_starts[1:], X_train.shape[1])
+    keep_columns = np.zeros(X_train.shape[1], dtype=bool)
+
+    for start, end in zip(group_starts, group_ends):
+        group = X_train[:, start:end]
+        if not np.isfinite(group).all() or np.any(np.var(group, axis=0) > 0):
+            keep_columns[start:end] = True
+
+    if not keep_columns.any():
+        raise ValueError("all feature groups have zero variance in the training data")
+
+    removed_groups = sum(
+        not keep_columns[start:end].any() for start, end in zip(group_starts, group_ends)
+    )
+    if removed_groups:
+        print(f"Removed {removed_groups} zero-variance groups from the training genomes.")
+
+    filtered_test = np.asfortranarray(
+        np.asarray(X_test, dtype=np.float64)[:, keep_columns]
+    )
+    return (
+        np.asfortranarray(X_train[:, keep_columns]),
+        filtered_test,
+        column_names[keep_columns],
+    )
 
 
 def train_adelie_model(
@@ -254,6 +330,66 @@ def train_adelie_model(
     return model, oh
 
 
+def train_adelie_regression_model(
+    X_train, y_train, n_threads=1, group_ids=None, max_iters=1e5, tol=1e-7, alpha=0.5
+):
+    X_train_wrap = ad.matrix.dense(
+        np.asarray(X_train, dtype=np.float64), method="naive", n_threads=n_threads
+    )
+    fit_kwargs = {
+        "n_threads": n_threads,
+        "max_iters": int(max_iters),
+        "tol": tol,
+        "alpha": alpha,
+    }
+    if group_ids is not None:
+        fit_kwargs["groups"] = group_ids
+
+    model = ad.GroupElasticNet(solver="cv_grpnet", family="gaussian")
+    model.fit(X_train_wrap, np.asarray(y_train, dtype=np.float64), **fit_kwargs)
+    return model
+
+
+def flatten_coefficients(coef):
+    if hasattr(coef, "toarray"):
+        return coef.toarray().flatten()
+    return np.asarray(coef).flatten()
+
+
+def plot_regression_predictions(y_true, y_pred, metadata_col, train_r2, test_r2):
+    fig, ax = plt.subplots(figsize=(6.5, 6.2))
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    minimum = min(np.min(y_true), np.min(y_pred))
+    maximum = max(np.max(y_true), np.max(y_pred))
+    padding = (maximum - minimum) * 0.06 or 0.5
+    limits = [minimum - padding, maximum + padding]
+
+    ax.scatter(
+        y_true,
+        y_pred,
+        alpha=0.78,
+        s=34,
+        color="#2f6f9f",
+        edgecolors="white",
+        linewidths=0.45,
+    )
+    ax.plot(limits, limits, color="#222222", linewidth=1.2, linestyle="--")
+    ax.set_xlim(limits)
+    ax.set_ylim(limits)
+    ax.set_aspect("equal", adjustable="box")
+    ax.grid(True, color="#d9d9d9", linewidth=0.6, alpha=0.75)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_title(
+        f"{metadata_col}\nTest R2: {test_r2:.2f} | Train R2: {train_r2:.2f}"
+    )
+    ax.set_xlabel("Observed value")
+    ax.set_ylabel("Predicted value")
+    fig.tight_layout()
+    return fig
+
+
 def main():
     args = parse_args()
     output_prefix = args.output_prefix
@@ -269,8 +405,20 @@ def main():
         train_metadata, min_samples=args.min_samples
     )
     test_metadata_columns = get_metadata_columns(test_metadata, min_samples=0)
+    train_numeric_columns = set(
+        get_numeric_metadata_columns(train_metadata, min_samples=args.min_samples)
+    )
+    test_numeric_columns = set(
+        get_numeric_metadata_columns(test_metadata, min_samples=0)
+    )
+    continuous_columns = train_numeric_columns & test_numeric_columns
+    categorical_columns = (
+        set(train_metadata_columns) & set(test_metadata_columns)
+    ) - train_numeric_columns
     metadata_columns = [
-        col for col in train_metadata_columns if col in test_metadata_columns
+        col
+        for col in train_metadata.columns
+        if col in categorical_columns or col in continuous_columns
     ]
 
     all_model_features = None
@@ -279,19 +427,31 @@ def main():
         for metadata_col in metadata_columns:
             print(f"Processing metadata column: {metadata_col}")
             print()
+            continuous_target = metadata_col in continuous_columns
 
-            X_train, y_train, model_features = merge_data(
-                train_features,
-                train_metadata,
-                metadata_col,
-                min_samples=args.min_samples,
-                even_samples=args.even_samples,
-            )
-            X_test, y_test, _ = merge_data(
-                test_features, test_metadata, metadata_col, min_samples=0
-            )
+            if continuous_target:
+                X_train, y_train, model_features = merge_continuous_data(
+                    train_features,
+                    train_metadata,
+                    metadata_col,
+                    min_samples=args.min_samples,
+                )
+                X_test, y_test, _ = merge_continuous_data(
+                    test_features, test_metadata, metadata_col, min_samples=0
+                )
+            else:
+                X_train, y_train, model_features = merge_data(
+                    train_features,
+                    train_metadata,
+                    metadata_col,
+                    min_samples=args.min_samples,
+                    even_samples=args.even_samples,
+                )
+                X_test, y_test, _ = merge_data(
+                    test_features, test_metadata, metadata_col, min_samples=0
+                )
 
-            if X_test is not None:
+            if X_test is not None and not continuous_target:
                 test_classes_to_keep = np.isin(y_test, np.unique(y_train))
                 X_test = X_test[test_classes_to_keep]
                 y_test = y_test[test_classes_to_keep]
@@ -300,6 +460,104 @@ def main():
                 print(
                     f"Skipping {metadata_col} as there are not enough samples after merging and filtering..."
                 )
+                print()
+                continue
+
+            if continuous_target:
+                print(f"Fitting continuous target for {metadata_col}.")
+                if args.grouped:
+                    try:
+                        X_train, X_test, model_features = remove_zero_variance_groups(
+                            X_train, X_test, model_features
+                        )
+                    except ValueError as e:
+                        print(f"Skipping {metadata_col}: {e}")
+                        print()
+                        continue
+                    group_ids = get_group_ids(model_features)
+                    print(f"Using grouped elastic net with {len(group_ids)} groups.")
+                else:
+                    print("Not using grouped elastic net.")
+                    group_ids = None
+
+                try:
+                    model = train_adelie_regression_model(
+                        X_train,
+                        y_train,
+                        n_threads=args.n_threads,
+                        group_ids=group_ids,
+                        tol=args.tol,
+                        max_iters=args.max_iters,
+                        alpha=args.alpha,
+                    )
+                except Exception as e:
+                    print(f"Failed to train model for {metadata_col}: {e}")
+                    print()
+                    continue
+
+                try:
+                    yhat_train = np.asarray(
+                        model.predict(X_train.astype(np.float64))
+                    ).flatten()
+                    yhat = np.asarray(
+                        model.predict(X_test.astype(np.float64))
+                    ).flatten()
+                    if not np.isfinite(yhat_train).all() or not np.isfinite(yhat).all():
+                        raise ValueError("model predictions contain non-finite values")
+                    train_r2 = r2_score(y_train, yhat_train)
+                    test_r2 = r2_score(y_test, yhat)
+                    if not np.isfinite(train_r2) or not np.isfinite(test_r2):
+                        raise ValueError("R2 is not finite")
+                    print(f"Train R2 for {metadata_col}: {train_r2:.4f}")
+                    print(f"Test R2 for {metadata_col}: {test_r2:.4f}")
+                except Exception as e:
+                    print(f"Failed to evaluate model for {metadata_col}: {e}")
+                    print()
+                    continue
+
+                coefficient_values = flatten_coefficients(model.coef_)
+                model_features_df = pd.DataFrame(
+                    {"feature": model_features, "coefficient": coefficient_values}
+                )
+                model_features_df = model_features_df[
+                    model_features_df["coefficient"] != 0
+                ]
+                model_features_df["metadata_category"] = metadata_col
+                model_features_df["accuracy"] = test_r2
+                model_features_df["train_accuracy"] = train_r2
+                model_features_df["sensitivity"] = "NA"
+                model_features_df["specificity"] = "NA"
+                model_features_df["confusion_matrix"] = "NA"
+                model_features_df["classes"] = "[residual]"
+                model_features_df["coefficients"] = model_features_df[
+                    "coefficient"
+                ].apply(lambda value: f"[{value}]")
+                model_features_df = model_features_df[
+                    [
+                        "metadata_category",
+                        "feature",
+                        "accuracy",
+                        "train_accuracy",
+                        "sensitivity",
+                        "specificity",
+                        "confusion_matrix",
+                        "classes",
+                        "coefficients",
+                    ]
+                ]
+
+                if all_model_features is None:
+                    all_model_features = model_features_df
+                else:
+                    all_model_features = pd.concat(
+                        [all_model_features, model_features_df], axis=0
+                    )
+
+                fig = plot_regression_predictions(
+                    y_test, yhat, metadata_col, train_r2, test_r2
+                )
+                pdf.savefig(fig)
+                plt.close(fig)
                 print()
                 continue
 
