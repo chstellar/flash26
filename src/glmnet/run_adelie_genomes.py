@@ -13,6 +13,7 @@ import pyarrow.feather as feather
 import pandas as pd
 
 import argparse
+from pathlib import Path
 
 np.random.seed(42)
 
@@ -99,11 +100,29 @@ def read_feather_data(file_path):
     return feather.read_feather(file_path)
 
 
+def get_metadata_delimiter(file_path):
+    suffixes = [suffix.lower() for suffix in Path(file_path).suffixes]
+    if suffixes and suffixes[-1] in {".gz", ".bz2", ".xz", ".zip"}:
+        suffixes = suffixes[:-1]
+    suffix = suffixes[-1] if suffixes else ""
+    if suffix == ".csv":
+        return ","
+    if suffix in {".tsv", ".tab", ".txt"}:
+        return "\t"
+    raise ValueError(
+        f"Unsupported metadata suffix for {file_path}. "
+        "Use .csv, .tsv, .tab, or .txt, optionally with compression."
+    )
+
+
 def read_metadata(file_path):
     # Read all metadata columns as strings to avoid dtype mismatches later
-    metadata = pd.read_table(file_path, dtype=str)
+    metadata = pd.read_csv(file_path, sep=get_metadata_delimiter(file_path), dtype=str)
     if "sample_name" not in metadata.columns:
-        raise ValueError("Metadata file must contain a sample_name column")
+        raise ValueError(
+            f"Metadata file {file_path} must contain a sample_name column; "
+            f"detected columns: {list(metadata.columns)}"
+        )
     # Ensure all columns are strings (defensive)
     metadata = metadata.astype(str)
     return metadata

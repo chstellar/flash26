@@ -38,6 +38,10 @@ option_list <- list(
               help = "Plot title font size for BLOT figures. Default: 14."),
   make_option(c("--plot_subtitle_size"), type = "numeric", default = 10,
               help = "Plot subtitle font size for BLOT figures. Default: 10."),
+  make_option(c("--label_lineheight"), type = "numeric", default = 0.92,
+              help = "Lineheight for BLOT point labels. Default: 0.92."),
+  make_option(c("--count_label_vjust"), type = "numeric", default = 0.5,
+              help = "Vertical registration for colored a/b/c overlay labels. Default: 0.5."),
   make_option(c("--class_order"), type = "character", default = "",
               help = "Comma-separated class order for per-dot count labels."),
   make_option(c("--class_colors"), type = "character", default = "",
@@ -270,6 +274,15 @@ display_class_name <- function(class_name) {
   ifelse(class_name == "none", "no_fungus", class_name)
 }
 
+display_class_name_markdown <- function(class_name) {
+  case_when(
+    class_name == "none" ~ "no_fungus",
+    class_name == "bbassiana" ~ "<i>B. bassiana</i>",
+    class_name == "ocamponoti-floridani" ~ "<i>O. camponoti-floridani</i>",
+    TRUE ~ html_escape(class_name)
+  )
+}
+
 html_escape <- function(x) {
   x <- safe_text(x)
   x <- str_replace_all(x, "&", "&amp;")
@@ -279,11 +292,10 @@ html_escape <- function(x) {
 
 colored_count_order_label <- function(class_cols) {
   classes <- ordered_class_columns(class_cols)
-  labels <- display_class_name(classes)
   pieces <- vapply(seq_along(classes), function(i) {
     paste0(
       "<span style='color:", class_color_for(classes[[i]]), "'>",
-      html_escape(labels[[i]]),
+      display_class_name_markdown(classes[[i]]),
       "</span>"
     )
   }, character(1))
@@ -915,6 +927,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       geom_text_repel(
         aes(color = point_label_color),
         size = opt$label_size,
+        lineheight = opt$label_lineheight,
         seed = 1,
         max.overlaps = Inf,
         min.segment.length = 0,
@@ -934,6 +947,8 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
           size = opt$label_size,
           family = "mono",
           fontface = "bold",
+          lineheight = opt$label_lineheight,
+          vjust = opt$count_label_vjust,
           seed = 1,
           max.overlaps = Inf,
           min.segment.length = 0,
@@ -957,6 +972,8 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
             size = opt$label_size,
             family = "mono",
             fontface = "bold",
+            lineheight = opt$label_lineheight,
+            vjust = opt$count_label_vjust,
             seed = 1,
             max.overlaps = Inf,
             min.segment.length = 0,
@@ -986,7 +1003,7 @@ plot_detail <- function(detail_dt, class_cols, category, cluster_id, feature_id)
       ylab("Levenshtein Distance\n(to most abundant anchor-target)") +
       ggtitle(paste(category, cluster_id, sep = " | "),
               subtitle = paste0(
-                "Color: proportion ", html_escape(class_to_plot),
+                "Color: proportion ", display_class_name_markdown(class_to_plot),
                 " | counts: ", count_order_label
               )) +
       theme(
