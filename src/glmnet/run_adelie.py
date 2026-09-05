@@ -913,6 +913,13 @@ def flatten_coefficients(coef):
     return np.asarray(coef).flatten()
 
 
+def normalize_confusion_matrix(cm):
+    """Normalize rows while keeping empty rows at zero."""
+    cm = np.asarray(cm, dtype=np.float64)
+    row_sums = cm.sum(axis=1, keepdims=True)
+    return np.divide(cm, row_sums, out=np.zeros_like(cm), where=row_sums != 0)
+
+
 def main():
     args = parse_args()
     output_prefix = args.output_prefix
@@ -1405,7 +1412,7 @@ def main():
             if args.train_prop < 1:
                 plt.figure()
                 plt.imshow(
-                    cm / cm.sum(axis=1)[:, np.newaxis], cmap="viridis", vmin=0, vmax=1
+                    normalize_confusion_matrix(cm), cmap="viridis", vmin=0, vmax=1
                 )
                 plt.colorbar()
                 for i in range(cm.shape[0]):
