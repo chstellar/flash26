@@ -19,6 +19,7 @@ PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 # Edit these defaults or override them through sbatch --export.
 DATASET="${DATASET:-260903-01-bschlosseri-age-a10t31}"
 RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/${DATASET}/filter1/noCluster/hyena/genomes/normalized}"
+# Quoted *, ?, and [] wildcards are resolved by prediction.py; exactly one file must match.
 SIDECAR="${SIDECAR:-${RESULTS_DIR}/*_confusion_matrices.tsv}"
 METADATA_CATEGORY="${METADATA_CATEGORY:-age_in_days}"
 MATRIX="${MATRIX:-both}"                 # train, test, or both

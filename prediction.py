@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 from pathlib import Path
 
 import matplotlib
@@ -89,8 +90,22 @@ def delimiter_for(path):
     return "," if suffixes and suffixes[-1] == ".csv" else "\t"
 
 
+def resolve_input_path(path_pattern):
+    matches = sorted(Path(match) for match in glob.glob(str(path_pattern)))
+    matches = [path for path in matches if path.is_file()]
+    if not matches:
+        raise ValueError(f"No sidecar file matched: {path_pattern}")
+    if len(matches) > 1:
+        formatted = "\n  ".join(str(path) for path in matches)
+        raise ValueError(
+            f"Sidecar wildcard matched {len(matches)} files; "
+            f"make SIDECAR more specific:\n  {formatted}"
+        )
+    return matches[0]
+
+
 def read_sidecar(path):
-    path = Path(path)
+    path = resolve_input_path(path)
     if not path.is_file() or path.stat().st_size == 0:
         raise ValueError(f"Input sidecar does not exist or is empty: {path}")
     data = pd.read_csv(path, sep=delimiter_for(path), dtype=str, keep_default_na=False)
