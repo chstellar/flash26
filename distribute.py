@@ -381,6 +381,10 @@ def split_extendor(extendor, anchor_len, target_len, order):
     return [(extendor[:anchor_len], extendor[anchor_len : anchor_len + target_len], "anchor-target")]
 
 
+def is_no_target_sequence(target):
+    return bool(target) and set(target.upper()) == {"N"}
+
+
 def add_ordered(value, values, seen):
     if value not in seen:
         values.append(value)
@@ -992,15 +996,23 @@ def main():
         extendor_to_rows[row["_extendor_value"]].append(row)
 
     requested_pairs = defaultdict(list)
+    requested_no_target_anchors = defaultdict(list)
     extendor_pair_choices = {}
     for row in input_rows:
         pairs = split_extendor(row["_extendor_value"], anchor_len, target_len, args.extendor_order)
         extendor_pair_choices[row["_extendor_value"]] = pairs
-        row["_anchor"] = pairs[0][0]
-        row["_target"] = pairs[0][1]
+        no_target_pairs = [pair for pair in pairs if is_no_target_sequence(pair[1])]
+        display_pair = no_target_pairs[0] if no_target_pairs else pairs[0]
+        row["_anchor"] = display_pair[0]
+        row["_target"] = display_pair[1]
+        row["_is_no_target"] = bool(no_target_pairs)
         row["_matched_order"] = ""
         for anchor, target, order in pairs:
-            requested_pairs[(anchor, target)].append((row["_extendor_value"], order))
+            request = (row["_extendor_value"], order)
+            if is_no_target_sequence(target):
+                requested_no_target_anchors[anchor].append(request)
+            elif not no_target_pairs:
+                requested_pairs[(anchor, target)].append(request)
 
     sample_to_partition, major_labels, minor_labels = read_partitions(
         args.partition_tsv,
@@ -1031,16 +1043,24 @@ def main():
     missing_samples = set()
     matched_satc_rows = 0
     matched_pairs = set()
+    anchor_present_samples = defaultdict(set)
 
     for sample, anchor, target, count_text in iter_satc_rows(args.satc, args.satc_has_header):
         anchor = normalize_seq(anchor, args.case_sensitive)
         target = normalize_seq(target, args.case_sensitive)
         matched_extendors = requested_pairs.get((anchor, target))
-        if not matched_extendors:
+        no_target_extendors = requested_no_target_anchors.get(anchor)
+        if not matched_extendors and not no_target_extendors:
             continue
         try:
             count = float(count_text)
         except ValueError:
+            continue
+        if no_target_extendors and count > 0:
+            anchor_present_samples[anchor].add(sample)
+            if sample not in sample_to_partition:
+                missing_samples.add(sample)
+        if not matched_extendors:
             continue
         matched_satc_rows += 1
         matched_pairs.add((anchor, target))
@@ -1071,6 +1091,21 @@ def main():
                 if not row["_matched_order"]:
                     row["_anchor"] = anchor
                     row["_target"] = target
+                    row["_matched_order"] = matched_order
+
+    partition_samples = set(sample_to_partition)
+    for anchor, no_target_extendors in requested_no_target_anchors.items():
+        no_target_samples = partition_samples - anchor_present_samples.get(anchor, set())
+        for extendor, matched_order in no_target_extendors:
+            sample_sets[extendor].update(no_target_samples)
+            for sample in no_target_samples:
+                major, minor = sample_to_partition[sample]
+                combo = f"{major}{args.intersection_sep}{minor}"
+                major_sample_sets[extendor][major].add(sample)
+                combo_sample_sets[extendor][combo].add(sample)
+            for row in extendor_to_rows[extendor]:
+                if not row["_matched_order"]:
+                    row["_anchor"] = anchor
                     row["_matched_order"] = matched_order
 
     write_summary(
@@ -1119,15 +1154,21 @@ def main():
         print(f"Wrote {args.long_output}")
     if args.heatmap_pdf:
         print(f"Wrote {args.heatmap_pdf}")
-    nonzero_extendors = sum(1 for row in input_rows if totals.get(row["_extendor_value"], 0.0) > 0)
+    nonzero_extendors = sum(
+        1
+        for row in input_rows
+        if totals.get(row["_extendor_value"], 0.0) > 0
+        or sample_sets.get(row["_extendor_value"], set())
+    )
     print(
-        f"Processed {len(input_rows)} input row(s), {len(requested_pairs)} candidate anchor-target pair(s)."
+        f"Processed {len(input_rows)} input row(s), {len(requested_pairs)} candidate "
+        f"anchor-target pair(s), and {len(requested_no_target_anchors)} NO TARGET anchor(s)."
     )
     print(
         f"Matched {matched_satc_rows} SATC row(s), {len(matched_pairs)} candidate pair(s), "
-        f"and {nonzero_extendors} input row(s) with nonzero counts."
+        f"and {nonzero_extendors} input row(s) with nonzero count or sample distributions."
     )
-    if matched_satc_rows == 0:
+    if requested_pairs and matched_satc_rows == 0:
         examples = []
         for extendor in list(extendor_pair_choices)[:3]:
             choices = ", ".join(
