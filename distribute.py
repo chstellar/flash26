@@ -688,10 +688,12 @@ def maybe_annotate(ax, matrix, vmax, fontsize=7, denominator_matrix=None):
         return
     for i, row in enumerate(matrix):
         for j, value in enumerate(row):
-            if value:
+            denominator = None
+            if denominator_matrix is not None:
+                denominator = denominator_matrix[i][j]
+            if value or (denominator is not None and denominator > 0):
                 label = format_count(value)
-                if denominator_matrix is not None:
-                    denominator = denominator_matrix[i][j]
+                if denominator is not None:
                     label = paste_count_fraction(value, denominator)
                 ax.text(
                     j,
