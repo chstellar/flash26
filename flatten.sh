@@ -3,7 +3,7 @@
 set -euo pipefail
 
 INPUT_DIR=/scratch/users/jiamuyu/proj_botryllus/flash/results
-INPUT_PAT="${1:-260720-00-3ants-challenge*}"  # may contain trailing * to capture multiple dirs
+INPUT_PAT="${1:-260903-01-bschlosseri-age-a10t31}"  # may contain trailing * to capture multiple dirs
 OUTPUT_DIR=/scratch/groups/horence/chester/flash2share
 OPTIONAL_SUFFIX="${2:-}"                        # default empty (safe under set -u)
 
@@ -29,6 +29,14 @@ for dir in $INPUT_PAT; do
 done
 
 echo "saved key flattened results from ${INPUT_DIR}/${INPUT_PAT} to ${OUTPUT_SUBDIR}"
+
+### refresh token
+# ml system rclone/1.73.1
+# rclone config reconnect gdrive:
+# Y
+# N
+# <the long string> # run the shown command on the local machine with a web broswer, log in to the corresponding google account, and paste the string back. On the windows machine if rclone is not found can try to run as administrator
+# depends
 
 ml system rclone/1.73.1
 rclone copy "${OUTPUT_SUBDIR}" "gdrive:${OUTPUT_PAT}" -P
