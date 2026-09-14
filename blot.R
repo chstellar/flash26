@@ -256,17 +256,17 @@ resolve_display_label_parts <- function(parts) {
   if (length(parts) == 0) return("")
 
   upper <- str_to_upper(parts)
-  removable <- upper %in% c(
-    "NO BLAST", "UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED"
+  placeholders <- upper %in% c(
+    "NO MATCH", "NO TARGET", "NO BLAST", "UNANNOTATED",
+    "UNCHARACTERIZED", "UNCHARACTERISED", "NO PROTEIN/GENE HIT",
+    "BLAST", "BLASTP", "COMPACTOR"
   )
-  if (any(!removable)) {
-    parts <- parts[!removable]
-  } else if (any(upper %in% c("UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED"))) {
-    parts <- "UNANNOTATED"
-  } else {
-    parts <- character(0)
-  }
-  paste(parts, collapse=";")
+  if (any(!placeholders)) return(paste(parts[!placeholders], collapse=";"))
+  if ("NO TARGET" %in% upper) return("NO TARGET")
+  if (any(upper %in% c("UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED",
+                       "NO PROTEIN/GENE HIT"))) return("UNANNOTATED")
+  if (any(upper %in% c("NO MATCH", "NO BLAST"))) return("NO MATCH")
+  ""
 }
 
 display_blast_label <- function(x) {
