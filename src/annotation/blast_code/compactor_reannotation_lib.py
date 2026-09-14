@@ -730,11 +730,33 @@ def clean_label(value):
             parts.append(cleaned)
     if not parts:
         return None
-    real_parts = [part for part in parts if part != "UNANNOTATED"]
+    placeholder_labels = {
+        "NO MATCH",
+        "NO TARGET",
+        "NO BLAST",
+        "UNANNOTATED",
+        "UNCHARACTERIZED",
+        "UNCHARACTERISED",
+        "NO PROTEIN/GENE HIT",
+        "BLAST",
+        "BLASTP",
+        "COMPACTOR",
+    }
+    real_parts = [part for part in parts if part.upper() not in placeholder_labels]
     if real_parts:
         return ";".join(real_parts)
-    if "UNANNOTATED" in parts:
+    upper_parts = {part.upper() for part in parts}
+    if "NO TARGET" in upper_parts:
+        return "NO TARGET"
+    if upper_parts & {
+        "UNANNOTATED",
+        "UNCHARACTERIZED",
+        "UNCHARACTERISED",
+        "NO PROTEIN/GENE HIT",
+    }:
         return "UNANNOTATED"
+    if upper_parts & {"NO MATCH", "NO BLAST"}:
+        return "NO MATCH"
     return None
 
 
@@ -1649,15 +1671,16 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
         row["annotation"] = compactor_hit["label"]
         row["stitle"] = row.get("stitle") if has_text(row.get("stitle")) else compactor_hit["label"]
     else:
-        feature_annotation = fake_feature_annotation(compactor_hit["label"])
-        row["features"] = row.get("features") if has_text(row.get("features")) else feature_annotation
-        row["features_all"] = row.get("features_all") if has_text(row.get("features_all")) else feature_annotation
-        if "features_10000_window" in row:
-            row["features_10000_window"] = (
-                row.get("features_10000_window")
-                if has_text(row.get("features_10000_window"))
-                else feature_annotation
-            )
+        if is_real_annotation(compactor_hit["label"]):
+            feature_annotation = fake_feature_annotation(compactor_hit["label"])
+            row["features"] = row.get("features") if has_text(row.get("features")) else feature_annotation
+            row["features_all"] = row.get("features_all") if has_text(row.get("features_all")) else feature_annotation
+            if "features_10000_window" in row:
+                row["features_10000_window"] = (
+                    row.get("features_10000_window")
+                    if has_text(row.get("features_10000_window"))
+                    else feature_annotation
+                )
     row["compactor_annotation"] = compactor_hit["label"]
     row["compactor_query"] = compactor_hit["compactor_query"]
     row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")

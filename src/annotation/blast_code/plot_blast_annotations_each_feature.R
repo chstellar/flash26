@@ -315,6 +315,26 @@ get_focus_class_beta <- function(tbl, focus_class, default_beta) {
   candidates[which.max(abs(candidates))]
 }
 
+resolve_blast_label_parts <- function(labels) {
+  labels <- str_squish(as.character(labels))
+  labels <- unique(labels[!is.na(labels) & nchar(labels) > 0])
+  if (length(labels) == 0) return(NA_character_)
+
+  upper <- str_to_upper(labels)
+  placeholders <- c(
+    "NA", "NAN", "NONE", "NO MATCH", "NO TARGET", "NO BLAST",
+    "UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED",
+    "NO PROTEIN/GENE HIT", "BLAST", "BLASTP", "COMPACTOR"
+  )
+  real_labels <- labels[!upper %in% placeholders]
+  if (length(real_labels) > 0) return(paste(unique(real_labels), collapse=";"))
+  if ("NO TARGET" %in% upper) return("NO TARGET")
+  if (any(upper %in% c("UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED",
+                       "NO PROTEIN/GENE HIT"))) return("UNANNOTATED")
+  if (any(upper %in% c("NO MATCH", "NO BLAST"))) return("NO MATCH")
+  NA_character_
+}
+
 clean_blast_label <- function(x) {
   boilerplate <- regex(
     "Gnomon|Derived by automated computational analysis|Supporting evidence includes|coverage of the annotated genomic feature|support for all annotated introns",
@@ -325,21 +345,24 @@ clean_blast_label <- function(x) {
     parts <- unlist(str_split(as.character(value), ";+"), use.names=FALSE)
     parts <- parts[!str_detect(parts, boilerplate)]
     if (length(parts) == 0) return(NA_character_)
-    value <- paste(parts, collapse=";")
-    value <- str_replace_all(value, "\\s*\\[[^\\]]+\\]\\s*$", "")
-    value <- str_replace(value, "^RecName:\\s*Full=([^;]+).*$", "\\1")
-    value <- str_replace(value, "^SubName:\\s*Full=([^;]+).*$", "\\1")
-    value <- str_replace(value, "^AltName:\\s*Full=([^;]+).*$", "\\1")
-    value <- str_replace(value, "(^|;\\s*)Short=([^;]+).*$", "\\2")
-    value <- str_replace_all(value, "\\b(RecName|AltName|SubName):\\s*Full=", "")
-    value <- str_replace_all(value, "\\bFlags:\\s*[^;]+;?", "")
-    value <- str_replace_all(value, "LOC\\d+[- ]*", "")
-    value <- str_replace_all(value, "\\s+(isoform|transcript\\s+variant|variant)\\s+X?\\d+\\b", "")
-    value <- str_squish(str_replace_all(value, "\\s*[,;]\\s*$", ""))
-    value <- str_replace_all(value, fixed("UNCHARACTERISED"), "UNCHARACTERIZED")
-    if (str_detect(value, regex("uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
-                                ignore_case=TRUE))) value <- "UNANNOTATED"
-    if (nchar(value) == 0) NA_character_ else value
+    clean_component <- function(part) {
+      part <- str_replace_all(part, "\\s*\\[[^\\]]+\\]\\s*$", "")
+      part <- str_replace(part, "^RecName:\\s*Full=([^;]+).*$", "\\1")
+      part <- str_replace(part, "^SubName:\\s*Full=([^;]+).*$", "\\1")
+      part <- str_replace(part, "^AltName:\\s*Full=([^;]+).*$", "\\1")
+      part <- str_replace(part, "^Short=([^;]+).*$", "\\1")
+      part <- str_replace_all(part, "\\b(RecName|AltName|SubName):\\s*Full=", "")
+      part <- str_replace_all(part, "\\bFlags:\\s*[^;]+;?", "")
+      part <- str_replace_all(part, "LOC\\d+[- ]*", "")
+      part <- str_replace_all(part, "\\s+(isoform|transcript\\s+variant|variant)\\s+X?\\d+\\b", "")
+      part <- str_squish(str_replace_all(part, "\\s*[,;]\\s*$", ""))
+      part <- str_replace_all(part, fixed("UNCHARACTERISED"), "UNCHARACTERIZED")
+      if (str_detect(part, regex("uncharacteri[sz]ed|hypothetical protein|predicted protein|unnamed protein",
+                                 ignore_case=TRUE))) part <- "UNANNOTATED"
+      part
+    }
+    parts <- vapply(parts, clean_component, character(1), USE.NAMES=FALSE)
+    resolve_blast_label_parts(parts)
   }
   vapply(as.character(x), clean_one, character(1), USE.NAMES=FALSE)
 }
@@ -347,10 +370,7 @@ clean_blast_label <- function(x) {
 collapse_blast_labels <- function(x) {
   labels <- clean_blast_label(unlist(str_split(replace_na(as.character(x), ""), ";|,")))
   labels <- labels[!is.na(labels) & nchar(labels) > 1]
-  if (length(labels) == 0) {
-    return(NA_character_)
-  }
-  paste(unique(labels), collapse=";")
+  resolve_blast_label_parts(labels)
 }
 
 extract_blast_species <- function(x) {
@@ -2348,6 +2368,16 @@ if (!"metadata_category" %in% colnames(all_features_summary)) {
   stop("No feature plot summary rows were generated; check category-level errors above.", call. = FALSE)
 }
 
+blast_label_columns <- colnames(all_features_summary)[
+  str_detect(
+    colnames(all_features_summary),
+    regex("blast.*label|label.*blast|^Blast Label$|^compactor_annotation$", ignore_case=TRUE)
+  )
+]
+if (length(blast_label_columns) > 0) {
+  all_features_summary <- all_features_summary %>%
+    mutate(across(all_of(blast_label_columns), clean_blast_label))
+}
 all_features_summary <- all_features_summary %>%
   mutate(across(where(is.character), single_line_text))
 all_blastp_summary <- all_blastp_summary %>%

@@ -250,10 +250,32 @@ clean_label_key <- function(x) {
   str_squish(str_to_lower(x))
 }
 
+resolve_display_label_parts <- function(parts) {
+  parts <- str_squish(as.character(parts))
+  parts <- unique(parts[!is.na(parts) & nchar(parts) > 0])
+  if (length(parts) == 0) return("")
+
+  upper <- str_to_upper(parts)
+  removable <- upper %in% c(
+    "NO BLAST", "UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED"
+  )
+  if (any(!removable)) {
+    parts <- parts[!removable]
+  } else if (any(upper %in% c("UNANNOTATED", "UNCHARACTERIZED", "UNCHARACTERISED"))) {
+    parts <- "UNANNOTATED"
+  } else {
+    parts <- character(0)
+  }
+  paste(parts, collapse=";")
+}
+
 display_blast_label <- function(x) {
   x <- safe_text(x)
-  x <- str_remove_all(x, "\\s*\\(COMPACTOR\\)")
-  str_squish(x)
+  vapply(x, function(value) {
+    value <- str_remove_all(value, "\\s*\\(COMPACTOR\\)")
+    parts <- unlist(str_split(value, ";+"), use.names=FALSE)
+    resolve_display_label_parts(parts)
+  }, character(1), USE.NAMES=FALSE)
 }
 
 ordered_class_columns <- function(class_cols) {
@@ -492,10 +514,12 @@ is_na_quality <- function(x) {
 }
 
 collapse_unique_labels <- function(x, sep = ";") {
-  x <- safe_text(x)
+  x <- display_blast_label(x)
   x <- unlist(strsplit(paste(x, collapse = sep), ";|,", perl = TRUE), use.names = FALSE)
   x <- trimws(x)
   x <- unique(x[nzchar(x)])
+  resolved <- resolve_display_label_parts(x)
+  x <- if (nzchar(resolved)) unlist(strsplit(resolved, ";", fixed=TRUE)) else character(0)
   if (length(x) == 0) {
     return("NO MATCH")
   }
@@ -505,7 +529,7 @@ collapse_unique_labels <- function(x, sep = ";") {
 is_placeholder_label <- function(x) {
   x <- safe_text(x)
   x == "" |
-    str_detect(x, regex("^(NO MATCH|NO TARGET|UNANNOTATED|UNCHARACTERIZED|UNCHARACTERISED|NO PROTEIN/GENE HIT)$",
+    str_detect(x, regex("^(NO MATCH|NO TARGET|NO BLAST|UNANNOTATED|UNCHARACTERIZED|UNCHARACTERISED|NO PROTEIN/GENE HIT)$",
                         ignore_case = TRUE))
 }
 
@@ -633,7 +657,7 @@ prepare_point_labels <- function(dt) {
         label_quality
       ),
       blast_label = ifelse(blast_label == "", "NO MATCH", blast_label),
-      point_label = str_wrap(str_trunc(blast_label, width = 80, side = "right"), width = 28),
+      point_label = str_wrap(blast_label, width = 28),
       class_count_label = safe_text(class_count_label),
       class_count_slashes = safe_padded_text(class_count_slashes),
       point_label = ifelse(
@@ -731,7 +755,7 @@ filter_summary <- function(path, metadata_column, selected_clusters) {
 make_histogram_label <- function(label) {
   label <- collapse_unique_labels(display_blast_label(label), sep = ",")
   label <- str_replace(label, " ,", ", ") %>% str_replace(" ;", "; ")
-  str_wrap(str_trunc(label, width = 120, side = "right"), width = 38)
+  str_wrap(label, width = 38)
 }
 
 make_histogram_data <- function(dt, num_hits) {
