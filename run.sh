@@ -3,7 +3,7 @@
 #SBATCH -p horence
 #SBATCH --time=2-00:00:00 
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=1G
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu

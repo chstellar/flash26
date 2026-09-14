@@ -18,17 +18,17 @@ PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 
 # Edit these defaults or override them through sbatch --export.
 DATASET="${DATASET:-260903-01-bschlosseri-age-a10t31}"
-RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/${DATASET}/filter1/noCluster/hyena/genomes/normalized}"
+RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/${DATASET}/filter1/noCluster/hyena/genomes_rejuv/normalized}"
 # Quoted *, ?, and [] wildcards are resolved by prediction.py; exactly one file must match.
 SIDECAR="${SIDECAR:-${RESULTS_DIR}/*_confusion_matrices.tsv}"
 METADATA_CATEGORY="${METADATA_CATEGORY:-age_in_days}"
 MATRIX="${MATRIX:-both}"                 # train, test, or both
 PLOT_TYPE="${PLOT_TYPE:-auto}"           # auto, regression, or confusion
-OUTPUT="${OUTPUT:-${RESULTS_DIR}/prediction.pdf}"
+OUTPUT="${OUTPUT:-${RESULTS_DIR}/prediction_pzh.pdf}"
 
 # Regression point colors. Leave COLOR_COLUMN empty for one fixed point color.
-COLOR_COLUMN="${COLOR_COLUMN-electric_shock}"
-DOT_COLORS="${DOT_COLORS-no:#0072B2,yes:#D55E00}"
+COLOR_COLUMN="${COLOR_COLUMN-months_after_shock}"
+DOT_COLORS="${DOT_COLORS-0:#0072B2,yes:#D55E00}"
 POINT_COLOR="${POINT_COLOR:-#2F6F9F}"
 MISSING_COLOR="${MISSING_COLOR:-#A6A6A6}"
 REGRESSION_CMAP="${REGRESSION_CMAP:-viridis}"
