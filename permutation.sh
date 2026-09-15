@@ -10,30 +10,23 @@
 set -euo pipefail
 
 ml purge
-
 FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
-if [[ -x "$FLASH_CONDA/bin/conda" ]]; then
-  eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
-fi
-if command -v mamba >/dev/null 2>&1; then
-  eval "$(mamba shell hook --shell bash)"
-  mamba activate "${FLASH_PY_ENV:-adelie_env}"
-elif command -v conda >/dev/null 2>&1; then
-  conda activate "${FLASH_PY_ENV:-adelie_env}"
-fi
+eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
+conda activate adelie_env
 
-PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
+PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash/}"
 PYTHON="${PYTHON:-python}"
 
 # Override these with sbatch --export=ALL,INPUT_DIR=...,METADATA_CATEGORIES=...
-INPUT_DIR="${INPUT_DIR:-${PROJECT_DIR}/results}"
-METADATA_CATEGORIES="${METADATA_CATEGORIES:-}"
+INPUT_DIR="${INPUT_DIR:-${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized}"
+METADATA_CATEGORIES="${METADATA_CATEGORIES:-fungus_species,tissue}"
 MATRIX="${MATRIX:-test}"                  # test, train, or both
-PERMUTATIONS="${PERMUTATIONS:-10000}"
+PERMUTATIONS="${PERMUTATIONS:-100000}"
 SEED="${SEED:-42}"
-OUTPUT_TSV="${OUTPUT_TSV:-}"
-PDF="${PDF:-}"
-SIDECAR="${SIDECAR:-}"
+OUTPUT_TSV="${OUTPUT_TSV:-${INPUT_DIR}/permutation.tsv}"
+# PDF="${PDF:-${INPUT_DIR}/*confusion_matrices.pdf}"
+PDF="${PDF:-${INPUT_DIR}/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_confusion_matrices.pdf}"
+SIDECAR="${SIDECAR:-${INPUT_DIR}/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_confusion_matrices.csv}"
 
 usage() {
   echo "Usage: sbatch permutation_pvalue.sh [extra permutation_pvalue.py args...]"
@@ -51,7 +44,7 @@ usage() {
   echo "  SIDECAR=$SIDECAR"
   echo
   echo "Example:"
-  echo "  sbatch --export=ALL,INPUT_DIR=/path/to/results,METADATA_CATEGORIES=species,PERMUTATIONS=100000 permutation_pvalue.sh"
+  echo "  sbatch --export=ALL,INPUT_DIR=/path/to/results,METADATA_CATEGORIES=species,PERMUTATIONS=100000 permutation.sh"
 }
 
 [[ "${1:-}" =~ ^(-h|--help)$ ]] && { usage; exit 0; }
@@ -80,4 +73,4 @@ if [[ -n "$SIDECAR" ]]; then
   args+=(--sidecar "$SIDECAR")
 fi
 
-"$PYTHON" "$PROJECT_DIR/permutation_pvalue.py" "${args[@]}" "$@"
+python "$PROJECT_DIR/permutation.py" "${args[@]}" "$@"

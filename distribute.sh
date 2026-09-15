@@ -8,20 +8,11 @@
 #SBATCH --mail-user=chesteryu@stanford.edu
 
 set -euo pipefail
+
 ml purge
-
 FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
-if [[ -x "$FLASH_CONDA/bin/conda" ]]; then
-  eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
-fi
-if command -v mamba >/dev/null 2>&1; then
-eval "$(mamba shell hook --shell bash)"
-  mamba activate "${FLASH_PY_ENV:-biopython_env-R}"
-elif command -v conda >/dev/null 2>&1; then
-  conda activate "${FLASH_PY_ENV:-biopython_env-R}"
-fi
-
-PYTHON="${PYTHON:-python}"
+eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
+conda activate "${FLASH_R_ENV:-biopython_env-R}"
 
 # ### wolbachia
 # PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
@@ -52,15 +43,22 @@ PYTHON="${PYTHON:-python}"
 
 ### ant
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
-RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus-cp/filter1/noCluster/hyena/normalized"
+# RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus-cp/filter1/noCluster/hyena/normalized"
+RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized"
 PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
 # cut -d',' -f1,2,7 metadata.csv > partition.csv
 SATC=$(ls ${RESULTS_DIR}/../../target1/*clusters/all_satc_merged.txt 2>/dev/null | head -1)
 INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/manuscript.tsv}"
 > $INPUT_TSV
 # grep "fungus_species" ${RESULTS_DIR}/*summary_compactor.tsv > $INPUT_TSV
-grep "RNA-binding protein 39" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
-grep "twitchin" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "unconventional myosin" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "RRM domain" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "disks large homolog 4" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "histone" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "proteasome regulatory" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "squid" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "fungus_species" $INPUT_TSV | grep -v "residual" > distribute.tmp && mv distribute.tmp $INPUT_TSV
+
 OUTPUT_TSV="${OUTPUT_TSV:-${RESULTS_DIR}/distribution_manuscript.tsv}"
 HEATMAP_PDF="${HEATMAP_PDF:-${RESULTS_DIR}/distribution_heatmaps_manuscript.pdf}"
 
@@ -151,4 +149,4 @@ if [[ -n "$HEATMAP_PDF" ]]; then
   args+=(--heatmap_pdf "$HEATMAP_PDF")
 fi
 
-"$PYTHON" "$PROJECT_DIR/distribute.py" "${args[@]}" "$@"
+python "$PROJECT_DIR/distribute.py" "${args[@]}" "$@"

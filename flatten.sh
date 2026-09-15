@@ -3,7 +3,7 @@
 set -euo pipefail
 
 INPUT_DIR=/scratch/users/jiamuyu/proj_botryllus/flash/results
-INPUT_PAT="${1:-260903-01-bschlosseri-age-a10t31}"  # may contain trailing * to capture multiple dirs
+INPUT_PAT="${1:-260819-00-cfloridanus-fungus}"  # may contain trailing * to capture multiple dirs
 OUTPUT_DIR=/scratch/groups/horence/chester/flash2share
 OPTIONAL_SUFFIX="${2:-}"                        # default empty (safe under set -u)
 
