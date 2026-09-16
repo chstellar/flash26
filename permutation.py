@@ -10,9 +10,12 @@ back to the matching *_nonzero_coefficients.tsv confusion_matrix column.
 
 import argparse
 import csv
+import glob
+import math
 import random
-import re
 import sys
+from collections import defaultdict
+from fractions import Fraction
 from pathlib import Path
 
 
@@ -57,7 +60,23 @@ def parse_args():
         "--permutations",
         type=int,
         default=10000,
-        help="Number of permutations. Default: 10000.",
+        help="Number of Monte Carlo permutations. Default: 10000.",
+    )
+    parser.add_argument(
+        "--method",
+        choices=("auto", "exact", "monte_carlo"),
+        default="auto",
+        help=(
+            "P-value method. auto uses exact enumeration when feasible and "
+            "otherwise falls back to Monte Carlo. Default: auto."
+        ),
+    )
+    parser.add_argument(
+        "--max_exact_states",
+        "--max-exact-states",
+        type=int,
+        default=2000000,
+        help="Maximum dynamic-programming states for --method auto/exact. Default: 2000000.",
     )
     parser.add_argument(
         "--seed",
@@ -109,12 +128,40 @@ def read_table(path):
         return list(reader), list(reader.fieldnames or [])
 
 
+def has_glob_magic(value):
+    return any(char in str(value) for char in "*?[")
+
+
+def resolve_one_path(value, label, base_dir=None):
+    path_text = str(value)
+    candidate_texts = [path_text]
+    path = Path(path_text)
+    if base_dir and not path.is_absolute():
+        candidate_texts.insert(0, str(Path(base_dir) / path_text))
+
+    matches = []
+    for candidate in candidate_texts:
+        if has_glob_magic(candidate):
+            matches.extend(glob.glob(candidate, recursive=True))
+        elif Path(candidate).exists():
+            matches.append(candidate)
+
+    unique_matches = sorted(dict.fromkeys(str(Path(match)) for match in matches))
+    if not unique_matches:
+        base_message = f" relative to {base_dir}" if base_dir else ""
+        raise FileNotFoundError(f"No {label} matched {value!r}{base_message}.")
+    if len(unique_matches) > 1:
+        joined = "\n  ".join(unique_matches[:20])
+        raise ValueError(
+            f"{label} pattern matched more than one file. Please narrow it.\n"
+            f"  {joined}"
+        )
+    return Path(unique_matches[0])
+
+
 def find_confusion_pdf(input_dir, explicit_pdf=""):
     if explicit_pdf:
-        pdf = Path(explicit_pdf)
-        if not pdf.exists():
-            raise FileNotFoundError(f"Explicit PDF does not exist: {pdf}")
-        return pdf
+        return resolve_one_path(explicit_pdf, "PDF", base_dir=input_dir)
 
     pdfs = sorted(Path(input_dir).rglob("*_confusion_matrices.pdf"))
     if not pdfs:
@@ -151,10 +198,7 @@ def sidecar_candidates(pdf):
 
 def find_sidecar(pdf, explicit_sidecar=""):
     if explicit_sidecar:
-        sidecar = Path(explicit_sidecar)
-        if not sidecar.exists():
-            raise FileNotFoundError(f"Explicit sidecar does not exist: {sidecar}")
-        return sidecar
+        return resolve_one_path(explicit_sidecar, "sidecar", base_dir=pdf.parent)
 
     for candidate in sidecar_candidates(pdf):
         if candidate.exists():
@@ -184,6 +228,70 @@ def pvalue_from_vectors(true_labels, predicted_labels, permutations, rng):
         if accuracy(permuted_true, predicted_labels) >= observed:
             ge_observed += 1
     return observed, ge_observed, (1 + ge_observed) / (permutations + 1)
+
+
+def label_counts(labels, ordered_labels):
+    return [sum(label == target for label in labels) for target in ordered_labels]
+
+
+def generate_allocations(total, caps):
+    allocation = [0] * len(caps)
+
+    def rec(index, remaining):
+        if index == len(caps) - 1:
+            if 0 <= remaining <= caps[index]:
+                allocation[index] = remaining
+                yield tuple(allocation)
+            return
+        upper = min(caps[index], remaining)
+        for value in range(upper + 1):
+            allocation[index] = value
+            yield from rec(index + 1, remaining - value)
+
+    yield from rec(0, total)
+
+
+def exact_pvalue_from_vectors(true_labels, predicted_labels, max_states):
+    observed_correct = sum(t == p for t, p in zip(true_labels, predicted_labels))
+    labels = sorted(set(true_labels) | set(predicted_labels))
+    true_counts = label_counts(true_labels, labels)
+    predicted_counts = label_counts(predicted_labels, labels)
+
+    states = {(tuple(predicted_counts), 0): 1}
+    states_seen = 1
+    for true_index, row_total in enumerate(true_counts):
+        next_states = defaultdict(int)
+        for (remaining_columns, correct_so_far), ways_so_far in states.items():
+            for allocation in generate_allocations(row_total, remaining_columns):
+                ways = ways_so_far
+                for remaining, chosen in zip(remaining_columns, allocation):
+                    ways *= math.comb(remaining, chosen)
+                next_remaining = tuple(
+                    remaining - chosen
+                    for remaining, chosen in zip(remaining_columns, allocation)
+                )
+                next_correct = correct_so_far + allocation[true_index]
+                next_states[(next_remaining, next_correct)] += ways
+        states = dict(next_states)
+        states_seen += len(states)
+        if states_seen > max_states:
+            raise RuntimeError(
+                f"Exact p-value exceeded --max_exact_states={max_states}."
+            )
+
+    total_ways = 0
+    tail_ways = 0
+    zero_remaining = tuple([0] * len(labels))
+    for (remaining_columns, correct), ways in states.items():
+        if remaining_columns != zero_remaining:
+            continue
+        total_ways += ways
+        if correct >= observed_correct:
+            tail_ways += ways
+    if total_ways == 0:
+        raise ValueError("Exact p-value calculation found no valid permutations.")
+    p_value = Fraction(tail_ways, total_ways)
+    return observed_correct / len(true_labels), observed_correct, tail_ways, total_ways, p_value
 
 
 def vectors_from_log(rows, metadata_category, matrix):
@@ -283,7 +391,16 @@ def table_kind(fieldnames):
     )
 
 
-def result_rows(rows, fieldnames, categories, matrices, permutations, seed):
+def result_rows(
+    rows,
+    fieldnames,
+    categories,
+    matrices,
+    permutations,
+    seed,
+    method,
+    max_exact_states,
+):
     kind = table_kind(fieldnames)
     output = []
     for category in categories:
@@ -304,19 +421,49 @@ def result_rows(rows, fieldnames, categories, matrices, permutations, seed):
                     f"metadata_category={category!r}, matrix={matrix!r}."
                 )
 
-            rng = random.Random(f"{seed}:{category}:{matrix}")
-            observed, ge_observed, p_value = pvalue_from_vectors(
-                true_labels, predicted_labels, permutations, rng
-            )
+            pvalue_method = method
+            exact_tail = ""
+            exact_total = ""
+            ge_observed = ""
+            minimum_possible = ""
+            if method in {"auto", "exact"}:
+                try:
+                    (
+                        observed,
+                        observed_correct,
+                        exact_tail,
+                        exact_total,
+                        exact_p_value,
+                    ) = exact_pvalue_from_vectors(
+                        true_labels, predicted_labels, max_exact_states
+                    )
+                    p_value = float(exact_p_value)
+                    pvalue_method = "exact"
+                except RuntimeError:
+                    if method == "exact":
+                        raise
+                    pvalue_method = "monte_carlo"
+
+            if pvalue_method == "monte_carlo":
+                rng = random.Random(f"{seed}:{category}:{matrix}")
+                observed, ge_observed, p_value = pvalue_from_vectors(
+                    true_labels, predicted_labels, permutations, rng
+                )
+                minimum_possible = f"{1 / (permutations + 1):.10g}"
+
             output.append(
                 {
                     "metadata_category": category,
                     "matrix": matrix,
                     "n_samples": len(true_labels),
                     "observed_accuracy": f"{observed:.10g}",
+                    "method": pvalue_method,
                     "permutations": permutations,
                     "permuted_ge_observed": ge_observed,
                     "p_value": f"{p_value:.10g}",
+                    "minimum_possible_p_value": minimum_possible,
+                    "exact_tail_permutations": exact_tail,
+                    "exact_total_permutations": exact_total,
                     "source": source,
                 }
             )
@@ -329,9 +476,13 @@ def write_rows(rows, output_path=""):
         "matrix",
         "n_samples",
         "observed_accuracy",
+        "method",
         "permutations",
         "permuted_ge_observed",
         "p_value",
+        "minimum_possible_p_value",
+        "exact_tail_permutations",
+        "exact_total_permutations",
         "source",
     ]
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames, delimiter="\t")
@@ -362,6 +513,8 @@ def main():
         matrices,
         args.permutations,
         args.seed,
+        args.method,
+        args.max_exact_states,
     )
     write_rows(results, args.output)
 

@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-ml purge
+ml purge 2>/dev/null || true
 FLASH_CONDA="${FLASH_CONDA:-/oak/stanford/groups/horence/chester/dabs_ref/miniforge3}"
 eval "$("$FLASH_CONDA/bin/conda" shell.bash hook)"
 conda activate adelie_env
@@ -22,11 +22,12 @@ INPUT_DIR="${INPUT_DIR:-${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filt
 METADATA_CATEGORIES="${METADATA_CATEGORIES:-fungus_species,tissue}"
 MATRIX="${MATRIX:-test}"                  # test, train, or both
 PERMUTATIONS="${PERMUTATIONS:-100000}"
+METHOD="${METHOD:-auto}"                 # auto, exact, or monte_carlo
+MAX_EXACT_STATES="${MAX_EXACT_STATES:-2000000}"
 SEED="${SEED:-42}"
 OUTPUT_TSV="${OUTPUT_TSV:-${INPUT_DIR}/permutation.tsv}"
-# PDF="${PDF:-${INPUT_DIR}/*confusion_matrices.pdf}"
-PDF="${PDF:-${INPUT_DIR}/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_confusion_matrices.pdf}"
-SIDECAR="${SIDECAR:-${INPUT_DIR}/260819-00-cfloridanus-fungus_hyena_adelie_results_top2000_target1_k41_s41_trainProp0.8_confusion_matrices.csv}"
+PDF="${PDF:-*confusion_matrices*pdf}"
+SIDECAR="${SIDECAR:-*confusion_matrices*csv}"
 
 usage() {
   echo "Usage: sbatch permutation_pvalue.sh [extra permutation_pvalue.py args...]"
@@ -38,6 +39,8 @@ usage() {
   echo "Optional environment variables:"
   echo "  MATRIX=$MATRIX"
   echo "  PERMUTATIONS=$PERMUTATIONS"
+  echo "  METHOD=$METHOD"
+  echo "  MAX_EXACT_STATES=$MAX_EXACT_STATES"
   echo "  SEED=$SEED"
   echo "  OUTPUT_TSV=$OUTPUT_TSV"
   echo "  PDF=$PDF"
@@ -60,6 +63,8 @@ args=(
   --metadata_category "$METADATA_CATEGORIES"
   --matrix "$MATRIX"
   --permutations "$PERMUTATIONS"
+  --method "$METHOD"
+  --max_exact_states "$MAX_EXACT_STATES"
   --seed "$SEED"
 )
 
@@ -73,4 +78,4 @@ if [[ -n "$SIDECAR" ]]; then
   args+=(--sidecar "$SIDECAR")
 fi
 
-python "$PROJECT_DIR/permutation.py" "${args[@]}" "$@"
+"$PYTHON" "$PROJECT_DIR/permutation.py" "${args[@]}" "$@"
