@@ -69,6 +69,16 @@ BLAST_DETAIL_COLUMNS = [
         "NCBI_protein_accession", "UniProt_accession", "blast_mode",
     }
 ]
+SOURCE_ALIGNMENT_COLUMNS = [
+    "restricted_blastp_identity",
+    "restricted_blastp_qcovs",
+    "restricted_blast_identity",
+    "restricted_blast_qcovs",
+    "unrestricted_blastp_identity",
+    "unrestricted_blastp_qcovs",
+    "unrestricted_blast_identity",
+    "unrestricted_blast_qcovs",
+]
 
 
 def parse_args():
@@ -973,6 +983,7 @@ def write_compactor_annotation_summary(records, annotations, output_path):
         "uniprot_accession",
         "raw_annotation",
         *BLAST_DETAIL_COLUMNS,
+        *SOURCE_ALIGNMENT_COLUMNS,
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
@@ -1151,6 +1162,7 @@ def write_seed_annotation_summary(seeds, records_by_anchor, annotations, output_
         "uniprot_accession",
         "raw_annotation",
         *BLAST_DETAIL_COLUMNS,
+        *SOURCE_ALIGNMENT_COLUMNS,
         "restricted_blastp_label",
         "restricted_blast_label",
         "unrestricted_blastp_label",
@@ -1302,6 +1314,7 @@ def read_seed_compactor_annotation_map(path):
                 "compactor_exact_support": row.get("compactor_exact_support", "NA"),
                 "annotation_source": row.get("annotation_source", "NA"),
                 "blast_mode": row.get("blast_mode", "NA"),
+                "blast_scope": row.get("blast_scope", "NA"),
             }
             current = annotation_map.get(extendor)
             if current is None:
@@ -1349,6 +1362,7 @@ def compactor_hit_from_row(row):
         "compactor_exact_support": row.get("exact_support") or row.get("compactor_exact_support", "NA"),
         "annotation_source": row.get("annotation_source", "NA"),
         "blast_mode": row.get("blast_mode", "NA"),
+        "blast_scope": row.get("blast_scope", "NA"),
         "compactor_anchor": row.get("anchor") or row.get("compactor_anchor", "NA"),
     }
 
@@ -1490,8 +1504,16 @@ def summary_compactor_hit(row):
     ids = compactor_trace_fields(row)
     return {
         "label": label or "NO MATCH",
-        "identity": row.get("identity", "NA"),
-        "qcovs": row.get("qcovs", "NA"),
+        "identity": (
+            row.get("compactor_identity")
+            if has_text(row.get("compactor_identity"))
+            else row.get("identity", "NA")
+        ),
+        "qcovs": (
+            row.get("compactor_qcovs")
+            if has_text(row.get("compactor_qcovs"))
+            else row.get("qcovs", "NA")
+        ),
         "raw_annotation": row.get("compactor_raw_annotation", "NA"),
         "species_origin": row.get("compactor_species", row.get("species_origin", "NA")),
         "staxids": row.get("compactor_staxids", row.get("staxids", "NA")),
@@ -1506,8 +1528,9 @@ def summary_compactor_hit(row):
         **compactor_support_fields(row),
         "compactor_length": row.get("compactor_length", "NA"),
         "compactor_exact_support": row.get("compactor_exact_support", "NA"),
-        "annotation_source": row.get("annotation_source", "NA"),
-        "blast_mode": row.get("blast_mode", "NA"),
+        "annotation_source": row.get("compactor_annotation_source") or row.get("annotation_source", "NA"),
+        "blast_mode": row.get("compactor_blast_mode") or row.get("blast_mode", "NA"),
+        "blast_scope": row.get("compactor_blast_scope") or row.get("blast_scope", "NA"),
         "match_source": "summary",
         "metadata_category": row.get("metadata_category", ""),
         "feature": row.get("feature", ""),
@@ -1682,6 +1705,11 @@ def apply_compactor_hit_to_annotation_row(row, compactor_hit, mode, force=False)
                     else feature_annotation
                 )
     row["compactor_annotation"] = compactor_hit["label"]
+    row["compactor_identity"] = compactor_hit.get("identity", "NA")
+    row["compactor_qcovs"] = compactor_hit.get("qcovs", "NA")
+    row["compactor_annotation_source"] = compactor_hit.get("annotation_source", "NA")
+    row["compactor_blast_mode"] = compactor_hit.get("blast_mode", "NA")
+    row["compactor_blast_scope"] = compactor_hit.get("blast_scope", "NA")
     row["compactor_query"] = compactor_hit["compactor_query"]
     row["compactor_sequence"] = compactor_hit.get("compactor_sequence") or compactor_hit.get("compactor", "NA")
     for column, value in compactor_support_fields(compactor_hit).items():
@@ -1764,6 +1792,11 @@ def fill_plot_annotation_tsv(
         rows = list(reader)
         for extra_col in (
             "compactor_annotation",
+            "compactor_identity",
+            "compactor_qcovs",
+            "compactor_annotation_source",
+            "compactor_blast_mode",
+            "compactor_blast_scope",
             "compactor_query",
             "compactor_sequence",
             "compactor_blast_query_sequence",
