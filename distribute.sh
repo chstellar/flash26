@@ -1,9 +1,9 @@
 #!/bin/bash
 #
 #SBATCH --partition=horence
-#SBATCH --time=0-01:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=32G
+#SBATCH --mem=16G
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=chesteryu@stanford.edu
 
@@ -48,19 +48,19 @@ RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noClust
 PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
 # cut -d',' -f1,2,7 metadata.csv > partition.csv
 SATC=$(ls ${RESULTS_DIR}/../../target1/*clusters/all_satc_merged.txt 2>/dev/null | head -1)
-INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/manuscript.tsv}"
+INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/manuscript_all.tsv}"
 > $INPUT_TSV
-# grep "fungus_species" ${RESULTS_DIR}/*summary_compactor.tsv > $INPUT_TSV
-grep "unconventional myosin" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
-grep "RRM domain" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
-grep "disks large homolog 4" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
-grep "histone" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
-grep "proteasome regulatory" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
-grep "squid" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+grep "fungus_species" ${RESULTS_DIR}/*summary_compactor.tsv > $INPUT_TSV
+# grep "unconventional myosin" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# grep "RRM domain" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# grep "disks large homolog 4" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# grep "histone" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# grep "proteasome regulatory" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# grep "squid" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
 grep "fungus_species" $INPUT_TSV | grep -v "residual" > distribute.tmp && mv distribute.tmp $INPUT_TSV
 
-OUTPUT_TSV="${OUTPUT_TSV:-${RESULTS_DIR}/distribution_manuscript.tsv}"
-HEATMAP_PDF="${HEATMAP_PDF:-${RESULTS_DIR}/distribution_heatmaps_manuscript.pdf}"
+OUTPUT_TSV="${OUTPUT_TSV:-${RESULTS_DIR}/distribution_manuscript_all.tsv}"
+HEATMAP_PDF="${HEATMAP_PDF:-${RESULTS_DIR}/distribution_heatmaps_manuscript_all.pdf}"
 
 EXTENDOR_COL="${EXTENDOR_COL:-4}"
 ANNOTATION_COL="${ANNOTATION_COL:-20}"

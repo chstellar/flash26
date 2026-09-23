@@ -1,10 +1,3 @@
-5403	no
-5682	no
-5170	no
-2538	no
-
-5592	yes
-2033	yes
-5563	yes
-2575	yes
-2689	yes
+metadata_category	matrix	n_samples	observed_accuracy	method	permutations	permuted_ge_observed	p_value	minimum_possible_p_value	exact_tail_permutations	exact_total_permutations	source
+fungus_species	test	55	0.8363636364	exact	100000		3.824152932e-16		168168	439752287662000585272	sample_rows
+tissue	test	50	1	exact	100000		1.001157338e-08		1	99884400	sample_rows

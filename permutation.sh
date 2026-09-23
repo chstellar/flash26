@@ -17,12 +17,17 @@ conda activate adelie_env
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash/}"
 PYTHON="${PYTHON:-python}"
 
-# Override these with sbatch --export=ALL,INPUT_DIR=...,METADATA_CATEGORIES=...
-INPUT_DIR="${INPUT_DIR:-${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized}"
-METADATA_CATEGORIES="${METADATA_CATEGORIES:-fungus_species,tissue}"
+# ant
+# INPUT_DIR="${INPUT_DIR:-${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized}"
+# METADATA_CATEGORIES="${METADATA_CATEGORIES:-fungus_species,tissue}"
+
+# wolbachia
+INPUT_DIR="${INPUT_DIR:-${PROJECT_DIR}/results/260826-01-2flies-wolbachia/filter1/shiftDist-levFilter/hyena/normalized}"
+METADATA_CATEGORIES="${METADATA_CATEGORIES:-infection_status}"
+
 MATRIX="${MATRIX:-test}"                  # test, train, or both
 PERMUTATIONS="${PERMUTATIONS:-100000}"
-METHOD="${METHOD:-auto}"                 # auto, exact, or monte_carlo
+METHOD="${METHOD:-exact}"                 # auto, exact, or monte_carlo
 MAX_EXACT_STATES="${MAX_EXACT_STATES:-2000000}"
 SEED="${SEED:-42}"
 OUTPUT_TSV="${OUTPUT_TSV:-${INPUT_DIR}/permutation.tsv}"
