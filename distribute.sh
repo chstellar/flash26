@@ -41,10 +41,53 @@ conda activate "${FLASH_R_ENV:-biopython_env-R}"
 # # MAJOR_COLORS="${MAJOR_COLORS:-no_wolbachia:#7F7F7F,reduced_wolbachia:#9467BD,wolbachia:#0072B2}"
 # MAJOR_COLORS="${MAJOR_COLORS:-uninfected:#7F7F7F,infected:#0072B2}"
 
-### ant
+# ### ant
+# PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
+# # RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus-cp/filter1/noCluster/hyena/normalized"
+# RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized"
+# PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
+# # cut -d',' -f1,2,7 metadata.csv > partition.csv
+# SATC=$(ls ${RESULTS_DIR}/../../target1/*clusters/all_satc_merged.txt 2>/dev/null | head -1)
+# INPUT_TSV="${INPUT_TSV:-${RESULTS_DIR}/manuscript_all.tsv}"
+# > $INPUT_TSV
+# grep "fungus_species" ${RESULTS_DIR}/*summary_compactor.tsv > $INPUT_TSV
+# # grep "unconventional myosin" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# # grep "RRM domain" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# # grep "disks large homolog 4" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# # grep "histone" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# # grep "proteasome regulatory" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# # grep "squid" ${RESULTS_DIR}/*summary_compactor.tsv >> $INPUT_TSV
+# grep "fungus_species" $INPUT_TSV | grep -v "residual" > distribute.tmp && mv distribute.tmp $INPUT_TSV
+
+# OUTPUT_TSV="${OUTPUT_TSV:-${RESULTS_DIR}/distribution_manuscript_all.tsv}"
+# HEATMAP_PDF="${HEATMAP_PDF:-${RESULTS_DIR}/distribution_heatmaps_manuscript_all.pdf}"
+
+# EXTENDOR_COL="${EXTENDOR_COL:-4}"
+# ANNOTATION_COL="${ANNOTATION_COL:-20}"
+# SAMPLE_COL="${SAMPLE_COL:-1}"
+# MAJOR_COL="${MAJOR_COL:-2}"
+# MINOR_COL="${MINOR_COL:-3}"
+# MAJOR_ORDER="${MAJOR_ORDER:-no_fungus,bbassiana,ocamponoti-floridani}"
+# MINOR_ORDER="${MINOR_ORDER:-manipulation,timecourse}"
+# MAJOR_DISPLAY_NAME="${MAJOR_DISPLAY_NAME:-fungus_species}"
+# MINOR_DISPLAY_NAME="${MINOR_DISPLAY_NAME:-dataset}"
+# MAJOR_COLORS="${MAJOR_COLORS:-no_fungus:#7F7F7F,bbassiana:#0072B2,ocamponoti-floridani:#D55E00}"
+# # no_fungus:#7F7F7F,not_given:#9467BD,bbassiana:#0072B2,ocamponoti-floridani:#D55E00
+
+# INPUT_HAS_HEADER="${INPUT_HAS_HEADER:-auto}"
+# PARTITION_HAS_HEADER="${PARTITION_HAS_HEADER:-auto}"
+# PARTITION_DELIMITER="${PARTITION_DELIMITER:-auto}"
+# SATC_HAS_HEADER="${SATC_HAS_HEADER:-auto}"
+# EXTENDOR_ORDER="${EXTENDOR_ORDER:-anchor-target}"
+# LONG_OUTPUT="${LONG_OUTPUT:-}"
+# HEATMAP_BASE_FONT_SIZE="${HEATMAP_BASE_FONT_SIZE:-14}"
+# HEATMAP_ENTRY_FONT_SIZE="${HEATMAP_ENTRY_FONT_SIZE:-18}"
+# HEATMAP_TOTAL_FONT_SIZE="${HEATMAP_TOTAL_FONT_SIZE:-14}"
+
+### ant 0921
 PROJECT_DIR="${PROJECT_DIR:-/scratch/users/jiamuyu/proj_botryllus/flash}"
 # RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus-cp/filter1/noCluster/hyena/normalized"
-RESULTS_DIR="${PROJECT_DIR}/results/260819-00-cfloridanus-fungus/filter1/noCluster/hyena/normalized"
+RESULTS_DIR="${PROJECT_DIR}/results/260923-00-cfloridanus-fungus-a10t31/filter1/noCluster/hyena/normalized"
 PARTITION_SHEET="${PARTITION_SHEET:-/scratch/users/jiamuyu/proj_botryllus/splash2/260818_00_cfloridanus_fungus/partition.csv}"
 # cut -d',' -f1,2,7 metadata.csv > partition.csv
 SATC=$(ls ${RESULTS_DIR}/../../target1/*clusters/all_satc_merged.txt 2>/dev/null | head -1)

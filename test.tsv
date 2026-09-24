@@ -1,3 +1,2 @@
-metadata_category	matrix	n_samples	observed_accuracy	method	permutations	permuted_ge_observed	p_value	minimum_possible_p_value	exact_tail_permutations	exact_total_permutations	source
-fungus_species	test	55	0.8363636364	exact	100000		3.824152932e-16		168168	439752287662000585272	sample_rows
-tissue	test	50	1	exact	100000		1.001157338e-08		1	99884400	sample_rows
+244b0cd7cc2deb9aa0020c1630a2f8469e015c1481ca8837a45fbf6b4857599d  results/260921-00-cfloridanus-fungus-a10t31/260921-00-cfloridanus-fungus-a10t31_decomposed_kmers_filter1_noCluster_top2000_target1_k41_s41_unique_kmers.fasta
+244b0cd7cc2deb9aa0020c1630a2f8469e015c1481ca8837a45fbf6b4857599d  results/260924-01-cfloridanus-fungus-a10t31/260924-01-cfloridanus-fungus-a10t31_decomposed_kmers_filter1_noCluster_top2000_target1_k41_s41_unique_kmers.fasta
